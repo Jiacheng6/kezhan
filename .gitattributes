@@ -1,0 +1,34 @@
+# ============================================================================
+#  .gitattributes —— 固定行尾与二进制判定
+#
+#  为什么需要它：Git 在 Windows 上默认会做行尾转换（core.autocrlf）。
+#  而我们踩过一个坑：**LF 换行的 .bat 会被 cmd 解析错乱**
+#  （rem/echo/if 块粘成一条命令），所以批处理必须是 CRLF —— 这里写死，
+#  无论谁在什么平台克隆都不会变形。
+# ============================================================================
+
+# ── 批处理：必须 CRLF（cmd 解析 LF-only 会错乱）────────────────────────────
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# ── VBScript：文件是 UTF-16LE + BOM，必须按二进制存放 ────────────────────
+#    （文本模式会被行尾/编码转换破坏 → WSH 报「未结束的字符串常量」）
+*.vbs -text
+
+# ── 源码与文档：统一 LF 存储 ────────────────────────────────────────────
+*.mjs  text eol=lf
+*.js   text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.html text eol=lf
+*.css  text eol=lf
+*.txt  text eol=lf
+
+# ── C# 编译器对行尾不敏感，保持 CRLF（与 Windows 工具链一致）────────────
+*.cs text eol=crlf
+
+# ── 二进制：不做任何转换 ────────────────────────────────────────────────
+*.exe  binary
+*.png  binary
+*.ico  binary
+*.pdb  binary

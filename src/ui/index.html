@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>学习通助手</title>
+<link rel="stylesheet" href="/style.css" />
+<!-- 内联图标：省掉浏览器对 /favicon.ico 的默认请求（那个请求必然 404，控制台会报红） -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232f6fd6'/><text x='16' y='23' font-size='19' text-anchor='middle' fill='white' font-family='sans-serif'>学</text></svg>" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">学</span>
+    <div>
+      <h1>学习通助手</h1>
+      <p class="sub" id="phaseLine">正在连接后台服务…</p>
+    </div>
+  </div>
+  <div class="topright">
+    <span class="pill" id="pillEdge">Edge 未连接</span>
+    <span class="pill" id="pillLogin">登录未知</span>
+    <span class="pill" id="pillRecon">提交模式未知</span>
+    <span class="pill" id="pillQuiz">答题通道未知</span>
+  </div>
+</header>
+
+<div id="desktopToolbar" class="desktop-toolbar hidden">
+  <span>窗口控制</span>
+  <button id="desktopShowBrowser">显示浏览器</button>
+  <button id="desktopHideBrowser">隐藏浏览器</button>
+  <span id="desktopBrowserState" class="muted">隐藏浏览器后，任务继续运行</span>
+  <div class="desktop-spacer"></div>
+  <button id="desktopDataFolder" class="ghost">数据与日志</button>
+  <button id="desktopRestart" class="ghost">重启服务</button>
+  <button id="desktopClose" class="ghost">关闭软件…</button>
+</div>
+
+<div id="bootError" class="banner error hidden"></div>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="overview">概览</button>
+  <button class="tab" data-tab="courses">课程树</button>
+  <button class="tab" data-tab="review">待审队列 <span class="badge" id="reviewCount">0</span></button>
+  <button class="tab" data-tab="logs">实时日志</button>
+  <button class="tab" data-tab="settings">设置</button>
+</nav>
+
+<main>
+  <!-- ============ 概览 ============ -->
+  <section class="panel active" id="panel-overview">
+    <div class="grid">
+      <div class="card">
+        <h2>浏览器接管</h2>
+        <dl class="kv">
+          <dt>状态</dt><dd id="kEdgeState">—</dd>
+          <dt>内核</dt><dd id="kEdgeVersion">—</dd>
+          <dt>调试端口</dt><dd id="kDebugPort">—</dd>
+          <dt>专用配置目录</dt><dd class="mono small" id="kProfile">—</dd>
+        </dl>
+        <div class="actions">
+          <button data-action="openChaoxing">打开学习通</button>
+          <button data-action="focusEdge">把 Edge 拉到前台</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>账号登录</h2>
+        <dl class="kv">
+          <dt>状态</dt><dd id="kLoginState">—</dd>
+          <dt>说明</dt><dd id="kLoginReason">—</dd>
+          <dt>账号 ID</dt><dd id="kPersonId">—</dd>
+          <dt>当前页面</dt><dd class="small" id="kLoginTitle">—</dd>
+        </dl>
+        <div class="actions">
+          <button data-action="refreshLogin" class="primary">重新检测登录</button>
+        </div>
+        <p class="hint">
+          若未登录：切到 Edge 窗口完成扫码/输密码，然后点上面的按钮。
+          登录态存在专用配置目录里，<b>只需登录一次</b>。
+          <b>账号 ID 不用手填</b>：登录后程序自动识别并写入 <code>local.json</code>
+          （已被 .gitignore 忽略，不会随仓库上传）。
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>本次任务</h2>
+        <dl class="kv">
+          <dt>已完成</dt><dd><span id="kDone">0</span> / <span id="kTotal">0</span></dd>
+          <dt>当前动作</dt><dd id="kCurrent">空闲</dd>
+          <dt>运行状态</dt><dd id="kRunning">未运行</dd>
+          <dt>本次范围</dt><dd id="kScope">—</dd>
+        </dl>
+        <div class="actions">
+          <button data-action="startRecon" class="primary">开始侦察课程</button>
+          <button data-action="startRun" disabled title="开始执行（按「本次范围」刷课 / 答题）">开始执行刷课</button>
+          <button data-action="stopRun" class="ghost">■ 停止</button>
+          <button data-action="cleanupPages" class="ghost" title="关掉所有刷课/测验临时页、空白页与重复标签页（待人工页面会保留）">🧹 一键清理页面</button>
+        </div>
+        <p class="hint">
+          <b>先侦察、后执行</b>：侦察只读取课程结构与任务点状态，不播视频、不答题、不提交。
+          <br />页面堆积时点「🧹 一键清理页面」——只清临时页，等你手动作答/确认提交的页面不会被关。
+        </p>
+      </div>
+
+      <div class="card">
+        <h2>运行环境</h2>
+        <dl class="kv">
+          <dt>工作目录</dt><dd class="mono small" id="kRoot">—</dd>
+          <dt>Node</dt><dd id="kNode">—</dd>
+          <dt>进程 PID</dt><dd id="kPid">—</dd>
+          <dt>日志文件</dt><dd class="mono small" id="kLogDir">logs/</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="card wide">
+      <h2>启动检查</h2>
+      <ul class="checklist">
+        <li id="ck-edge">Edge 以专用配置 + 调试端口启动 —— <span class="st">检查中</span></li>
+        <li id="ck-cdp">Playwright 通过 CDP 成功接管 —— <span class="st">检查中</span></li>
+        <li id="ck-console">控制台服务（HTTP + WebSocket）就绪 —— <span class="st">检查中</span></li>
+        <li id="ck-login">学习通登录态可用 —— <span class="st">检查中</span></li>
+      </ul>
+      <p class="hint">
+        登录完成后，先读取课程清单，再选择本次要处理的课程。任务不会在启动时自动执行。
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ 课程树 ============ -->
+  <section class="panel" id="panel-courses">
+    <div class="card wide">
+      <div class="treebar">
+        <h2>任务点清单 <span class="pill" id="treeSource">未加载</span></h2>
+        <div class="logtools">
+          <button data-action="startRecon">重新侦察</button>
+          <button data-action="loadChecklist" class="ghost">读取清单</button>
+          <button data-action="saveSelection" class="ghost">保存选择</button>
+          <button data-action="startRun" class="primary">▶ 开始执行刷课</button>
+          <button data-action="stopRun" class="ghost">■ 停止</button>
+        </div>
+      </div>
+      <p class="hint" id="treeSummary">尚未加载侦察数据。点「开始侦察课程」抓取，或点「读取清单」加载已有结果。</p>
+
+      <!-- 批量选择工具条（全选/反选/按类型/按章节/节号区间/搜索） -->
+      <div class="treeTools" id="treeTools">
+        <div class="ttrow">
+          <input id="treeSearch" type="search" placeholder="搜索：课程名 / 节号 / 小节名 / 任务点名（空格分隔多个关键词）" />
+          <button class="ghost" data-tree="select">全选</button>
+          <button class="ghost" data-tree="deselect">全不选</button>
+          <button class="ghost" data-tree="invert">反选</button>
+          <button class="ghost" data-tree="unfinished">只选未完成</button>
+        </div>
+        <div class="ttrow">
+          <span class="ttlabel">类型范围</span>
+          <label class="ttchk"><input type="checkbox" id="scopeVideo" checked /> 视频</label>
+          <label class="ttchk"><input type="checkbox" id="scopeWork" checked /> 章节测验</label>
+          <label class="ttchk"><input type="checkbox" id="scopeDoc" checked /> 文档/阅读</label>
+          <button class="ghost" data-tree="scopeSelect">按范围勾选</button>
+          <button class="ghost" data-tree="scopeDeselect">按范围取消</button>
+        </div>
+        <div class="ttrow">
+          <span class="ttlabel">节号区间</span>
+          <input id="secFrom" class="ttsec" placeholder="2.1" />
+          <span class="muted">~</span>
+          <input id="secTo" class="ttsec" placeholder="2.9" />
+          <button class="ghost" data-tree="rangeSelect">勾选该区间</button>
+          <button class="ghost" data-tree="rangeDeselect">取消该区间</button>
+          <button class="ghost" data-tree="clearRange" title="区间只对左右两个区间按钮生效，一键操作不受影响；这里只是清空输入框">清空区间</button>
+          <label class="ttchk muted"><input type="checkbox" id="onlyVisible" /> 只作用于搜索结果</label>
+        </div>
+        <div class="ttrow ttsum">
+          <span id="treeWillSummary">—</span>
+          <span id="treeDirty" class="dirtytag hidden">有未保存改动</span>
+          <button class="ghost" data-action="saveSelection">保存选择</button>
+          <button class="ghost" data-tree="preview">预览将刷清单</button>
+          <button class="ghost" data-tree="expandAll">全部展开</button>
+          <button class="ghost" data-tree="collapseAll">全部收起</button>
+        </div>
+      </div>
+      <div id="treePreview" class="treepreview hidden"></div>
+
+      <!-- 执行中状态条 -->
+      <div id="runBar" class="runbar hidden">
+        <div class="runbar-main">
+          <span class="runlabel" id="runLabel">执行中…</span>
+          <span class="runprog" id="runProg"></span>
+        </div>
+        <div class="runbar-track"><div class="runbar-fill" id="runFill"></div></div>
+        <div class="runbar-sub" id="runSub"></div>
+      </div>
+
+      <div id="treeBody"></div>
+    </div>
+
+    <div class="card wide" id="handbookCard" style="display:none">
+      <h2>待人工清单</h2>
+      <p class="hint">这些任务点脚本不做，需要你自己处理（按你的决策：直播 / 讨论 / 问卷 / 作业）。</p>
+      <div id="handbookBody"></div>
+    </div>
+  </section>
+
+  <!-- ============ 待审队列 ============ -->
+  <section class="panel" id="panel-review">
+    <div class="card wide">
+      <div class="treebar">
+        <h2>待审队列 <span class="pill" id="reviewSource">未加载</span></h2>
+        <div class="logtools">
+          <button data-action="loadReview" class="ghost">刷新队列</button>
+          <button data-action="submitAllReviews" class="primary">✔ 提交全部已填答案</button>
+        </div>
+      </div>
+      <p class="hint" id="reviewSummary">尚无待审题目。跑章节测验后，AI 的答案会出现在这里等你确认。</p>
+      <div id="reviewBody"></div>
+    </div>
+  </section>
+
+  <!-- ============ 日志 ============ -->
+  <section class="panel" id="panel-logs">
+    <div class="card wide nopad">
+      <div class="logbar">
+        <h2>实时日志</h2>
+        <div class="logtools">
+          <label class="chk"><input type="checkbox" id="autoScroll" checked /> 自动滚动</label>
+          <input type="text" id="logFilter" placeholder="关键字过滤…" />
+          <button id="clearLogs" class="ghost">清屏</button>
+        </div>
+      </div>
+      <div id="logView" class="logview"></div>
+    </div>
+  </section>
+
+  <!-- ============ 设置 ============ -->
+  <section class="panel" id="panel-settings">
+    <div class="card wide">
+      <div class="treebar">
+        <h2>设置 <span class="pill" id="settingsDirty">未修改</span></h2>
+        <div class="logtools">
+          <button id="saveSettings" class="primary">保存设置</button>
+          <button id="resetSettings" class="ghost" title="清掉 state.json 里的 settings 段，回到出厂默认值">恢复默认</button>
+          <button id="reloadSettings" class="ghost">重新读取</button>
+        </div>
+      </div>
+      <p class="hint">
+        改完点「保存设置」即刻生效（<b>下一个任务点/下一道题</b>就用新值，不用重启服务）。
+        保存位置：<span class="mono">state.json → settings</span>。
+      </p>
+      <div id="settingsForm" class="settingsform"></div>
+
+      <h3 class="sechead2">高级</h3>
+      <div id="settingsAdvanced" class="settingsform"></div>
+
+      <h3 class="sechead2">以下为安全边界（只读，不可改）</h3>
+      <p class="hint">
+        这几项直接关系到"会不会误判完成 / 会不会破坏视频"，故意不开放修改。
+      </p>
+      <dl class="kv" id="settingsReadonly"></dl>
+    </div>
+  </section>
+</main>
+
+<!-- type="module" 是必需的：app.js 会 import ./selection.js（纯选择算术，带单测） -->
+<script type="module" src="/app.js"></script>
+<script type="module" src="/desktop.js"></script>
+</body>
+</html>

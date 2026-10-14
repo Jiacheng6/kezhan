@@ -1,0 +1,124 @@
+# ============================================================================
+#  .gitignore —— 这个项目的隐私边界
+#
+#  本项目会长期持有两类"绝不能上传"的东西：
+#    ① 登录凭据：专用 Edge 配置里的 Cookie（拿到就能登你的学习通/千问账号）
+#    ② 个人学习数据：课程表、小节名、任务点 ID、题目截图、AI 答案、选课范围
+#  下面每一条都写明"里面有什么"，改这个文件前请先读懂。
+# ============================================================================
+
+# ── ① 登录凭据（最高敏感）────────────────────────────────────────────────
+edge-profile/
+#   └ Default/Network/Cookies        ← 学习通 + 千问登录态（★ 等于账号钥匙）
+#     Default/Login Data / Web Data  ← 站点登录记录与表单数据
+#     Default/History                ← 浏览历史
+#     Local State / Preferences      ← 配置与账号痕迹
+
+# ── ② 个人学习数据 ──────────────────────────────────────────────────────
+logs/
+#   └ run-*.jsonl    运行日志：课程名 / 小节名 / 任务点 / 绝对路径
+#     desktop.log    托盘日志（含用户名下的安装路径）
+#     answers/       答题留档：题目截图 + 千问原始回答 + 解析结果
+data/
+#   └ probe-out/task-report.json   侦察报告：courseId / clazzId / knowledgeId / 文件名
+#     probe-out/*.json             调试快照（含 ktoken / mtEnc / defenc 等令牌）
+#     probe-out/*.png              控制台与页面截图（会露出你的课程表）
+state.json
+#   任务进度 + 设置 + 待审队列（含题目与 AI 答案）
+recon-selection.json
+#   你的选课范围（哪些课要刷）
+backup-*/
+#   手工备份：包含以上全部内容（体积可达数百 MB）
+.refactor-backup/
+#   重构时的临时备份（若存在）
+
+# ── ③ 本机个人标识（见 README「上传 GitHub 前必读」）────────────────────
+local.json
+local.json.*
+local*.json
+!local.example.json
+#   { "personId": "你的学习通 cpi" } —— 源码不再硬编码账号 ID，
+#   由程序在登录后自动识别写入（见 src/chaoxing/identity.mjs）。
+#
+#   ⚠ 三行都必要，别合并成一行 local.json：
+#     local.json        本机配置本体
+#     local.json.*      它的备份/临时副本 —— 实测踩过：local.json.bak、
+#                       local.json.hidden 属于"未忽略的未跟踪文件"，
+#                       `git add -A` 会把真实 personId 一起推上去
+#     local*.json       兜底：任何以 local 开头的本机配置
+#     !local.example.json  模板必须上传（不含真实 ID，只有占位符）
+local.mjs
+
+# ── ④ 依赖与构建产物 ───────────────────────────────────────────────────
+node_modules/
+*.tgz
+desktop/*.exe
+#   托盘程序是构建产物：跑 `构建桌面版.bat` 或
+#   `node tools/build/build-desktop.mjs` 重新生成（约 17 KB）
+desktop/*.pdb
+desktop/*.exe.config
+
+# ── ⑤ 导出副本 / 测试副本（用 tools 里的导出脚本生成的"可上传副本"、以及你拿来
+#      实测的副本，都别让它嵌套进主仓库）──────────────────────────────────
+#    ⚠ 用通配而不是只写 `发布版/`：实测踩到 —— 用户把导出副本改名成
+#      `发布版测试/` 拿来实测，于是这一整份副本没被忽略，`git add -A` 会把它
+#      149 个文件当成"新文件"收进来（重复一份源码树）。
+#    注：副本里的 edge-profile/、logs/、state.json 等**本身**仍被忽略 —— 因为
+#      下面那些规则没写前导斜杠，git 会在任意深度匹配（实测确认：
+#      会收走 149 个源码文件、隐私类 0 个）。但别依赖这个巧合：
+#      整份副本本来就不该进仓库，名字也该被挡住。
+发布版*/
+
+# ── ⑥ 编辑器 / 系统噪声 ───────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini
+.DS_Store
+dist/
+.build-cache/
+.desktop-test/
+.desktop-test*.log
+desktop/native/*.exe
+desktop/native/*.pdb
+desktop/native/*.exe.config
+*.zip
+.vs/
+
+# 私人实测记录及账号诊断工具仅保留在本机
+docs/开发记录.md
+设计方案.md
+tools/diag/
+tools/legacy/
+tools/recon/
+tools/run/
+.privacy-blocklist.local.json
+
+# 回归工具白名单，避免实际账号测试记录进入仓库
+tools/test/*
+!tools/test/check-modules.mjs
+!tools/test/check-privacy.mjs
+!tools/test/check-report-path.mjs
+!tools/test/check-ui-ids.mjs
+!tools/test/privacy-learning.mjs
+!tools/test/test-ai-reask.mjs
+!tools/test/test-card-probe.mjs
+!tools/test/test-completion.mjs
+!tools/test/test-desktop-e2e.mjs
+!tools/test/test-desktop-state.mjs
+!tools/test/test-essay-editor.mjs
+!tools/test/test-essay.mjs
+!tools/test/test-heartbeat-e2e.mjs
+!tools/test/test-hidden-screenshot.mjs
+!tools/test/test-identity.mjs
+!tools/test/test-offline.mjs
+!tools/test/test-packaged-receiver.ps1
+!tools/test/test-pages.mjs
+!tools/test/test-parse.mjs
+!tools/test/test-privacy-learning.mjs
+!tools/test/test-runtime-fixes.mjs
+!tools/test/test-selection.mjs
+!tools/test/test-server.mjs
+!tools/test/test-settings.mjs
+!tools/test/test-stop-semantics.mjs
