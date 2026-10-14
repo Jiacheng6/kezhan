@@ -20,6 +20,7 @@ import {
   matchesQuery,
   recalc,
 } from './selection.js';
+import { completionOf, completionCounts, mergeTaskCompletion } from './task-status.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -587,6 +588,7 @@ window.__console = {
   tree,
   loadChecklist,
   renderTree,
+  refreshTreeProgress,
   saveSelection,
   // 选择算术也挂上：排查"点了没反应"这类问题时可以直接在控制台里调
   selection: { willSummary, willList, batchSelect, batchSelectBookChapter, batchSelectChapter, keepFirstN, recalc },
@@ -618,6 +620,21 @@ async function loadChecklist() {
   renderTree();
 }
 
+let progressRefreshing = false;
+async function refreshTreeProgress() {
+  if (!tree.data || progressRefreshing) return;
+  progressRefreshing = true;
+  try {
+    const body = await (await fetch('/api/checklist')).json();
+    if (body.ok && body.result && mergeTaskCompletion(tree.data, body.result)) renderTree();
+  } catch { /* 后台恢复连接后继续刷新，不改变当前选择。 */ }
+  finally { progressRefreshing = false; }
+}
+
+setInterval(() => {
+  if ($('#panel-courses').classList.contains('active')) refreshTreeProgress();
+}, 5000);
+
 function renderTree() {
   const body = $('#treeBody');
   const summary = $('#treeSummary');
@@ -625,8 +642,10 @@ function renderTree() {
 
   const s = tree.data.summary;
   const typeParts = Object.entries(s.byType || {}).map(([k, v]) => `${k} ${v}`);
+  const progress = completionCounts(tree.data.courses.flatMap((c) => c.tasks || []));
   summary.innerHTML =
     `共 <b>${s.totalCourses}</b> 门课 · 任务点 <b>${s.totalTasks}</b> 个 · ` +
+    `已完成 <b>${progress.done}</b> · 未完成 / 待确认 <b>${progress.remaining}</b> · ` +
     (typeParts.length ? `<span class="muted">类型分布：${typeParts.join(' · ')}</span>` : '');
 
   const q = tree.query || '';
@@ -860,6 +879,8 @@ function renderCourse(c, q = '') {
       const chip = el('span', `chip ${['video', 'work', 'doc'].includes(k) ? k : 'skip'}`, `${k} ${v}`);
       meta.appendChild(chip);
     }
+    const progress = completionCounts(c.tasks);
+    meta.appendChild(el('span', 'chip', `已完成 ${progress.done}/${progress.total}`));
     const will = c.tasks.filter((t) => t.willHandle).length;
     meta.appendChild(el('span', 'chip', `将处理 ${will}/${c.tasks.length}`));
   }
@@ -985,10 +1006,12 @@ function renderCourse(c, q = '') {
 
         sh.appendChild(el('span', 'sno', sec.secNo || ''));
         sh.appendChild(el('span', null, sec.name || ''));
-        sh.appendChild(el('span', 'chip', `${sec.taskCount} 个任务点`));
+        const all = (c.tasks || []).filter((t) => t.knowledgeId === sec.knowledgeId);
+        const progress = completionCounts(all);
+        sh.appendChild(el('span', `chip ${progress.done === progress.total ? 'task-done' : ''}`,
+          `已完成 ${progress.done}/${progress.total}`));
         blk.appendChild(sh);
 
-        const all = (c.tasks || []).filter((t) => t.knowledgeId === sec.knowledgeId);
         const tasks = q && !courseNameHit ? all.filter((t) => matchesQuery(c.name, t, q)) : all;
         for (let i = 0; i < tasks.length; i += 1) {
           blk.appendChild(renderTaskRow(c, all, all.indexOf(tasks[i])));
@@ -1038,12 +1061,18 @@ function renderTaskRow(course, tasks, index) {
   });
   row.appendChild(cb);
 
-  const typeChip = el('span', `chip ${['video', 'work', 'doc'].includes(t.type) ? t.type : 'skip'}`, t.type);
+  const typeChip = el('span', `chip ${['video', 'work', 'doc'].includes(t.type) ? t.type : 'skip'}`, t.typeName || ({ video: '视频', work: '测验', doc: '文档' })[t.type] || t.type);
   row.appendChild(typeChip);
 
   const nm = el('span', 'tname', t.name || t.sectionName || '(无名称)');
   nm.title = `${t.name || ''}\n${t.policy || ''}`;
   row.appendChild(nm);
+  const completion = completionOf(t);
+  const statusChip = el('span', `chip task-status task-${completion.state}`, completion.label);
+  statusChip.title = completion.finished
+    ? completion.source === 'local' ? '依据本机已保存的完成记录' : '依据最近一次读取的平台任务点状态'
+    : '任务点状态独立计算；平台上的外部变化需重新侦察。';
+  row.appendChild(statusChip);
 
   if (!t.willHandle && !t.excluded) row.appendChild(el('span', 'why', '跳过'));
   if (t.excluded) row.appendChild(el('span', 'why', '已排除'));
@@ -1102,7 +1131,10 @@ async function saveSelection() {
 // 切到课程树标签时自动加载
 $$('.tab').forEach((btn) => {
   btn.addEventListener('click', () => {
-    if (btn.dataset.tab === 'courses' && !tree.data) loadChecklist();
+    if (btn.dataset.tab === 'courses') {
+      if (!tree.data) loadChecklist();
+      else refreshTreeProgress();
+    }
   });
 });
 

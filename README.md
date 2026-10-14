@@ -10,12 +10,12 @@
 
 需要 **Windows 10 / 11，64 位（x64）**，已安装 **Microsoft Edge**，并保持网络连接。
 
-当前版本为 **0.3.0**，提供两种使用方式：
+当前版本为 **0.3.1**，提供两种使用方式：
 
 | 版本 | 下载 | 打开方式 |
 | --- | --- | --- |
-| 安装版 | [下载安装程序](https://github.com/Jiacheng6/xuexitong-assistant-releases/releases/download/v0.3.0/XuexitongAssistant-0.3.0-Setup.exe) | 按提示安装，从桌面或开始菜单打开「学习通助手」 |
-| 免安装版 | [下载 ZIP 压缩包](https://github.com/Jiacheng6/xuexitong-assistant-releases/releases/download/v0.3.0/XuexitongAssistant-0.3.0-win-x64.zip) | 完整解压后，双击文件夹中的「学习通助手.exe」 |
+| 安装版 | [下载安装程序](https://github.com/Jiacheng6/xuexitong-assistant-releases/releases/download/v0.3.1/XuexitongAssistant-0.3.1-Setup.exe) | 按提示安装，从桌面或开始菜单打开「学习通助手」 |
+| 免安装版 | [下载 ZIP 压缩包](https://github.com/Jiacheng6/xuexitong-assistant-releases/releases/download/v0.3.1/XuexitongAssistant-0.3.1-win-x64.zip) | 完整解压后，双击文件夹中的「学习通助手.exe」 |
 
 免安装版请保留完整文件夹，不要只复制 EXE，也不要直接在压缩软件内运行。分享给朋友时，发送上面的下载链接或发布包即可。
 
@@ -33,7 +33,7 @@
 
 | 功能 | 说明 |
 | --- | --- |
-| 课程管理 | 读取课程与章节任务，选择本次执行范围 |
+| 课程管理 | 读取课程与章节任务，分别显示视频、测验等任务的完成状态及小节完成数 |
 | 视频任务 | 播放所选视频任务，记录执行状态 |
 | 千问辅助答题 | 处理选择、判断题；支持简答、论述和分析题草稿填写 |
 | 待审队列 | 查看需要人工处理的题目，核对答案、修改简答草稿并确认提交 |
@@ -64,7 +64,7 @@
 
 下载期间任务可以继续运行。确认安装后，软件保存数据、停止任务并退出，再打开安装程序；普通退出不会自动安装已下载的更新。
 
-- **从 0.2.x 升级**：正常退出旧版，手动运行一次 0.3.0 安装包，之后即可使用内置更新。
+- **从 0.2.x 升级**：正常退出旧版，手动运行一次 0.3.1 安装包，之后即可使用内置更新。
 - **安装版更新**：同一 Windows 用户下继续使用原有登录状态、设置、课程选择和进度，更新后不必重新扫描课程。
 - **免安装版更新**：内置安装会提示切换为安装版，并继续读取同一数据目录。也可下载新版 ZIP，完整解压到新文件夹后启动。
 

@@ -13,6 +13,8 @@
  */
 
 /** 任务点归到哪一类（批量选按这个分组） */
+import { completionOf } from './task-status.js';
+
 export function typeGroup(type) {
   if (type === 'video') return 'video';
   if (type === 'work') return 'work';
@@ -132,7 +134,7 @@ export function batchSelect(courses, action, opts = {}) {
       if (opts.from || opts.to) {
         if (!inSecRange(t.secNo, opts.from, opts.to)) continue;
       }
-      if (opts.finishedOnly && t.finished) continue;
+      if (opts.finishedOnly && completionOf(t).finished) continue;
       if (opts.query && !nameHit && !matchesQuery(c.name, t, opts.query)) continue;
 
       affected += 1;

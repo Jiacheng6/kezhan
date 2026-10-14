@@ -15,6 +15,8 @@
  */
 import fs from 'node:fs';
 import { PATHS } from '../config.mjs';
+import { loadState } from '../state.mjs';
+import { taskCompletion } from '../ui/task-status.js';
 
 /** 执行清单的输入：侦察报告（路径由 config 唯一决定） */
 const REPORT_FILE = PATHS.taskReport;
@@ -145,11 +147,12 @@ export function taskKey(courseId, knowledgeId, seq) {
  * 把侦察报告整理成"可执行清单"，套用选择配置。
  * @returns {{courses:Array, summary:object}}
  */
-export function buildChecklist() {
+export function buildChecklist({ includeProgress = false } = {}) {
   const report = loadReconReport();
   if (!report) return null;
 
   const sel = loadSelection();
+  const progress = includeProgress ? loadState().taskPoints : {};
   const order = sel.courseOrder.length ? sel.courseOrder : report.courses.map((c) => c.courseId);
   const byId = new Map(report.courses.map((c) => [c.courseId, c]));
 
@@ -168,16 +171,16 @@ export function buildChecklist() {
     const c = byId.get(courseId);
     if (!c) continue;
     byId.delete(courseId);
-    courses.push(toCourseEntry(c, sel, summary));
+    courses.push(toCourseEntry(c, sel, summary, progress));
   }
   // 补上没进 order 的
-  for (const c of byId.values()) courses.push(toCourseEntry(c, sel, summary));
+  for (const c of byId.values()) courses.push(toCourseEntry(c, sel, summary, progress));
 
   summary.totalCourses = courses.length;
   return { courses, summary, generatedAt: report.at };
 }
 
-function toCourseEntry(c, sel, summary) {
+function toCourseEntry(c, sel, summary, progress) {
   if (c.empty) {
     return { courseId: c.courseId, name: c.name, empty: true, sections: [], tasks: [], counts: {} };
   }
@@ -283,6 +286,7 @@ function toCourseEntry(c, sel, summary) {
         seq: t.seq,
         uid: t.uid,
         finished: t.finished,
+        completion: taskCompletion(t, progress[key]),
         condition: t.condition,
         policy: policy.action,
         policyHandle: willHandleBase,

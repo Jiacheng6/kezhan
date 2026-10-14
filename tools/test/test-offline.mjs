@@ -33,6 +33,7 @@ if (!process.env.XXT_DATA_DIR) {
 }
 
 const suite = [
+  ['课程树分任务完成状态 / 保留选择', 'tools/test/test-tree-progress.mjs'],
   ['更新状态 / 保存退出 / 数据备份', 'tools/test/test-updates.mjs'],
   ['运行中止 / 心跳进程判断', 'tools/test/test-runtime-fixes.mjs'],
   ['桌面数据目录 / 保存失败 / 默认设置', 'tools/test/test-desktop-state.mjs'],

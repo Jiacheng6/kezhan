@@ -1,6 +1,6 @@
 {
   "name": "xuexitong-auto",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "description": "学习通自动刷课 + AI 答题助手（本机 Edge 接管式）",

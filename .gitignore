@@ -124,3 +124,5 @@ tools/test/*
 !tools/test/test-stop-semantics.mjs
 !tools/test/test-updates.mjs
 !tools/test/test-update-ui.mjs
+!tools/test/test-tree-progress.mjs
+!tools/test/test-tree-progress-ui.mjs

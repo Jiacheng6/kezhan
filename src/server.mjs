@@ -116,7 +116,7 @@ export async function startServer(hooks = {}) {
     // 任务点清单（P1 产物）
     if (pathname === '/api/checklist') {
       try {
-        const data = buildChecklist();
+        const data = buildChecklist({ includeProgress: true });
         return json(res, 200, { ok: true, result: data });
       } catch (err) {
         return json(res, 200, { ok: false, error: err.message });
