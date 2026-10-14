@@ -31,12 +31,24 @@
   <button id="desktopHideBrowser">隐藏浏览器</button>
   <span id="desktopBrowserState" class="muted">隐藏浏览器后，任务继续运行</span>
   <div class="desktop-spacer"></div>
+  <button id="desktopUpdate" class="ghost">检查更新</button>
   <button id="desktopDataFolder" class="ghost">数据与日志</button>
   <button id="desktopRestart" class="ghost">重启服务</button>
   <button id="desktopClose" class="ghost">关闭软件…</button>
 </div>
 
 <div id="bootError" class="banner error hidden"></div>
+<div id="desktopUpdatePanel" class="card update-panel hidden">
+  <div class="treebar"><h2>软件更新 <span id="updateCurrentVersion" class="pill"></span></h2><button id="updateLater" class="ghost">收起</button></div>
+  <p id="updateMessage">正在读取更新状态…</p>
+  <progress id="updateProgress" max="100" value="0" class="hidden"></progress>
+  <div class="actions">
+    <button id="updateCheck">检查新版</button>
+    <button id="updateDownload" class="primary hidden">下载新版</button>
+    <button id="updateInstall" class="primary hidden">保存并安装</button>
+  </div>
+  <p class="hint">下载时可以继续使用。安装前会保存进度并备份课程、选择和设置，登录状态保留在本机。</p>
+</div>
 
 <nav class="tabs">
   <button class="tab active" data-tab="overview">概览</button>
@@ -77,7 +89,7 @@
         </div>
         <p class="hint">
           若未登录：切到 Edge 窗口完成扫码/输密码，然后点上面的按钮。
-          登录态存在专用配置目录里，<b>只需登录一次</b>。
+          登录态保存在本机，更新时会保留；平台登录状态过期时仍需重新登录。
           <b>账号 ID 不用手填</b>：登录后程序自动识别并写入 <code>local.json</code>
           （已被 .gitignore 忽略，不会随仓库上传）。
         </p>
@@ -98,7 +110,7 @@
           <button data-action="cleanupPages" class="ghost" title="关掉所有刷课/测验临时页、空白页与重复标签页（待人工页面会保留）">🧹 一键清理页面</button>
         </div>
         <p class="hint">
-          <b>先侦察、后执行</b>：侦察只读取课程结构与任务点状态，不播视频、不答题、不提交。
+          首次使用先侦察课程；已有课程会自动读取，更新后不必重新扫描。新增课程时再点「开始侦察课程」。
           <br />页面堆积时点「🧹 一键清理页面」——只清临时页，等你手动作答/确认提交的页面不会被关。
         </p>
       </div>
@@ -141,7 +153,7 @@
           <button data-action="stopRun" class="ghost">■ 停止</button>
         </div>
       </div>
-      <p class="hint" id="treeSummary">尚未加载侦察数据。点「开始侦察课程」抓取，或点「读取清单」加载已有结果。</p>
+      <p class="hint" id="treeSummary">正在读取已保存的课程清单…</p>
 
       <!-- 批量选择工具条（全选/反选/按类型/按章节/节号区间/搜索） -->
       <div class="treeTools" id="treeTools">

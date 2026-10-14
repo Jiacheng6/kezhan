@@ -122,3 +122,5 @@ tools/test/*
 !tools/test/test-server.mjs
 !tools/test/test-settings.mjs
 !tools/test/test-stop-semantics.mjs
+!tools/test/test-updates.mjs
+!tools/test/test-update-ui.mjs

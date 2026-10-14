@@ -1374,6 +1374,8 @@ function bindSettingsTools() {
   }
   bindTreeTools();
   bindSettingsTools();
+  // 使用本机已有报告，无需连接课程平台、无需重新侦察。
+  await loadChecklist().catch(() => { $('#treeSummary').textContent = '已有清单读取失败，可点击「读取清单」重试。'; });
   connectWS();
   appendLog({ t: Date.now(), level: 'info', message: '控制台已连接。' });
 })();

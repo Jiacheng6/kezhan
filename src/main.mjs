@@ -879,7 +879,8 @@ async function gracefulShutdown(signal) {
       await session.send('Browser.close');
     } catch { /* Browser.close 后连接断开是正常现象 */ }
   }
-  if (process.env.XXT_DESKTOP === '1') await stopOwnedEdge();
+  // Browser.close 后留时间给 Edge 写入登录会话，避免立即强杀打断落盘。
+  if (process.env.XXT_DESKTOP === '1') await stopOwnedEdge({ graceMs: 3000 });
   if (runtime.service) {
     for (const client of runtime.service.wss.clients) client.terminate();
     runtime.service.wss.close();

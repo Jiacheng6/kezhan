@@ -25,9 +25,20 @@ const EDGE_CANDIDATES = [
 let ownedProcess = null;
 
 /** 仅在启动尚未完成或 CDP 已断开时，清理本进程自己拉起的浏览器。 */
-export async function stopOwnedEdge() {
+export async function waitForOwnedExit(child, graceMs) {
+  if (!child?.pid || child.exitCode !== null || child.signalCode !== null) return true;
+  return new Promise((resolve) => {
+    const finish = (exited) => { clearTimeout(timer); child.removeListener('exit', onExit); resolve(exited); };
+    const onExit = () => finish(true);
+    const timer = setTimeout(() => finish(false), graceMs);
+    child.once('exit', onExit);
+    if (child.exitCode !== null || child.signalCode !== null) finish(true);
+  });
+}
+export async function stopOwnedEdge({ graceMs = 0 } = {}) {
   const child = ownedProcess;
   if (!child?.pid || child.exitCode !== null || child.signalCode !== null) return;
+  if (graceMs > 0 && await waitForOwnedExit(child, graceMs)) return;
   await new Promise((resolve) => {
     execFile('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, timeout: 4000 }, () => resolve());
   });

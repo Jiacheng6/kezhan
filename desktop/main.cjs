@@ -3,6 +3,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const net = require('node:net');
 const { pathToFileURL } = require('node:url');
+const { createUpdates, backupUserData } = require('./updates.cjs');
 
 const title = '学习通助手';
 const smokeTest = process.argv.includes('--smoke-test');
@@ -16,6 +17,7 @@ app.setAppUserModelId('com.xuexitong.assistant');
 const loadingUrl = pathToFileURL(path.join(__dirname, 'loading.html')).href;
 let mainWindow, tray, worker, serviceUrl, error = '', quitting = false, closeDialog = false, restarting = false;
 let heartbeat, startupTimer, blocker;
+let updates;
 const logFile = path.join(dataDir, 'logs', 'desktop.log');
 function log(message) {
   try { fs.mkdirSync(path.dirname(logFile), { recursive: true }); fs.appendFileSync(logFile, `${new Date().toISOString()} ${message}\n`); } catch {}
@@ -55,7 +57,7 @@ function showError(message) {
   if (mainWindow && !mainWindow.isDestroyed() && !serviceUrl) mainWindow.loadURL(loadingUrl);
   if (tray) tray.setToolTip(`${title}：服务异常，请打开软件查看`);
 }
-async function stopWorker() {
+async function stopWorker({ requireGraceful = false } = {}) {
   clearInterval(heartbeat); clearTimeout(startupTimer);
   const child = worker;
   worker = null;
@@ -68,9 +70,17 @@ async function stopWorker() {
     });
   }
   if (!child.pid) { child.kill(); return; }
-  await new Promise((resolve) => {
-    const timer = setTimeout(() => { child.kill(); resolve(); }, 12000);
-    child.once('exit', () => { clearTimeout(timer); resolve(); });
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill();
+      if (requireGraceful) reject(new Error('后台未能及时保存并退出，已取消安装。请重启服务后再试。'));
+      else resolve();
+    }, requireGraceful ? 45000 : 12000);
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      if (requireGraceful && code !== 0) reject(new Error('后台保存退出失败，已取消安装。'));
+      else resolve();
+    });
     child.postMessage({ type: 'shutdown' });
   });
 }
@@ -171,6 +181,28 @@ else {
     mainWindow.webContents.on('will-navigate', (event, url) => { if (!safePage(url)) event.preventDefault(); });
     mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     mainWindow.webContents.on('render-process-gone', () => showError('界面发生异常，请从托盘重新打开或重启服务。'));
+    updates = createUpdates({ app, dataDir, testMode,
+      onStatus: (status) => { if (!mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:update-status', status); },
+      prepareInstall: async () => {
+        const status = updates.snapshot();
+        const confirmation = await dialog.showMessageBox(mainWindow, { type: 'question', title: '安装更新',
+          message: `安装 ${status.nextVersion}？`,
+          detail: '安装会停止当前任务、保存进度并退出软件。登录状态、课程清单和选择会保留。' +
+            (status.installed ? '' : '\n当前是免安装版；安装程序会创建安装版，使用同一份账号和课程数据。'),
+          buttons: ['保存并安装', '稍后'], defaultId: 1, cancelId: 1, noLink: true });
+        if (confirmation.response !== 0) return false;
+        quitting = true;
+        await stopWorker({ requireGraceful: true });
+        backupUserData(dataDir, app.getVersion());
+        log(`更新前数据备份完成，准备安装 ${status.nextVersion}`);
+        if (testMode) throw new Error('测试模式已保存数据，禁止启动真实安装程序');
+        return true;
+      },
+      recoverInstall: async () => {
+        quitting = false;
+        if (!worker) await restartService();
+      },
+    });
     tray = new Tray(nativeImage.createFromPath(icon).resize({ width: 24, height: 24 }));
     tray.setToolTip(title + '：正在启动');
     tray.on('double-click', showMain);
@@ -189,6 +221,10 @@ else {
     handle('desktop:restart', restartService);
     handle('desktop:data-folder', () => shell.openPath(dataDir));
     handle('desktop:info', () => ({ version: app.getVersion(), dataDir, error, serviceUrl }));
+    handle('desktop:update-state', () => updates.snapshot());
+    handle('desktop:update-check', () => updates.check());
+    handle('desktop:update-download', () => updates.download());
+    handle('desktop:update-install', () => updates.install());
     blocker = powerSaveBlocker.start('prevent-app-suspension');
     await mainWindow.loadURL(loadingUrl);
     await startWorker();

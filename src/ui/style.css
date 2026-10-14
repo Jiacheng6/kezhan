@@ -384,3 +384,5 @@ button.busy { opacity: .6; pointer-events: none; }
 }
 .qedit input[type="text"]:focus { border-color: #3b4756; }
 .qedit textarea { width: 100%; min-height: 140px; resize: vertical; padding: 10px; color: inherit; background: #121820; border: 1px solid #3b4756; border-radius: 6px; line-height: 1.6; font: inherit; }
+.update-panel { margin: 14px 28px; }
+.update-panel progress { width: 100%; height: 12px; accent-color: var(--acc); }

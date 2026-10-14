@@ -1,6 +1,6 @@
 {
   "name": "xuexitong-auto",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "学习通自动刷课 + AI 答题助手（本机 Edge 接管式）",
@@ -13,6 +13,7 @@
     "test": "node tools/test/test-offline.mjs"
   },
   "dependencies": {
+    "electron-updater": "6.8.9",
     "playwright-core": "^1.63.0",
     "ws": "^8.18.0"
   },
@@ -24,28 +25,55 @@
     "electron-builder": "26.15.3"
   },
   "build": {
+    "publish": [{ "provider": "github", "owner": "Jiacheng6", "repo": "xuexitong-assistant-releases" }],
     "electronDist": "node_modules/electron/dist",
     "appId": "com.xuexitong.assistant",
     "productName": "学习通助手",
     "copyright": "学习通助手",
     "asar": false,
     "npmRebuild": false,
-    "directories": { "output": "dist", "buildResources": "desktop/assets" },
+    "directories": {
+      "output": "dist",
+      "buildResources": "desktop/assets"
+    },
     "files": [
-      "src/**/*", "desktop/*.cjs", "desktop/loading.html", "desktop/loading.js",
-      "desktop/assets/*", "desktop/native/*.exe", "使用说明.md", "package.json",
-      "!**/*.map", "!**/test{,s}/**"
+      "src/**/*",
+      "desktop/*.cjs",
+      "desktop/loading.html",
+      "desktop/loading.js",
+      "desktop/assets/*",
+      "desktop/native/*.exe",
+      "使用说明.md",
+      "package.json",
+      "!**/*.map",
+      "!**/test{,s}/**"
     ],
     "win": {
       "icon": "desktop/assets/icon.ico",
       "executableName": "学习通助手",
       "signExecutable": false,
-      "target": [ { "target": "nsis", "arch": ["x64"] }, { "target": "zip", "arch": ["x64"] } ],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "artifactName": "XuexitongAssistant-${version}-win-${arch}.${ext}"
     },
     "nsis": {
-      "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true, "createStartMenuShortcut": true,
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
       "deleteAppDataOnUninstall": false,
       "artifactName": "XuexitongAssistant-${version}-Setup.${ext}"
     }

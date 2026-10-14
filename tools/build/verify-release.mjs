@@ -12,6 +12,10 @@ assert.ok(fs.existsSync(path.join(app, 'desktop', 'native', 'BrowserWindowContro
 assert.ok(fs.existsSync(path.join(app, 'src', 'chaoxing', 'essay.mjs')), '缺少简答填写模块');
 assert.ok(fs.existsSync(path.join(app, 'node_modules', 'playwright-core', 'package.json')));
 assert.ok(fs.existsSync(path.join(app, 'node_modules', 'ws', 'package.json')));
+assert.ok(fs.existsSync(path.join(app, 'node_modules', 'electron-updater', 'package.json')));
+assert.ok(fs.existsSync(path.join(app, 'desktop', 'updates.cjs')));
+assert.ok(fs.existsSync(path.join(dist, 'win-unpacked', 'resources', 'app-update.yml')));
+assert.ok(fs.existsSync(path.join(dist, 'latest.yml')), '缺少在线更新清单');
 assert.equal(fs.existsSync(path.join(app, 'node_modules', 'electron-builder')), false);
 assert.equal(fs.existsSync(path.join(app, 'desktop', 'App.cs')), false);
 const pkg = JSON.parse(fs.readFileSync(path.join(app, 'package.json'), 'utf8'));
