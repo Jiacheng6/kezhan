@@ -13,6 +13,7 @@ for (const excluded of ['edge-profile', 'logs', 'data', 'local.json', 'state.jso
 }
 assert.ok(fs.existsSync(path.join(app, 'desktop', 'native', 'BrowserWindowControl.exe')));
 assert.ok(fs.existsSync(path.join(app, 'src', 'chaoxing', 'essay.mjs')), '缺少简答填写模块');
+for (const file of ['review-recovery.mjs', 'review-lock.mjs']) assert.ok(fs.existsSync(path.join(app, 'src', 'chaoxing', file)), '缺少作业恢复模块：' + file);
 assert.ok(fs.existsSync(path.join(app, 'node_modules', 'playwright-core', 'package.json')));
 assert.ok(fs.existsSync(path.join(app, 'node_modules', 'ws', 'package.json')));
 assert.ok(fs.existsSync(path.join(app, 'node_modules', 'electron-updater', 'package.json')));
@@ -47,7 +48,11 @@ const expectedSha512 = hash(path.join(dist, installerName), 'sha512', 'base64');
 assert.ok(feed.includes(`sha512: ${expectedSha512}`), '在线更新 SHA-512 校验值不一致');
 assert.ok(feed.includes(`size: ${fs.statSync(path.join(dist, installerName)).size}`), '在线更新大小不一致');
 assert.ok(feed.includes('releaseNotes:'), '在线更新清单必须包含更新内容');
-assert.ok(feed.includes('启动时自动检查新版'), '更新清单应带上本次真实更新说明');
+const sourcePackage = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+const releaseNotes = fs.readFileSync(path.join(ROOT, sourcePackage.build.releaseInfo.releaseNotesFile), 'utf8');
+for (const line of releaseNotes.split(/\r?\n/).filter(line => line.startsWith('- '))) {
+  assert.ok(feed.includes(line), '更新清单应完整包含本次更新说明');
+}
 const updateConfig = fs.readFileSync(path.join(dist, 'win-unpacked/resources/app-update.yml'), 'utf8');
 assert.match(updateConfig, /owner: Jiacheng6/);
 assert.match(updateConfig, /repo: xuexitong-assistant-releases/);

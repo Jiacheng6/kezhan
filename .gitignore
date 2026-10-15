@@ -127,6 +127,8 @@ tools/test/*
 !tools/test/test-tree-progress.mjs
 !tools/test/test-tree-progress-ui.mjs
 !tools/test/test-course-groups.mjs
+!tools/test/test-review-recovery.mjs
+!tools/test/test-review-recovery-ui.mjs
 !tools/test/test-web-ai.mjs
 !tools/test/test-ai-settings-ui.mjs
 !tools/test/test-question-capture.mjs

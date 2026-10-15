@@ -629,20 +629,7 @@ $$('[data-action]').forEach((btn) => {
         } else if (name === 'loadReview') {
           await loadReview();
         } else if (name === 'submitAllReviews') {
-          const r = await fetch('/api/review/submit', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ all: true }),
-          }).then((x) => x.json()).catch((e) => ({ ok: false, error: e.message }));
-          if (r.ok) {
-            appendLog({
-              t: Date.now(),
-              level: 'ok',
-              message: `已提交 ${r.result?.submitted || 0} 组答案${r.result?.failed ? `，${r.result.failed} 组失败` : ''}`,
-            });
-          } else {
-            appendLog({ t: Date.now(), level: 'error', message: `提交失败：${r.error}` });
-          }
+          await submitReviewedAnswers({all:true});
           await loadReview();
         }
       } catch (err) {
@@ -1410,6 +1397,22 @@ async function loadReview() {
   renderReview(body.result);
 }
 
+const reviewFeedback=new Map();
+async function submitReviewedAnswers(scope) {
+  const response=await fetch('/api/review/submit',{
+    method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(scope),
+  }).then(result=>result.json()).catch(error=>({ok:false,error:error.message}));
+  const submitted=response.result?.submitted||0,failed=response.result?.failed||0;
+  for(const item of response.result?.details||[]){if(item.ok)reviewFeedback.delete(item.key);else reviewFeedback.set(item.key,item.error||'未确认提交成功');}
+  if(submitted)appendLog({t:Date.now(),level:failed?'warn':'ok',message:`已确认提交 ${submitted} 组答案${failed?`，${failed} 组未成功`:''}`});
+  if(!response.ok||failed||!submitted){
+    const detail=response.error||response.result?.note||(response.result?.details||[]).filter(item=>!item.ok).map(item=>item.error).join('；')||'未确认提交成功';
+    appendLog({t:Date.now(),level:'error',message:`提交未完成：${detail}`});
+    if(scope.taskKey)reviewFeedback.set(scope.taskKey,detail);
+  }
+  await loadReview();
+}
+
 function renderReview(data) {
   const bodyEl = $('#reviewBody');
   const sum = $('#reviewSummary');
@@ -1426,9 +1429,7 @@ function renderReview(data) {
   sum.innerHTML =
     `共 <b>${s.total || 0}</b> 题 · 待确认 <b>${s.pending || 0}</b> · 已填入 <b>${s.filled || 0}</b> · ` +
     `已提交 <b>${s.submitted || 0}</b> · 已丢弃 <b>${s.discarded || 0}</b>` +
-    (kept.length
-      ? `<br><span class="muted">保持打开的作业页 ${kept.length} 个（可点「提交全部」）</span>`
-      : '<br><span class="muted">当前没有保持打开的作业页 —— 若已手动关闭，答案需你在页面上手工重填</span>');
+    `<br><span class="muted">作业页已打开 ${kept.filter(record=>!record.closed&&record.submittable).length} 个；页面关闭后可重新打开，恢复已保存的答案。</span>`;
 
   const items = data.items || [];
   bodyEl.innerHTML = '';
@@ -1452,31 +1453,35 @@ function renderReview(data) {
     const k = keptMap.get(taskKey);
     head.appendChild(el('span', 'gname', `${list[0].course || ''} · ${list[0].secNo || ''} ${list[0].sectionName || ''}`));
     head.appendChild(el('span', 'gmeta', `${list.length} 题`));
-    if (k) {
-      head.appendChild(el('span', 'chip', '作业页已打开'));
-      const btn = el('button', 'primary', '✔ 提交这一组');
+    {
+      const opened=!!k&&!k.closed&&k.submittable;
+      head.appendChild(el('span',`chip ${opened?'':'skip'}`,opened?'作业页已打开':'作业页已关闭，可恢复'));
+      const open=el('button','ghost',opened?'打开并核对':'重新打开并恢复');
+      open.addEventListener('click',async()=>{
+        open.disabled=true;open.textContent='正在恢复…';
+        const response=await fetch('/api/review/open',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({taskKey})})
+          .then(result=>result.json()).catch(error=>({ok:false,error:error.message}));
+        const result=response.result;
+        const message=response.ok?
+          result.alreadySubmitted?'平台显示该作业已提交，可刷新确认状态':`作业页已打开，恢复 ${result.restored||0} 题${result.ready?'，请核对后提交':`；第 ${(result.missing||[]).join('、')} 题仍需填写`}`:
+          `恢复失败：${response.error}`;
+        reviewFeedback.set(taskKey,message);
+        appendLog({t:Date.now(),level:response.ok?'ok':'error',message});
+        await loadReview();
+      });
+      head.appendChild(open);
+      const btn = el('button', 'primary', opened?'✔ 提交这一组':'恢复后提交这一组');
       btn.addEventListener('click', async () => {
+        btn.disabled=true;
         btn.classList.add('busy');
         btn.textContent = '提交中…';
-        const r = await fetch('/api/review/submit', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ taskKey }),
-        }).then((x) => x.json()).catch((e) => ({ ok: false, error: e.message }));
-        if (r.ok) {
-          appendLog({ t: Date.now(), level: 'ok', message: `已提交 ${list[0].secNo} 的答案` });
-          await loadReview();
-        } else {
-          appendLog({ t: Date.now(), level: 'error', message: `提交失败：${r.error}` });
-          btn.classList.remove('busy');
-          btn.textContent = '✔ 提交这一组';
-        }
+        try{await submitReviewedAnswers({taskKey});}
+        finally{btn.disabled=false;btn.classList.remove('busy');btn.textContent=opened?'✔ 提交这一组':'恢复后提交这一组';}
       });
       head.appendChild(btn);
-    } else {
-      head.appendChild(el('span', 'chip skip', '作业页已关闭'));
     }
     g.appendChild(head);
+    if(reviewFeedback.has(taskKey)){const feedback=el('p','review-feedback',reviewFeedback.get(taskKey));feedback.setAttribute('role','status');g.appendChild(feedback);}
 
     const bodyInner = el('div', 'rgbody');
     for (const it of list) bodyInner.appendChild(renderQCard(it, taskKey));
@@ -1607,11 +1612,12 @@ function renderQCard(it, taskKey) {
   });
   const discard = el('button', 'ghost', '丢弃这题');
   discard.addEventListener('click', async () => {
-    await fetch('/api/review/discard', {
+    const response=await fetch('/api/review/discard', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ id: it.id }),
-    }).catch(() => {});
+    }).then(result=>result.json()).catch(error=>({ok:false,error:error.message}));
+    if(!response.ok)reviewFeedback.set(taskKey,response.error||'丢弃失败，请稍后重试');
     await loadReview();
   });
   edit.appendChild(inp);

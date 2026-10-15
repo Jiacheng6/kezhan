@@ -29,6 +29,7 @@ try {
   context = await chromium.launchPersistentContext(path.join(data, 'empty-profile'), {
     executablePath: findEdge(), headless: false, args: ['--no-first-run', '--disable-sync'],
   });
+  await context.addInitScript(()=>localStorage.setItem('xxt-library-startup','skip'));
   // 题目页的 URL 形状与真实作业一致，内容由 route 完全离线提供。
   await context.route('**/mooc-ans/work/doHomeWorkNew', (route) => route.fulfill({ contentType: 'text/html', body: `
     <div class="TiMu"><h3>【简答题】测试正文同步</h3><div id="container"><iframe id="ueditor_0"></iframe></div><textarea name="answerEditor0" hidden></textarea></div>
@@ -108,12 +109,13 @@ try {
   assert.equal(reviewStats().pending, 1);
   await ui.locator('#reviewBody').getByText('已人工填入', { exact: true }).waitFor();
   await ui.screenshot({ path: path.join(data, 'essay-review.png'), fullPage: true });
-  // 关闭页面后保存失败，不能只更新队列并谎称已填入。
+  // 页面关闭仍保存用户草稿，但必须明确告知尚未填入页面。
   await work.close();
   const failed = await fetch(new URL('/api/review/edit', service.url), { method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ id: 'fixture#q1', textAnswer: '不应保存的正文' }) });
+    body: JSON.stringify({ id: 'fixture#q1', textAnswer: '关闭页面后仍保留的新草稿' }) });
   assert.equal((await failed.json()).ok, false);
-  assert.equal(listReviewItems()[0].textAnswer, edited);
+  assert.equal(listReviewItems()[0].textAnswer, '关闭页面后仍保留的新草稿');
+  assert.equal(listReviewItems()[0].filled, null);
   assert.equal(submitCalls, 0);
   console.log('✓ 隐藏窗口简答填写、UEditor 同步、相邻题隔离、已有答案保护、三种备用编辑器、回读失败拦截通过');
   console.log('✓ 待审队列正文编辑 → 本地 API → 实际编辑器 → 状态保存完整链路通过，未触发提交');

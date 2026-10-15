@@ -287,7 +287,7 @@ export function clearReviewByTask(taskKey, status = 'submitted') {
   return mutateState((s) => {
     let n = 0;
     for (const it of s.reviewQueue || []) {
-      if (it.taskKey === taskKey && it.status !== status) {
+      if (it.taskKey === taskKey && it.status !== status && !['submitted','discarded'].includes(it.status)) {
         it.status = status;
         it.updatedAt = new Date().toISOString();
         n += 1;
@@ -305,6 +305,9 @@ export function updateReviewAnswer(id, answer) {
     if (Array.isArray(answer)) {
       if (it.qtype === 'essay') throw new Error('简答题请填写正文');
       it.letters = answer;
+      it.autoFilled = false;
+      it.filled = null;
+      it.status = 'pending-review';
     } else {
       if (it.qtype !== 'essay' || typeof answer?.textAnswer !== 'string' || !answer.textAnswer.trim() || answer.textAnswer.length > 10000) throw new Error('简答正文无效');
       it.textAnswer = answer.textAnswer;

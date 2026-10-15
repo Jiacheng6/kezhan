@@ -346,6 +346,7 @@ export function buildArchive({ question, imagePath, aiAnswer, parsed, validation
   return {
     at: new Date().toISOString(),
     questionIndex: question.index,
+    questionId: question.questionId || '',
     qtype: question.qtype,
     qtypeRaw: question.qtypeRaw,
     options: (question.options || []).map((o) => ({ letter: o.letter, text: o.text })),

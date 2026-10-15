@@ -15,8 +15,9 @@ import { listCourses, reconAll, saveReconReport, writeTaskReport } from './chaox
 import { autoConfigurePersonId } from './chaoxing/identity.mjs';
 import { buildChecklist, loadSelection, invalidateReconCache } from './chaoxing/checklist.mjs';
 import { batchRunner, buildRunTasks } from './batch.mjs';
-import { loadState, resetState, statePath, setTaskStatus, listReviewItems, clearReviewByTask, healStaleRunning, reconcile, mutateState } from './state.mjs';
-import { listKeptPages, submitKeptWork, registerKeptPage, editKeptEssayReviewAnswer } from './chaoxing/quizrun.mjs';
+import { loadState, resetState, statePath, setTaskStatus, listReviewItems, markReviewItem, healStaleRunning, reconcile, mutateState } from './state.mjs';
+import { listKeptPages, registerKeptPage, editKeptEssayReviewAnswer } from './chaoxing/quizrun.mjs';
+import { reopenReviewWork, submitPendingReviews, withReviewLock } from './chaoxing/review-recovery.mjs';
 import { updateReviewAnswer } from './state.mjs';
 import { startServer } from './server.mjs';
 import { startWindowControl, setBrowserVisible, isBrowserVisible, stopWindowControl } from './browser/window-control.mjs';
@@ -186,24 +187,18 @@ async function boot() {
     } else {
       log('启动清场：没有需要关闭的残留页面', 'dim');
     }
-    if (keptUrls.length) log(`    （保留了 ${keptUrls.length} 个等你手动作答的页面）`, 'dim');
+    if (keptUrls.length) {
+      const opened=context.pages().filter(page=>!page.isClosed()&&keptUrls.some(url=>isSamePageUrl(url,page.url()))).length;
+      log(`    （保留 ${keptUrls.length} 条待审定位记录，当前打开 ${opened} 页，其余可恢复）`, 'dim');
+    }
 
     /*
-     * 顺手清掉"记录还在、页面其实已经没了"的保留项。
-     * 不清的话日志会一直说"保留了 N 个"，而用户根本找不到那些页面（截图实测踩到）。
+     * 关闭页面后仍保留定位与草稿，待用户恢复；不能把恢复入口一起删掉。
      */
     try {
       const live = context.pages().filter((p) => !p.isClosed()).map((p) => p.url());
-      let removed = 0;
-      mutateState((s) => {
-        for (const [k, v] of Object.entries(s.keptPages || {})) {
-          if (v?.url && !live.some((u) => isSamePageUrl(u, v.url))) {
-            delete s.keptPages[k];
-            removed += 1;
-          }
-        }
-      });
-      if (removed) log(`    已清理 ${removed} 条失效的「保留页面」记录（页面已不存在）`, 'dim');
+      const closed=Object.values(loadState().keptPages||{}).filter(record=>record.url&&!live.some(url=>isSamePageUrl(url,record.url))).length;
+      if (closed) log(`    ${closed} 个待审作业页已关闭，定位和答案已保留，可在待审答案中恢复`, 'dim');
     } catch {
       /* 清理失败不影响启动 */
     }
@@ -433,11 +428,18 @@ function buildHooks() {
       if (!item) return null;
       if (item.qtype !== 'essay') {
         if (Object.hasOwn(body, 'textAnswer')) throw new Error('此题不是简答题');
-        return updateReviewAnswer(body.id, body.letters || []);
+        return withReviewLock(item.taskKey,()=>updateReviewAnswer(body.id, body.letters || []));
       }
       if (batchRunner.running) throw new Error('请先停止当前任务，再修改简答草稿');
       await readoptKeptPages();
-      return editKeptEssayReviewAnswer(body.id, body.textAnswer);
+      return withReviewLock(item.taskKey,()=>editKeptEssayReviewAnswer(body.id, body.textAnswer,{
+        ensurePage:key=>reopenReviewWork(ctx(),key,{personId:PERSON_ID,restoreAnswers:false}),
+      }));
+    },
+    discardReviewItem: async ({id}={}) => {
+      const item=listReviewItems().find(item=>item.id===id);
+      if(!item)return null;
+      return withReviewLock(item.taskKey,()=>markReviewItem(id,{status:'discarded'}));
     },
     // —— 浏览器 / 登录 ——
     refreshLogin: async () => refreshLogin(),
@@ -784,6 +786,17 @@ function buildHooks() {
       return listKeptPages();
     },
 
+    openReview: async ({taskKey}={}) => {
+      if(batchRunner.running||recon.running)throw new Error('请先停止当前任务，再恢复待审作业');
+      return withReviewLock(taskKey,async()=>{
+        await readoptKeptPages();
+        const {page,...result}=await reopenReviewWork(ctx(),taskKey,{personId:PERSON_ID});
+        await bringToFront(page);
+        if(process.env.XXT_DESKTOP==='1'){await setBrowserVisible(true);patchStatus({browserVisible:true});}
+        return result;
+      });
+    },
+
     /**
      * 提交待审答案。
      *
@@ -792,34 +805,13 @@ function buildHooks() {
      *   { all: true } 提交所有"保持打开"的作业页
      */
     submitReviews: async (opts = {}) => {
+      if(batchRunner.running||recon.running)throw new Error('请先停止当前任务，再提交待审作业');
       // 先做一次"重新认领"，确保重启后仍能提交（保持打开的页面还在 Edge 里）
       await readoptKeptPages();
-      const kept = listKeptPages().filter((k) => !k.closed);
-      if (!kept.length) {
-        return { submitted: 0, failed: 0, note: '没有保持打开的作业页，无法提交' };
-      }
-      const targets = opts.all ? kept : kept.filter((k) => k.key === opts.taskKey);
-      if (!targets.length) return { submitted: 0, failed: 0, note: '找不到对应的作业页' };
-
-      let submitted = 0;
-      let failed = 0;
-      const details = [];
-      for (const t of targets) {
-        log(`提交作业页：${t.info?.secNo || ''} ${t.info?.name || t.key}`, 'info');
-        const r = await submitKeptWork(t.key);
-        if (r.ok) {
-          submitted += 1;
-          clearReviewByTask(t.key, 'submitted');
-          setTaskStatus(t.key, { status: 'done', note: '人工确认后已提交', submittedAt: new Date().toISOString() });
-          log(`  ✓ 已提交`, 'ok');
-        } else {
-          failed += 1;
-          log(`  ✗ 提交失败：${r.error}`, 'error');
-        }
-        details.push({ key: t.key, ok: r.ok, error: r.error || null });
-      }
+      const result=await submitPendingReviews(ctx(),opts,{personId:PERSON_ID});
+      for(const item of result.details||[])log(item.ok?'待审作业已确认提交':`待审提交未完成：${item.error}`,item.ok?'ok':'error');
       patchStatus({ reviewCount: listReviewItems().length });
-      return { submitted, failed, details };
+      return result;
     },
 
     info: async () => ({

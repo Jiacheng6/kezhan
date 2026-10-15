@@ -244,12 +244,20 @@ export async function startServer(hooks = {}) {
     if (pathname === '/api/review/discard' && req.method === 'POST') {
       try {
         const body = await readJson(req);
-        const it = markReviewItem(body.id, { status: 'discarded' });
+        const it = hooks.discardReviewItem?await hooks.discardReviewItem(body):markReviewItem(body.id, { status: 'discarded' });
         if (!it) return json(res, 404, { ok: false, error: '题目不存在' });
         return json(res, 200, { ok: true });
       } catch (err) {
         return json(res, 400, { ok: false, error: err.message });
       }
+    }
+
+    if (pathname === '/api/review/open' && req.method === 'POST') {
+      try{
+        const body=await readJson(req);
+        if(typeof hooks.openReview!=='function')throw new Error('作业恢复功能未就绪');
+        return json(res,200,{ok:true,result:await hooks.openReview(body)});
+      }catch(error){return json(res,400,{ok:false,error:error.message});}
     }
 
     if (pathname === '/api/review/submit' && req.method === 'POST') {
@@ -259,7 +267,8 @@ export async function startServer(hooks = {}) {
           return json(res, 500, { ok: false, error: '提交功能未就绪' });
         }
         const result = await hooks.submitReviews(body);
-        return json(res, 200, { ok: true, result });
+        const ok=result.submitted>0&&!result.failed;
+        return json(res, 200, { ok, result, error:ok?null:result.note||(result.details||[]).filter(item=>!item.ok).map(item=>item.error).join('；')||'未确认任何作业提交成功' });
       } catch (err) {
         return json(res, 400, { ok: false, error: err.message });
       }

@@ -122,8 +122,11 @@ export async function extractQuestions(workFrame) {
         placeholder: e.getAttribute('placeholder') || '',
       }));
 
+      const editor=q.querySelector('[name^="answerEditor"], [id^="answerEditor"]');
+      const editorId=(editor?.getAttribute('name')||editor?.id||'').replace(/^answerEditor[_-]?/,'');
       return {
         index: i + 1,
+        questionId: q.querySelector('[qid]')?.getAttribute('qid') || editorId || q.getAttribute('data') || '',
         qtypeRaw: typeRaw,
         qtype: (() => {
           const map = [

@@ -39,6 +39,7 @@ import { cardsUrl, openSectionCard, waitForAttachments } from './section.mjs';
 import { readPointStatusFromPage } from './attach.mjs';
 import { skipDecision, describeSkip } from './skip.mjs';
 import { newTaskPage, releasePage } from '../browser/pages.mjs';
+import { isReviewLocked } from './review-lock.mjs';
 
 export { cardsUrl };
 
@@ -324,6 +325,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
         secNo: task.secNo,
         sectionName: task.sectionName,
         questionIndex: q.index,
+        questionId: q.questionId || '',
         domIndex: q.domIndex,
         qtype: q.qtype,
         qtypeRaw: q.qtypeRaw,
@@ -367,12 +369,19 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
 
     if (subm === 'auto' && allHigh && meta.submitBtn) {
       log('    全部题目均为高可靠 → 自动提交', 'info');
-      await submitWork(workFrame);
-      result.submitted = true;
-      result.phase = 'submitted';
-      await page.close().catch(() => {});
-      releasePage(page);
-    } else {
+      const submission = await submitWork(workFrame);
+      if(submission.ok){
+        result.submitted = true;
+        result.score = submission.score;
+        result.phase = 'submitted';
+        await page.close().catch(() => {});
+        releasePage(page);
+      }else{
+        result.submissionPending=!!submission.pendingConfirmation;
+        log(`    未确认提交成功，转入待审：${submission.error}`, 'warn');
+      }
+    }
+    if(!result.submitted){
       /*
        * 需要人工确认：**保持作业页打开**，让人能核对答案后点提交。
        *
@@ -384,6 +393,10 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
       result.workPage = page;
       result.workFrameUrl = workFrame.url();
       registerKeptPage(task.key, page, {
+        task: {courseId:task.courseId,clazzId:task.clazzId,knowledgeId:task.knowledgeId,name:task.name,type:task.type,jobid:task.jobid,cardNum:result.cardNum},
+        workIdentity: workIdentity(workFrame.url()),
+        personId: String(personId),
+        submissionPending: !!result.submissionPending,
         course: task.courseName || task.courseId,
         secNo: task.secNo,
         name: task.name,
@@ -437,7 +450,7 @@ const keptWorkPages = new Map();
  * 为什么要有上限：整夜无人值守跑课时，视频弹窗题一旦判不准就会保留页面等人，
  * 几十个挂着的标签页（每个都含 video 元素）会吃掉几个 GB 内存，
  * 反而把整批跑挂。所以只保留最近 N 个，更早的关掉但**记录留着**
- * （任务点状态仍是 manual，人可在「待审队列」看到并手动重跑）。
+ * （任务点状态仍是 manual，可在「待审答案」重新打开并恢复草稿）。
  */
 const MAX_KEPT_PAGES = 6;
 
@@ -447,7 +460,7 @@ export function registerKeptPage(key, page, info = {}) {
   // 超出上限 → 关掉最旧的（新注册的这个一定是"最近"的，不动）
   if (keptWorkPages.size > MAX_KEPT_PAGES) {
     const sorted = [...keptWorkPages.entries()]
-      .filter(([k]) => k !== key)
+      .filter(([k]) => k !== key && !isReviewLocked(k))
       .sort((a, b) => a[1].savedAt - b[1].savedAt);
     while (keptWorkPages.size > MAX_KEPT_PAGES && sorted.length) {
       const [oldKey, old] = sorted.shift();
@@ -466,11 +479,18 @@ export function registerKeptPage(key, page, info = {}) {
   try {
     mutateState((s) => {
       s.keptPages = s.keptPages || {};
-      s.keptPages[key] = { savedAt: Date.now(), info, url: page.url().slice(0, 200) };
+      s.keptPages[key] = { savedAt: Date.now(), info, url: page.url() };
     });
   } catch {
     /* 落盘失败不影响主流程 */
   }
+}
+
+export function workIdentity(url) {
+  try{
+    const params=[...new URL(url).searchParams];
+    return Object.fromEntries(params.filter(([key])=>/^(?:workid|workanswerid)$/i.test(key)).map(([key,value])=>[key.toLowerCase(),value]));
+  }catch{return {};}
 }
 
 export function getKeptPage(key) {
@@ -488,7 +508,7 @@ export function getKeptPage(key) {
  *
  * 合并两个来源：
  *   1) 本进程内存里的（能真正提交，因为持有 Playwright page 句柄）
- *   2) state.json 里记录的（别的进程注册的，只用于"告知用户有这么个页面"）
+ *   2) state.json 与待审队列中的定位记录（没有句柄时允许重新打开并恢复）
  */
 export function listKeptPages() {
   const out = [];
@@ -514,11 +534,16 @@ export function listKeptPages() {
         submittable: false,
         url: v.url || '',
         info: v.info,
-        note: '由其他进程（如命令行测试）注册，本进程无法直接提交',
+        note: '页面尚未连接，可重新打开并恢复已保存答案',
       });
     }
   } catch {
     /* 忽略 */
+  }
+  // Old startup cleanup could remove the page record. The answer queue still
+  // contains the course coordinates needed to reconstruct its parent card.
+  for(const item of listReviewItems())if(!out.some(record=>record.key===item.taskKey)){
+    out.push({key:item.taskKey,closed:true,submittable:false,url:'',info:{course:item.course,secNo:item.secNo,name:item.sectionName}});
   }
   return out;
 }
@@ -549,14 +574,20 @@ export async function fillKeptEssayAnswer(key, domIndex, text) {
   return fillEssayAnswer(wf, domIndex, text, { overwrite: true });
 }
 
-export async function editKeptEssayReviewAnswer(id, value) {
+export async function editKeptEssayReviewAnswer(id, value, { ensurePage } = {}) {
   const item = listReviewItems().find((it) => it.id === id);
   if (!item) return null;
   if (item.qtype !== 'essay' || typeof value !== 'string') throw new Error('请填写简答正文');
   const text = normalizeEssayText(value);
   if (!text || text.length > MAX_ESSAY_LENGTH) throw new Error('简答正文须为 1～10000 字符');
-  const filled = await fillKeptEssayAnswer(item.taskKey, item.domIndex, text);
-  if (!filled.ok) throw new Error(filled.error);
+  updateReviewAnswer(id, { textAnswer: text, filled: null });
+  let filled;
+  try{
+    if(ensurePage)await ensurePage(item.taskKey);
+    const current=listReviewItems().find(it=>it.id===id);
+    filled = await fillKeptEssayAnswer(item.taskKey, current.domIndex, text);
+    if (!filled.ok) throw new Error(filled.error);
+  }catch(error){throw new Error(`草稿已保存，但未能填入作业页：${error.message}`);}
   return updateReviewAnswer(id, { textAnswer: text, filled });
 }
 
@@ -568,6 +599,10 @@ export async function submitKeptWork(key) {
   const wf = findWorkFrame(page);
   if (!wf) return { ok: false, error: '找不到作业 frame' };
   const r = await submitWork(wf);
+  if(r.pendingConfirmation){
+    e.info={...e.info,submissionPending:true};
+    mutateState(state=>{if(state.keptPages?.[key])state.keptPages[key].info=e.info;});
+  }
   if (r.ok) {
     await page.close().catch(() => {});
       releasePage(page);
@@ -636,7 +671,9 @@ export async function submitWork(workFrame) {
       .evaluate(() => {
         const body = document.body.innerText || '';
         const score = body.match(/本次成绩\s*([\d.]+)\s*分/) || body.match(/得分[:：]?\s*([\d.]+)/);
-        const done = /已完成|提交成功|已提交|测评结果|我的答案/.test(body);
+        const button=document.querySelector('.btnSubmit');
+        const submitVisible=!!button&&button.getBoundingClientRect().width>0;
+        const done = !submitVisible && /提交成功|已提交|测评结果|本次成绩\s*[\d.]+\s*分/.test(body);
         return { done, score: score ? score[1] || score[0] : null };
       })
       .catch(() => ({ done: false, score: null }));
@@ -659,7 +696,7 @@ export async function submitWork(workFrame) {
     }
   }
 
-  if (!result) return { ok: true, note: '已点确认提交，但未捕获到成功提示（需人工核对）' };
+  if (!result) return { ok: false, pendingConfirmation:true, error: '已发送提交请求，但尚未确认平台结果，请在页面核对；答案与待审记录已保留，暂不重复提交' };
   return { ok: true, ...result };
 }
 
