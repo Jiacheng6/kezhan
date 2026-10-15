@@ -34,7 +34,7 @@ const ok = (name, cond, extra = '') => {
 /* ---------- 1) 逐模块 import ---------- */
 function walkMjs(dir, out = []) {
   for (const name of readdirSync(dir)) {
-    if (name.startsWith('.') || name.startsWith('_')) continue;
+    if (name.startsWith('.') || name.startsWith('_') || name === 'node_modules') continue;
     const full = path.join(dir, name);
     if (statSync(full).isDirectory()) walkMjs(full, out);
     else if (name.endsWith('.mjs')) out.push(full);

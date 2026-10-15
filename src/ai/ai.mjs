@@ -28,6 +28,8 @@ import path from 'node:path';
 import { loadSettings } from '../config.mjs';
 import { throwIfStopped, interruptibleSleep, waitForRead } from '../control.mjs';
 import { log } from '../logbus.mjs';
+import { providerForUrl } from './providers.mjs';
+import { askWebImage, webChatState } from './web-chat.mjs';
 
 const READY_IMG_HOST = 'workspace-zb-cdn.qianwen.com';
 
@@ -39,6 +41,10 @@ const SEND_BTN = 'button[aria-label="发送消息"]';
  * 检查千问是否已登录（未登录时会出现「登录」按钮）。
  */
 export async function checkLogin(page) {
+  if(!page)return {loggedIn:false};
+  const provider=providerForUrl(page.url?.());
+  if(typeof page.url==='function'&&!provider)return {loggedIn:false,error:'非官方 AI 网页'};
+  if(provider&&provider.id!=='qianwen')return webChatState(page,provider);
   return page.evaluate(() => {
     const btn = Array.from(document.querySelectorAll('button')).find((x) =>
       /^(登录|立即登录)$/.test((x.textContent || '').trim()),
@@ -457,6 +463,11 @@ export async function readVerificationText(page) {
  * @returns {Promise<{ok:boolean, answer?:string, raw?:string, error?:string, errorCode?:string, waitedMs?:number}>}
  */
 export async function askImage({ page, imagePath, prompt = DEFAULT_PROMPT, freshChat = true, shouldStop }) {
+  throwIfStopped(shouldStop);
+  if(!page)return {ok:false,errorCode:'not-logged-in',error:'没有可用的 AI 网页，请先打开所选平台并登录'};
+  const provider=providerForUrl(page.url?.());
+  if(typeof page.url==='function'&&!provider)return {ok:false,errorCode:'wrong-ai-page',error:'答题网页不属于所选官方 AI 平台，已停止发送'};
+  if(provider&&provider.id!=='qianwen')return askWebImage({page,imagePath,prompt,freshChat,shouldStop},provider);
   const started = Date.now();
   const cfg = loadSettings().ai || {};
   const retries = Math.max(0, Math.min(4, Number(cfg.askRetries ?? 2)));

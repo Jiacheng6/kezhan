@@ -127,6 +127,7 @@ async function startWorker() {
       clearTimeout(startupTimer);
       log(`服务就绪 ${serviceUrl}`);
       await mainWindow.loadURL(serviceUrl);
+      void updates.checkAtStartup();
       if (tray) tray.setToolTip(title + '：服务运行中');
       if (smokeTest) {
         setTimeout(async () => {
@@ -173,11 +174,16 @@ else {
     Menu.setApplicationMenu(null);
     const icon = path.join(__dirname, 'assets', 'icon.png');
     mainWindow = new BrowserWindow({ title, width: 1240, height: 840, minWidth: 960, minHeight: 660,
-      backgroundColor: '#f4f7fc', icon, show: !testMode,
+      backgroundColor: '#f7f6f1', icon, show: !testMode,
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false,
         contextIsolation: true, sandbox: true, backgroundThrottling: false },
     });
     mainWindow.on('close', (event) => { if (!quitting) { event.preventDefault(); requestClose(); } });
+    const notifyVisibility = () => {
+      if (!mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:visibility', mainWindow.isVisible() && !mainWindow.isMinimized());
+    };
+    for (const event of ['show', 'hide', 'minimize', 'restore']) mainWindow.on(event, notifyVisibility);
+    mainWindow.webContents.on('did-finish-load', notifyVisibility);
     mainWindow.webContents.on('will-navigate', (event, url) => { if (!safePage(url)) event.preventDefault(); });
     mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     mainWindow.webContents.on('render-process-gone', () => showError('界面发生异常，请从托盘重新打开或重启服务。'));
@@ -221,10 +227,12 @@ else {
     handle('desktop:restart', restartService);
     handle('desktop:data-folder', () => shell.openPath(dataDir));
     handle('desktop:info', () => ({ version: app.getVersion(), dataDir, error, serviceUrl }));
+    handle('desktop:visibility', () => mainWindow.isVisible() && !mainWindow.isMinimized());
     handle('desktop:update-state', () => updates.snapshot());
     handle('desktop:update-check', () => updates.check());
     handle('desktop:update-download', () => updates.download());
     handle('desktop:update-install', () => updates.install());
+    handle('desktop:update-notified', () => updates.acknowledgeNotification());
     blocker = powerSaveBlocker.start('prevent-app-suspension');
     await mainWindow.loadURL(loadingUrl);
     await startWorker();

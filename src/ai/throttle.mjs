@@ -1,5 +1,5 @@
 /**
- * 千问提问节流器（防触发风控）。
+ * AI提问节流器（防触发风控）。
  *
  * 背景：实测一小时内连续几十次自动化提问会触发阿里 baxia 风控，
  * 要求人工滑块验证；此时页面永远停在"接收中"，整条答题链路就断了。
@@ -13,9 +13,12 @@ import { loadSettings } from '../config.mjs';
 import { log } from '../logbus.mjs';
 import { interruptibleSleep, throwIfStopped } from '../control.mjs';
 
-let lastAskAt = 0;
-let cooldownUntil = 0;
-let consecutiveFail = 0;
+const providers = new Map();
+function state() {
+  const id=loadSettings().ai?.provider||'qianwen';
+  if(!providers.has(id))providers.set(id,{lastAskAt:0,cooldownUntil:0,consecutiveFail:0});
+  return providers.get(id);
+}
 
 function cfg() {
   const s = loadSettings();
@@ -34,6 +37,7 @@ function cfg() {
 export async function waitTurn({ onWait, shouldStop } = {}) {
   throwIfStopped(shouldStop);
   const c = cfg();
+  const {lastAskAt,cooldownUntil}=state();
   const now = Date.now();
 
   // 冷却期（被限流后）
@@ -48,7 +52,7 @@ export async function waitTurn({ onWait, shouldStop } = {}) {
   const jitter = Math.floor(Math.random() * c.jitterMs);
   const need = Math.max(0, c.minIntervalMs + jitter - since);
   if (need > 0) {
-    log(`    节流：等待 ${Math.round(need / 1000)} 秒后提问（保护千问账号）`, 'info');
+    log(`    节流：等待 ${Math.round(need / 1000)} 秒后提问（保护AI账号）`, 'info');
     if (onWait) onWait({ reason: 'interval', waitMs: need });
     await interruptibleSleep(need, shouldStop);
   }
@@ -57,12 +61,12 @@ export async function waitTurn({ onWait, shouldStop } = {}) {
 
 /** 记录一次提问发生 */
 export function markAsked() {
-  lastAskAt = Date.now();
+  state().lastAskAt = Date.now();
 }
 
 /** 报告一次成功（清零连续失败） */
 export function reportSuccess() {
-  consecutiveFail = 0;
+  state().consecutiveFail = 0;
 }
 
 /**
@@ -71,28 +75,30 @@ export function reportSuccess() {
  */
 export function reportFailure({ errorCode, error } = {}) {
   const c = cfg();
+  const current=state();
 
-  if (errorCode === 'verification-required') {
+  if (errorCode === 'verification-required' || errorCode === 'rate-limited') {
     // 风控验证必须人工处理，直接要求暂停
-    cooldownUntil = Date.now() + c.stuckCooldownMs;
+    current.cooldownUntil = Date.now() + c.stuckCooldownMs;
     return { shouldPause: true, reason: 'needs-human-verification' };
   }
 
   if (errorCode === 'stuck-receiving' || errorCode === 'empty-answer') {
-    cooldownUntil = Date.now() + c.stuckCooldownMs;
-    consecutiveFail += 1;
-    log(`    千问未正常返回（${errorCode}）→ 冷却 ${Math.round(c.stuckCooldownMs / 60000)} 分钟`, 'warn');
+    current.cooldownUntil = Date.now() + c.stuckCooldownMs;
+    current.consecutiveFail += 1;
+    log(`    AI未正常返回（${errorCode}）→ 冷却 ${Math.round(c.stuckCooldownMs / 60000)} 分钟`, 'warn');
     return {
-      shouldPause: consecutiveFail >= c.consecutiveFailLimit,
-      reason: consecutiveFail >= c.consecutiveFailLimit ? '千问连续未返回，疑似被限流' : undefined,
+      shouldPause: current.consecutiveFail >= c.consecutiveFailLimit,
+      reason: current.consecutiveFail >= c.consecutiveFailLimit ? 'AI连续未返回，疑似被限流' : undefined,
     };
   }
 
-  consecutiveFail += 1;
+  current.consecutiveFail += 1;
   return { shouldPause: false };
 }
 
 export function throttleState() {
+  const {lastAskAt,cooldownUntil,consecutiveFail}=state();
   return {
     lastAskAt,
     cooldownUntil,
@@ -102,9 +108,7 @@ export function throttleState() {
 }
 
 export function resetThrottle() {
-  lastAskAt = 0;
-  cooldownUntil = 0;
-  consecutiveFail = 0;
+  providers.clear();
 }
 
 function sleep(ms) {

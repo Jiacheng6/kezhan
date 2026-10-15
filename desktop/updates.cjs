@@ -2,6 +2,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const RELEASE_REPOSITORY = 'Jiacheng6/xuexitong-assistant-releases';
+function releaseNotesText(notes) {
+  const raw = Array.isArray(notes) ? notes.map(item => [item.version, item.note].filter(Boolean).join('\n')).join('\n\n') : typeof notes === 'string' ? notes : '';
+  return raw.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+    .replace(/<br\s*\/?\s*>|<\/(?:p|li|h[1-6]|div|ul|ol)>/gi, '\n').replace(/<li\b[^>]*>/gi, '• ')
+    .replace(/<[^>]*>/g, '').replace(/&(amp|lt|gt|quot|apos|nbsp);/g, (_, key) => ({ amp:'&',lt:'<',gt:'>',quot:'"',apos:"'",nbsp:' ' })[key])
+    .replace(/&#(x[0-9a-f]+|\d+);/gi, (_, code) => { const n=code[0].toLowerCase()==='x'?parseInt(code.slice(1),16):Number(code);return n>0&&n<=0x10ffff?String.fromCodePoint(n):''; })
+    .replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, 16000) || '此版本未提供更新说明。';
+}
 function readableError(error) {
   const text = String(error?.message || error);
   if (/404|ERR_UPDATER_LATEST_VERSION_NOT_FOUND|No published versions/i.test(text)) return '更新下载服务尚未发布新版，请稍后再检查。';
@@ -27,14 +35,18 @@ function backupUserData(dataDir, version) {
 }
 
 class UpdateController {
-  constructor(updater, { version, enabled = true, installed = true, onStatus = () => {}, prepareInstall, recoverInstall = async () => {} }) {
+  constructor(updater, { version, enabled = true, startupEnabled = true, installed = true, onStatus = () => {}, prepareInstall, recoverInstall = async () => {} }) {
     this.updater = updater;
     this.prepareInstall = prepareInstall;
     this.recoverInstall = recoverInstall;
     this.onStatus = onStatus;
     this.locked = false;
     this.downloadReady = false;
+    this.startupEnabled = startupEnabled;
+    this.startupChecked = false;
+    this.checkPromise = null;
     this.state = { phase: 'idle', currentVersion: version, nextVersion: null, percent: 0, enabled, installed,
+      releaseNotes: '', notificationPending: false,
       message: enabled ? '点击检查更新。登录状态、课程清单和进度会继续保留。' : '开发模式不连接正式更新服务。' };
     updater.autoDownload = false;
     updater.autoInstallOnAppQuit = false;
@@ -45,9 +57,9 @@ class UpdateController {
     updater.on('checking-for-update', () => this.patch({ phase: 'checking', message: '正在检查新版…' }));
     updater.on('update-available', (info) => {
       this.downloadReady = false;
-      this.patch({ phase: 'available', nextVersion: info.version, percent: 0, message: `发现新版 ${info.version}，点击下载后仍可继续使用软件。` });
+      this.patch({ phase: 'available', nextVersion: info.version, releaseNotes: releaseNotesText(info.releaseNotes), percent: 0, message: `发现新版 ${info.version}，点击下载后仍可继续使用软件。` });
     });
-    updater.on('update-not-available', () => this.patch({ phase: 'current', nextVersion: null, message: '当前已是最新版。' }));
+    updater.on('update-not-available', () => this.patch({ phase: 'current', nextVersion: null, releaseNotes: '', notificationPending: false, message: '当前已是最新版。' }));
     updater.on('download-progress', (info) => this.patch({ phase: 'downloading', percent: Math.max(0, Math.min(100, info.percent || 0)), message: '正在下载新版，任务可以继续运行…' }));
     updater.on('update-downloaded', (info) => {
       this.downloadReady = true;
@@ -58,9 +70,22 @@ class UpdateController {
   }
   snapshot() { return { ...this.state, downloadReady: this.downloadReady }; }
   patch(patch) { Object.assign(this.state, patch); this.onStatus(this.snapshot()); }
+  async checkAtStartup() {
+    if (this.startupChecked || !this.startupEnabled || !this.state.enabled) return this.snapshot();
+    this.startupChecked = true;
+    await this.check();
+    if (this.state.phase === 'available') this.patch({ notificationPending: true });
+    return this.snapshot();
+  }
+  acknowledgeNotification() { this.patch({ notificationPending: false }); return this.snapshot(); }
   async check() {
+    if (this.checkPromise) return this.checkPromise;
     if (!this.state.enabled || this.locked || this.downloadReady) return this.snapshot();
     this.locked = true;
+    this.checkPromise = this.performCheck();
+    try { return await this.checkPromise; } finally { this.checkPromise = null; }
+  }
+  async performCheck() {
     try {
       const result = await this.updater.checkForUpdates();
       if (!result) this.patch({ phase: 'error', message: '此运行环境暂不支持联网更新。' });
@@ -116,6 +141,7 @@ function createUpdates({ app, dataDir, testMode, onStatus, prepareInstall, recov
   }
   const installed = fs.existsSync(path.join(path.dirname(app.getPath('exe')), 'Uninstall 学习通助手.exe'));
   return new UpdateController(updater, { version: app.getVersion(), enabled: app.isPackaged || !!testFeed, installed,
+    startupEnabled: !testMode || !!testFeed,
     onStatus, prepareInstall, recoverInstall });
 }
-module.exports = { UpdateController, backupUserData, readableError, createUpdates, RELEASE_REPOSITORY };
+module.exports = { UpdateController, backupUserData, readableError, releaseNotesText, createUpdates, RELEASE_REPOSITORY };

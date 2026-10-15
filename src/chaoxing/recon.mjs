@@ -21,6 +21,7 @@
  *                      .bntHoverTips                 → "N个待完成任务点"
  */
 import fs from 'node:fs';
+import {reconMetadata} from './recon-metadata.mjs';
 import path from 'node:path';
 import { PATHS } from '../config.mjs';
 import { log } from '../logbus.mjs';
@@ -692,6 +693,7 @@ export function reconToTaskReport(results) {
       name: c.name,
       courseId: c.courseId,
       clazzId: c.clazzId,
+      ...reconMetadata(c),
       sectionsProbed: (c.sections || []).length,
       taskPoints,
       byType,

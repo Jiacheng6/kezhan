@@ -1,0 +1,48 @@
+:host{position:fixed;inset:0;z-index:30;display:block;background:#eae5e1;color:#22271f;font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;font-size:13px;letter-spacing:.02em}
+:host([hidden]){display:none}*{box-sizing:border-box}button,select,input{font:inherit}button{color:inherit;cursor:pointer}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #906737;outline-offset:5px}button{border:0;background:none}button:hover{color:#98652c}button[hidden],[hidden]{display:none!important}
+.landing{height:100%;min-height:480px;position:relative;overflow:hidden;background:#eae5e1}
+#stage{position:absolute;inset:0}#stage canvas{width:100%;height:100%;display:block}
+.veil{pointer-events:none;position:absolute;inset:0;background:linear-gradient(180deg,rgba(234,229,225,.74),transparent 27%,transparent 79%,rgba(234,229,225,.95)),linear-gradient(90deg,transparent 43%,rgba(234,229,225,.42) 65%,rgba(234,229,225,.96))}
+header{position:absolute;top:37px;left:42px;right:42px;display:flex;align-items:center;justify-content:space-between}
+.identity{display:flex;align-items:center;gap:13px}.identity-mark{font-size:47px;line-height:1;font-weight:300;transform:skew(-12deg);color:#916f43}
+.identity b{display:block;font-weight:650;font-size:23px;letter-spacing:.06em}.identity div>span{display:block;font-size:9px;letter-spacing:.2em;margin-top:5px}
+#skip{font-size:12px;padding:12px 0 12px 16px}
+main{position:absolute;left:65%;right:5%;top:34%;max-width:420px}
+.eyebrow{display:flex;align-items:center;gap:9px;font-size:9px;letter-spacing:.15em;margin:0 0 25px}.signal{display:inline-block;width:5px;height:5px;background:#a7763d}
+h1{position:relative;font-size:clamp(49px,5.1vw,84px);line-height:1.17;letter-spacing:-.045em;margin:0;font-weight:550;outline:none}
+h1 span{display:block}h1 i{font-style:normal;color:#956f43;position:absolute;bottom:0;left:3.12em}
+.intro{font-size:13px;color:#64635a;letter-spacing:.08em;margin:23px 0 35px}
+.enter{border-top:1px solid #9b998e;border-bottom:1px solid #9b998e;width:100%;display:flex;align-items:center;justify-content:space-between;font-size:16px;font-weight:550;padding:19px 0;text-align:left}
+.enter span{font-size:25px;font-weight:300;transition:transform .25s}.enter:hover span{transform:translate(4px,-3px)}.enter:hover{border-color:#956f43}
+.archive-caption{position:absolute;left:42px;bottom:112px;display:flex;flex-direction:column;gap:6px;font-size:10px;letter-spacing:.08em}.archive-caption span+span{font-size:11px;color:#66665c}
+footer{position:absolute;bottom:28px;left:42px;right:42px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid #c9c4bb;padding-top:18px;gap:20px;color:#55594e;font-size:11px}
+.edition{letter-spacing:.09em}.edition i{font-style:normal;margin:0 13px;color:#a3a08f}.preferences{display:flex;align-items:center;gap:22px}.preferences label{display:flex;align-items:center;gap:6px;cursor:pointer}.preferences button{font-size:12px;padding:4px 0}.preferences input{accent-color:#8f7045;width:13px;height:13px;margin:0}
+#displayOptions{position:absolute;bottom:82px;right:42px;width:278px;padding:21px;background:#eeeae2;border:1px solid #c7bfae;box-shadow:0 12px 35px #5e52381a}.options-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}.options-heading button{font-size:24px}#displayOptions label{display:flex;align-items:center;justify-content:space-between;gap:12px}select{border:1px solid #b6b09e;background:#f4f0e8;padding:7px;color:#343b2e}#displayOptions p{font-size:10px;color:#66675d;line-height:1.7;margin:20px 0 0}
+#notice{position:absolute;left:42px;bottom:158px;color:#626359;max-width:38%;line-height:1.7;font-size:12px}#retryScene{position:absolute;left:42px;bottom:132px;text-decoration:underline;font-size:12px}
+:host(.no-3d) #stage{background:repeating-linear-gradient(149deg,transparent 0 19px,#b5aa9125 20px 21px,transparent 22px 36px);opacity:.5}:host(.no-3d) .veil{background:linear-gradient(90deg,transparent,rgba(234,229,225,.95) 65%)}
+@media(min-width:1600px){header{top:48px;left:60px;right:60px}footer{bottom:36px;left:60px;right:60px}.archive-caption{left:60px;bottom:132px}}
+@media(max-width:1050px){main{left:63%;right:4%;top:32%}header{left:28px;right:28px;top:28px}.identity b{font-size:20px}.archive-caption{left:28px;bottom:110px}footer{left:28px;right:28px;bottom:23px}.preferences{gap:14px}.edition{font-size:9px}.intro{letter-spacing:0;font-size:12px}h1{font-size:54px}}
+@media(max-width:700px){header{top:22px;left:24px;right:24px}.identity-mark{font-size:36px}.identity{gap:9px}.identity b{font-size:18px}.identity div>span{font-size:8px}#skip{font-size:10px}main{left:10%;right:10%;top:auto;bottom:144px;max-width:none}.eyebrow{margin-bottom:12px}h1{font-size:45px}h1 span{display:inline}h1 i{position:static}.intro{margin:12px 0 18px}.enter{padding:13px 0;font-size:15px}.archive-caption{display:none}.veil{background:linear-gradient(180deg,#eae5e1aa,transparent 20%,#eae5e199 49%,#eae5e1 69%)}footer{left:24px;right:24px;bottom:20px;display:block;padding-top:12px}.edition{display:none}.preferences{justify-content:space-between;gap:8px}.preferences label{font-size:10px}#displayOptions{right:24px;bottom:70px}#notice{left:24px;bottom:98px;max-width:80%;font-size:10px}#retryScene{left:24px;bottom:78px}}
+@media(max-width:700px){.preferences label{font-size:11px}.preferences button{font-size:11px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+:host(.reduced) *{transition:none!important}
+
+/* Original paper space shares the workbench's ink green, ivory and vermilion. */
+:host{background:#efeddf;color:#2f4436}.landing{background:#efeddf}
+.veil{background:linear-gradient(180deg,#efeddf6b,transparent 24%,transparent 78%,#efeddfd9),linear-gradient(90deg,transparent 37%,#efeddf45 58%,#efeddfeb 77%)}
+.identity-mark{color:#ad5138;display:flex;align-items:flex-end;gap:3px;height:30px;width:29px;transform:rotate(-7deg)}
+.identity-mark i{display:block;width:6px;height:27px;background:currentColor;border-radius:1px}.identity-mark i:nth-child(2){height:23px}.identity-mark i:nth-child(3){height:29px;transform:rotate(16deg);margin-left:2px}
+.identity b{font-size:21px}
+main{left:65%;right:5%;top:24%;max-width:400px}
+.eyebrow{margin-bottom:18px;color:#68745e}.signal{background:#ac5138}
+h1{font-family:"STZhongsong","SimSun",serif;font-size:clamp(48px,4.7vw,76px);font-weight:500;letter-spacing:.015em}
+h1 i{color:#ad5138;left:3.03em}.intro{margin:18px 0 22px;color:#64705d;font-size:12px}
+.course-entry{border-top:1px solid #b6bfaa;padding-top:12px}
+.course-nav{display:flex;justify-content:space-between;align-items:center;font-size:10px;letter-spacing:.1em;color:#617056}
+.course-nav>div{display:flex;gap:6px}.course-nav button{width:30px;height:27px;border-radius:50%;border:1px solid #b8c0ad;font-size:15px;transition:background 180ms,transform 220ms}.course-nav button:hover{background:#dfe4d5;transform:translateY(-2px)}.course-nav button:disabled{opacity:.3;cursor:default}
+#openCourse{width:100%;display:flex;justify-content:space-between;align-items:center;gap:14px;text-align:left;padding:17px 0 19px;border-bottom:1px solid #b6bfaa;transition:color 180ms}
+#openCourse b{display:block;font-weight:550;font-size:20px;line-height:1.5}#openCourse small{display:block;color:#64705d;font-size:11px;margin-top:6px}#openCourse>span:last-child{font-size:12px;white-space:nowrap;color:#a64e35;transition:transform 200ms}#openCourse:hover>span:last-child{transform:translate(3px,-3px)}
+.enter{border:0;font-size:12px;font-weight:400;padding:18px 0;color:#64705d}.enter span{font-size:18px}
+.archive-caption{font-size:10px;color:#617056}.archive-caption span+span{color:#617056}
+@media(max-width:1050px){main{top:20%;left:63%;right:5%}h1{font-size:53px}#openCourse b{font-size:18px}}
+@media(max-width:700px){main{top:auto;bottom:111px;left:10%;right:10%}h1{font-size:38px}h1 span{display:inline}h1 i{position:static}.eyebrow{display:none}.intro{margin:10px 0 14px;font-size:11px}.course-entry{padding-top:9px}#openCourse{padding:9px 0 12px}#openCourse b{font-size:17px}#openCourse small{font-size:10px;margin-top:3px}.enter{padding:12px 0;font-size:11px}.veil{background:linear-gradient(180deg,#efeddf6b,transparent 15%,#efeddf33 37%,#efeddfed 61%,#efeddf 75%)}}

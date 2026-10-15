@@ -3,278 +3,112 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light" />
 <title>学习通助手</title>
 <link rel="stylesheet" href="/style.css" />
-<!-- 内联图标：省掉浏览器对 /favicon.ico 的默认请求（那个请求必然 404，控制台会报红） -->
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232f6fd6'/><text x='16' y='23' font-size='19' text-anchor='middle' fill='white' font-family='sans-serif'>学</text></svg>" />
+<link rel="stylesheet" href="/workspace-design.css" id="workspaceDesign" />
+<link rel="icon" href="/icon.svg" type="image/svg+xml" />
 </head>
 <body>
-<header class="topbar">
-  <div class="brand">
-    <span class="logo">学</span>
-    <div>
-      <h1>学习通助手</h1>
-      <p class="sub" id="phaseLine">正在连接后台服务…</p>
+<aside class="sidebar">
+  <div class="brand"><span class="logo" aria-hidden="true"><img src="/icon.svg" alt="" width="32" height="32" /></span><div><h1>学习通助手</h1><span class="brand-note">课程 · 任务 · 进度</span></div></div>
+  <p class="nav-label">学习空间</p>
+  <nav class="tabs" aria-label="主导航">
+    <button class="tab active" data-tab="overview" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10H3Z"/><path d="M9 20v-7h6v7"/></svg><span>学习概览</span></button>
+    <button class="tab" data-tab="courses"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6a3 3 0 0 1 3 3v14a5 5 0 0 0-5-2H4Zm16 0h-4a3 3 0 0 0-3 3v14a5 5 0 0 1 5-2h2Z"/></svg><span>课程清单</span></button>
+    <button class="tab" data-tab="review"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H5v18h14V9Z"/><path d="M14 3v6h5M8 13h8m-8 4h5"/></svg><span>待审答案</span><span class="badge" id="reviewCount">0</span></button>
+    <button class="tab" data-tab="logs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4Zm4 4 3 3-3 3m5 0h4"/></svg><span>运行记录</span></button>
+    <button class="tab" data-tab="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg><span>偏好设置</span></button>
+  </nav>
+  <div class="sidebar-bottom">
+    <div id="desktopToolbar" class="desktop-toolbar hidden">
+      <p class="nav-label">专用浏览器</p>
+      <div class="browser-switch"><button id="desktopShowBrowser">显示浏览器</button><button id="desktopHideBrowser">隐藏浏览器</button></div>
+      <p id="desktopBrowserState" class="sidebar-hint">隐藏后，任务继续运行</p>
+      <button id="desktopUpdate" class="utility-button" title="检查软件更新"><span aria-hidden="true">↗</span> 检查更新</button>
+      <button id="desktopDataFolder" class="utility-button" title="打开数据与日志"><span aria-hidden="true">↳</span> 数据与日志</button>
+      <details class="desktop-more"><summary>更多操作 <span>···</span></summary><div><button id="desktopRestart">重启服务</button><button id="desktopClose">关闭软件…</button></div></details>
     </div>
+    <div class="local-note"><span class="status-dot"></span><span>进度与账号数据保存在本机</span></div>
   </div>
-  <div class="topright">
-    <span class="pill" id="pillEdge">Edge 未连接</span>
-    <span class="pill" id="pillLogin">登录未知</span>
-    <span class="pill" id="pillRecon">提交模式未知</span>
-    <span class="pill" id="pillQuiz">答题通道未知</span>
-  </div>
-</header>
-
-<div id="desktopToolbar" class="desktop-toolbar hidden">
-  <span>窗口控制</span>
-  <button id="desktopShowBrowser">显示浏览器</button>
-  <button id="desktopHideBrowser">隐藏浏览器</button>
-  <span id="desktopBrowserState" class="muted">隐藏浏览器后，任务继续运行</span>
-  <div class="desktop-spacer"></div>
-  <button id="desktopUpdate" class="ghost">检查更新</button>
-  <button id="desktopDataFolder" class="ghost">数据与日志</button>
-  <button id="desktopRestart" class="ghost">重启服务</button>
-  <button id="desktopClose" class="ghost">关闭软件…</button>
-</div>
-
-<div id="bootError" class="banner error hidden"></div>
-<div id="desktopUpdatePanel" class="card update-panel hidden">
-  <div class="treebar"><h2>软件更新 <span id="updateCurrentVersion" class="pill"></span></h2><button id="updateLater" class="ghost">收起</button></div>
-  <p id="updateMessage">正在读取更新状态…</p>
-  <progress id="updateProgress" max="100" value="0" class="hidden"></progress>
-  <div class="actions">
-    <button id="updateCheck">检查新版</button>
-    <button id="updateDownload" class="primary hidden">下载新版</button>
-    <button id="updateInstall" class="primary hidden">保存并安装</button>
-  </div>
-  <p class="hint">下载时可以继续使用。安装前会保存进度并备份课程、选择和设置，登录状态保留在本机。</p>
-</div>
-
-<nav class="tabs">
-  <button class="tab active" data-tab="overview">概览</button>
-  <button class="tab" data-tab="courses">课程树</button>
-  <button class="tab" data-tab="review">待审队列 <span class="badge" id="reviewCount">0</span></button>
-  <button class="tab" data-tab="logs">实时日志</button>
-  <button class="tab" data-tab="settings">设置</button>
-</nav>
-
-<main>
-  <!-- ============ 概览 ============ -->
-  <section class="panel active" id="panel-overview">
-    <div class="grid">
-      <div class="card">
-        <h2>浏览器接管</h2>
-        <dl class="kv">
-          <dt>状态</dt><dd id="kEdgeState">—</dd>
-          <dt>内核</dt><dd id="kEdgeVersion">—</dd>
-          <dt>调试端口</dt><dd id="kDebugPort">—</dd>
-          <dt>专用配置目录</dt><dd class="mono small" id="kProfile">—</dd>
-        </dl>
-        <div class="actions">
-          <button data-action="openChaoxing">打开学习通</button>
-          <button data-action="focusEdge">把 Edge 拉到前台</button>
+</aside>
+<div class="workspace">
+  <header class="topbar">
+    <div class="breadcrumb"><span>学习空间</span><span class="breadcrumb-slash">/</span><strong id="pageTitle">学习概览</strong></div>
+    <div class="header-right"><span id="phaseLine" class="sub">正在连接后台服务…</span><details class="connection-menu"><summary>连接状态 <span aria-hidden="true">⌄</span></summary><div class="topright"><span class="pill" id="pillEdge">浏览器未连接</span><span class="pill" id="pillLogin">登录未知</span><span class="pill" id="pillRecon">提交模式未知</span><span class="pill" id="pillQuiz">答题通道未知</span></div></details></div>
+  </header>
+  <div id="bootError" class="banner error hidden" role="alert"></div>
+  <main>
+    <section class="panel active" id="panel-overview" aria-label="学习概览">
+      <div class="page-heading"><div><p class="eyebrow">WORKSPACE / 学习工作台</p><h2>学习概览<span class="heading-period">.</span></h2></div><span class="page-note">课程与进度，接着上次继续</span></div>
+      <div class="overview-grid">
+        <div class="overview-primary">
+          <article class="task-sheet">
+            <div class="sheet-top"><span class="eyebrow">本次学习</span><span class="activity-state" id="overviewActivity">尚未开始</span></div>
+            <h3 id="overviewHeadline">准备开始学习</h3><p id="overviewSubtitle" class="hero-description">确认课程和任务范围，然后开始。</p><p id="overviewSelectedNames" class="hero-course-names"></p>
+            <div class="hero-actions"><button id="overviewStart" data-action="startRun" class="primary" disabled>开始学习 <span aria-hidden="true">↗</span></button><button class="text-button" data-navigate="courses">选择课程 <span aria-hidden="true">→</span></button><button data-action="stopRun" class="stop-button" disabled>停止任务</button></div>
+            <div class="session-progress hidden" id="overviewSessionProgress"><div class="progress-caption"><span id="overviewProgressTitle">本次任务进度</span><span><b id="kDone">0</b><span class="progress-separator">/</span><span id="kTotal">0</span></span></div><div class="progress-track"><div id="overviewProgressFill"></div></div><p id="kCurrent">尚未开始执行</p></div>
+            <details class="session-details hidden" id="overviewSessionDetails"><summary>运行详情 <span>⌄</span></summary><dl class="session-meta"><dt>当前状态</dt><dd id="kRunning">未运行</dd><dt>执行范围</dt><dd id="kScope">尚未选择</dd></dl></details>
+          </article>
+          <div class="overview-metrics"><div><span>清单内任务</span><b id="overviewTaskCount">—</b></div><div><span>已完成</span><b id="overviewDoneCount">—</b></div><button data-navigate="review"><span>待审答案 <span aria-hidden="true">↗</span></span><b id="overviewReviewCount">0</b></button></div>
+          <section class="course-ledger"><div class="section-title"><h3>课程一览</h3><button class="text-button" data-navigate="courses">查看全部 <span aria-hidden="true">→</span></button></div><div id="overviewCourses"><p class="placeholder">正在读取课程清单…</p></div></section>
         </div>
+        <aside class="overview-rail">
+          <section class="readiness"><details id="readinessDetails" open><summary class="section-title"><h3 id="readinessTitle">开始前，确认一下</h3><span class="rail-index" id="readinessIndex">01—03</span></summary>
+            <ol class="ready-steps"><li id="readyBrowser"><span class="step-no">01</span><div><b>专用浏览器</b><span id="kEdgeState">等待连接</span></div><span class="step-mark" aria-hidden="true"></span></li><li id="readyLogin"><span class="step-no">02</span><div><b>学习通账号</b><span id="kLoginState">等待登录</span></div><span class="step-mark" aria-hidden="true"></span></li><li id="readyQianwen"><span class="step-no">03</span><div><b>千问答题通道</b><span id="overviewQianwen">等待登录</span></div><span class="step-mark" aria-hidden="true"></span></li></ol>
+            <div class="ready-actions"><button data-action="refreshLogin">检测登录状态</button><button data-action="focusEdge" class="text-button">打开浏览器登录 ↗</button></div><p class="hint">首次使用请在专用浏览器中登录，账号无需手动配置。</p>
+          </details></section>
+          <section class="review-note"><span class="eyebrow">待你确认</span><h3>检查答案，再提交。</h3><p>简答草稿与需要核对的答案会保存在待审列表。</p><button data-navigate="review" class="text-button">前往待审答案 <span aria-hidden="true">→</span></button></section>
+          <div class="quiet-note"><span aria-hidden="true">↙</span><p>需要让出屏幕？<br />隐藏浏览器，任务仍会继续。</p></div>
+        </aside>
       </div>
-
-      <div class="card">
-        <h2>账号登录</h2>
-        <dl class="kv">
-          <dt>状态</dt><dd id="kLoginState">—</dd>
-          <dt>说明</dt><dd id="kLoginReason">—</dd>
-          <dt>账号 ID</dt><dd id="kPersonId">—</dd>
-          <dt>当前页面</dt><dd class="small" id="kLoginTitle">—</dd>
-        </dl>
-        <div class="actions">
-          <button data-action="refreshLogin" class="primary">重新检测登录</button>
-        </div>
-        <p class="hint">
-          若未登录：切到 Edge 窗口完成扫码/输密码，然后点上面的按钮。
-          登录态保存在本机，更新时会保留；平台登录状态过期时仍需重新登录。
-          <b>账号 ID 不用手填</b>：登录后程序自动识别并写入 <code>local.json</code>
-          （已被 .gitignore 忽略，不会随仓库上传）。
-        </p>
-      </div>
-
-      <div class="card">
-        <h2>本次任务</h2>
-        <dl class="kv">
-          <dt>已完成</dt><dd><span id="kDone">0</span> / <span id="kTotal">0</span></dd>
-          <dt>当前动作</dt><dd id="kCurrent">空闲</dd>
-          <dt>运行状态</dt><dd id="kRunning">未运行</dd>
-          <dt>本次范围</dt><dd id="kScope">—</dd>
-        </dl>
-        <div class="actions">
-          <button data-action="startRecon" class="primary">开始侦察课程</button>
-          <button data-action="startRun" disabled title="开始执行（按「本次范围」刷课 / 答题）">开始执行刷课</button>
-          <button data-action="stopRun" class="ghost">■ 停止</button>
-          <button data-action="cleanupPages" class="ghost" title="关掉所有刷课/测验临时页、空白页与重复标签页（待人工页面会保留）">🧹 一键清理页面</button>
-        </div>
-        <p class="hint">
-          首次使用先侦察课程；已有课程会自动读取，更新后不必重新扫描。新增课程时再点「开始侦察课程」。
-          <br />页面堆积时点「🧹 一键清理页面」——只清临时页，等你手动作答/确认提交的页面不会被关。
-        </p>
-      </div>
-
-      <div class="card">
-        <h2>运行环境</h2>
-        <dl class="kv">
-          <dt>工作目录</dt><dd class="mono small" id="kRoot">—</dd>
-          <dt>Node</dt><dd id="kNode">—</dd>
-          <dt>进程 PID</dt><dd id="kPid">—</dd>
-          <dt>日志文件</dt><dd class="mono small" id="kLogDir">logs/</dd>
-        </dl>
-      </div>
-    </div>
-
-    <div class="card wide">
-      <h2>启动检查</h2>
-      <ul class="checklist">
-        <li id="ck-edge">Edge 以专用配置 + 调试端口启动 —— <span class="st">检查中</span></li>
-        <li id="ck-cdp">Playwright 通过 CDP 成功接管 —— <span class="st">检查中</span></li>
-        <li id="ck-console">控制台服务（HTTP + WebSocket）就绪 —— <span class="st">检查中</span></li>
-        <li id="ck-login">学习通登录态可用 —— <span class="st">检查中</span></li>
-      </ul>
-      <p class="hint">
-        登录完成后，先读取课程清单，再选择本次要处理的课程。任务不会在启动时自动执行。
-      </p>
-    </div>
-  </section>
-
-  <!-- ============ 课程树 ============ -->
-  <section class="panel" id="panel-courses">
-    <div class="card wide">
-      <div class="treebar">
-        <h2>任务点清单 <span class="pill" id="treeSource">未加载</span></h2>
-        <div class="logtools">
-          <button data-action="startRecon">重新侦察</button>
-          <button data-action="loadChecklist" class="ghost">读取清单</button>
-          <button data-action="saveSelection" class="ghost">保存选择</button>
-          <button data-action="startRun" class="primary">▶ 开始执行刷课</button>
-          <button data-action="stopRun" class="ghost">■ 停止</button>
-        </div>
-      </div>
-      <p class="hint" id="treeSummary">正在读取已保存的课程清单…</p>
-      <p class="hint">每个任务分别显示完成状态；小节显示已完成数。本软件执行后的状态自动刷新，在手机或网页上完成的任务请「重新侦察」。</p>
-
-      <!-- 批量选择工具条（全选/反选/按类型/按章节/节号区间/搜索） -->
+    </section>
+    <section class="panel" id="panel-courses" aria-label="课程清单">
+      <div class="page-heading"><div><p class="eyebrow">选好范围，按自己的节奏</p><h2>课程清单<span class="heading-period">.</span></h2></div><div class="actions"><button data-action="startRun" class="primary">开始学习 ↗</button><button data-action="stopRun" class="stop-button">停止任务</button></div></div>
+      <div class="course-toolbar"><div><span class="pill" id="treeSource">未加载</span><p id="treeSummary">正在读取已保存的课程清单…</p></div><details class="inline-menu"><summary>清单操作 <span>⌄</span></summary><div><button data-action="startRecon">重新扫描课程</button><button data-action="loadChecklist">读取已有清单</button></div></details></div>
       <div class="treeTools" id="treeTools">
-        <div class="ttrow">
-          <input id="treeSearch" type="search" placeholder="搜索：课程名 / 节号 / 小节名 / 任务点名（空格分隔多个关键词）" />
-          <button class="ghost" data-tree="select">全选</button>
-          <button class="ghost" data-tree="deselect">全不选</button>
-          <button class="ghost" data-tree="invert">反选</button>
-          <button class="ghost" data-tree="unfinished">只选未完成</button>
+        <div class="ttrow search-row"><div class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input id="treeSearch" type="search" aria-label="搜索课程或任务" placeholder="搜索课程、章节或任务…" /></div><button data-tree="unfinished">只选未完成</button><details class="selection-tools"><summary>批量选择 <span>⌄</span></summary><div class="selection-drawer">
+          <div class="ttrow"><button data-tree="select">全选</button><button data-tree="deselect">全不选</button><button data-tree="invert">反选</button><button data-tree="expandAll">全部展开</button><button data-tree="collapseAll">全部收起</button></div>
+          <div class="ttrow"><span class="ttlabel">任务类型</span><label class="ttchk"><input type="checkbox" id="scopeVideo" checked /> 视频</label><label class="ttchk"><input type="checkbox" id="scopeWork" checked /> 章节测验</label><label class="ttchk"><input type="checkbox" id="scopeDoc" checked /> 文档/阅读</label><button data-tree="scopeSelect">勾选此类</button><button data-tree="scopeDeselect">取消此类</button></div>
+          <div class="ttrow"><span class="ttlabel">节号区间</span><input id="secFrom" class="ttsec" aria-label="起始节号" placeholder="2.1" /><span>—</span><input id="secTo" class="ttsec" aria-label="结束节号" placeholder="2.9" /><button data-tree="rangeSelect">勾选区间</button><button data-tree="rangeDeselect">取消区间</button><button data-tree="clearRange">清空</button></div>
+          <label class="ttchk"><input type="checkbox" id="onlyVisible" /> 批量操作只影响当前搜索结果</label></div></details>
         </div>
-        <div class="ttrow">
-          <span class="ttlabel">类型范围</span>
-          <label class="ttchk"><input type="checkbox" id="scopeVideo" checked /> 视频</label>
-          <label class="ttchk"><input type="checkbox" id="scopeWork" checked /> 章节测验</label>
-          <label class="ttchk"><input type="checkbox" id="scopeDoc" checked /> 文档/阅读</label>
-          <button class="ghost" data-tree="scopeSelect">按范围勾选</button>
-          <button class="ghost" data-tree="scopeDeselect">按范围取消</button>
-        </div>
-        <div class="ttrow">
-          <span class="ttlabel">节号区间</span>
-          <input id="secFrom" class="ttsec" placeholder="2.1" />
-          <span class="muted">~</span>
-          <input id="secTo" class="ttsec" placeholder="2.9" />
-          <button class="ghost" data-tree="rangeSelect">勾选该区间</button>
-          <button class="ghost" data-tree="rangeDeselect">取消该区间</button>
-          <button class="ghost" data-tree="clearRange" title="区间只对左右两个区间按钮生效，一键操作不受影响；这里只是清空输入框">清空区间</button>
-          <label class="ttchk muted"><input type="checkbox" id="onlyVisible" /> 只作用于搜索结果</label>
-        </div>
-        <div class="ttrow ttsum">
-          <span id="treeWillSummary">—</span>
-          <span id="treeDirty" class="dirtytag hidden">有未保存改动</span>
-          <button class="ghost" data-action="saveSelection">保存选择</button>
-          <button class="ghost" data-tree="preview">预览将刷清单</button>
-          <button class="ghost" data-tree="expandAll">全部展开</button>
-          <button class="ghost" data-tree="collapseAll">全部收起</button>
-        </div>
+        <div class="ttrow ttsum"><span id="treeWillSummary">—</span><span id="treeDirty" class="dirtytag hidden">有未保存改动</span><button class="text-button" data-tree="preview">预览任务</button><button data-action="saveSelection">保存选择</button></div>
       </div>
       <div id="treePreview" class="treepreview hidden"></div>
-
-      <!-- 执行中状态条 -->
-      <div id="runBar" class="runbar hidden">
-        <div class="runbar-main">
-          <span class="runlabel" id="runLabel">执行中…</span>
-          <span class="runprog" id="runProg"></span>
-        </div>
-        <div class="runbar-track"><div class="runbar-fill" id="runFill"></div></div>
-        <div class="runbar-sub" id="runSub"></div>
-      </div>
-
-      <div id="treeBody"></div>
-    </div>
-
-    <div class="card wide" id="handbookCard" style="display:none">
-      <h2>待人工清单</h2>
-      <p class="hint">这些任务点脚本不做，需要你自己处理（按你的决策：直播 / 讨论 / 问卷 / 作业）。</p>
-      <div id="handbookBody"></div>
-    </div>
-  </section>
-
-  <!-- ============ 待审队列 ============ -->
-  <section class="panel" id="panel-review">
-    <div class="card wide">
-      <div class="treebar">
-        <h2>待审队列 <span class="pill" id="reviewSource">未加载</span></h2>
-        <div class="logtools">
-          <button data-action="loadReview" class="ghost">刷新队列</button>
-          <button data-action="submitAllReviews" class="primary">✔ 提交全部已填答案</button>
-        </div>
-      </div>
-      <p class="hint" id="reviewSummary">尚无待审题目。跑章节测验后，AI 的答案会出现在这里等你确认。</p>
-      <div id="reviewBody"></div>
-    </div>
-  </section>
-
-  <!-- ============ 日志 ============ -->
-  <section class="panel" id="panel-logs">
-    <div class="card wide nopad">
-      <div class="logbar">
-        <h2>实时日志</h2>
-        <div class="logtools">
-          <label class="chk"><input type="checkbox" id="autoScroll" checked /> 自动滚动</label>
-          <input type="text" id="logFilter" placeholder="关键字过滤…" />
-          <button id="clearLogs" class="ghost">清屏</button>
-        </div>
-      </div>
-      <div id="logView" class="logview"></div>
-    </div>
-  </section>
-
-  <!-- ============ 设置 ============ -->
-  <section class="panel" id="panel-settings">
-    <div class="card wide">
-      <div class="treebar">
-        <h2>设置 <span class="pill" id="settingsDirty">未修改</span></h2>
-        <div class="logtools">
-          <button id="saveSettings" class="primary">保存设置</button>
-          <button id="resetSettings" class="ghost" title="清掉 state.json 里的 settings 段，回到出厂默认值">恢复默认</button>
-          <button id="reloadSettings" class="ghost">重新读取</button>
-        </div>
-      </div>
-      <p class="hint">
-        改完点「保存设置」即刻生效（<b>下一个任务点/下一道题</b>就用新值，不用重启服务）。
-        保存位置：<span class="mono">state.json → settings</span>。
-      </p>
+      <div id="runBar" class="runbar hidden"><div class="runbar-main"><span class="runlabel" id="runLabel">执行中…</span><span class="runprog" id="runProg"></span></div><div class="runbar-track"><div class="runbar-fill" id="runFill"></div></div><div class="runbar-sub" id="runSub"></div></div>
+      <div id="treeBody"></div><p class="hint list-footnote">完成状态按任务分别记录。在其他设备完成的任务，请重新扫描课程。</p>
+      <section class="card wide" id="handbookCard" style="display:none"><h2>需要你处理</h2><p class="hint">直播、讨论等无法自动处理的任务会列在这里。</p><div id="handbookBody"></div></section>
+    </section>
+    <section class="panel" id="panel-review" aria-label="待审答案">
+      <div class="page-heading"><div><p class="eyebrow">确认每一个答案</p><h2>待审答案<span class="heading-period">.</span></h2></div><div class="actions"><button data-action="loadReview" class="ghost">刷新</button><button data-action="submitAllReviews" class="primary">提交已填答案</button></div></div>
+      <div class="section-intro"><span class="pill" id="reviewSource">未加载</span><p id="reviewSummary">简答草稿与需要确认的答案，会在这里等你核对。</p></div><div id="reviewBody"></div>
+    </section>
+    <section class="panel" id="panel-logs" aria-label="运行记录">
+      <div class="page-heading"><div><p class="eyebrow">每一步，都有迹可循</p><h2>运行记录<span class="heading-period">.</span></h2></div><span class="page-note">仅保存在这台电脑</span></div>
+      <div class="card nopad"><div class="logbar"><h3>实时记录</h3><div class="logtools"><label class="chk"><input type="checkbox" id="autoScroll" checked /> 自动滚动</label><input type="text" id="logFilter" aria-label="过滤运行记录" placeholder="筛选关键词…" /><button id="clearLogs" class="ghost">清屏</button></div></div><div id="logView" class="logview" aria-live="off"></div></div>
+    </section>
+    <section class="panel" id="panel-settings" aria-label="偏好设置">
+      <div class="page-heading"><div><p class="eyebrow">让助手按你的习惯工作</p><h2>偏好设置<span class="heading-period">.</span></h2></div><div class="actions"><span class="pill" id="settingsDirty">未修改</span><button id="saveSettings" class="primary">保存设置</button></div></div>
+      <div class="settings-intro"><p>改动保存后，从下一个任务开始生效。切换 AI 通道前请先停止任务。</p><div class="actions"><button data-action="openAI">打开所选 AI 网页 ↗</button><button data-action="checkQianwen">检测 AI 登录</button><button id="resetSettings" class="text-button">恢复默认</button><button id="reloadSettings" class="text-button">重新读取</button></div></div>
       <div id="settingsForm" class="settingsform"></div>
-
-      <h3 class="sechead2">高级</h3>
-      <div id="settingsAdvanced" class="settingsform"></div>
-
-      <h3 class="sechead2">以下为安全边界（只读，不可改）</h3>
-      <p class="hint">
-        这几项直接关系到"会不会误判完成 / 会不会破坏视频"，故意不开放修改。
-      </p>
-      <dl class="kv" id="settingsReadonly"></dl>
-    </div>
-  </section>
-</main>
-
-<!-- type="module" 是必需的：app.js 会 import ./selection.js（纯选择算术，带单测） -->
-<script type="module" src="/app.js"></script>
-<script type="module" src="/desktop.js"></script>
+      <details class="settings-details"><summary>高级设置 <span>提问词、等待与重试参数</span></summary><div id="settingsAdvanced" class="settingsform"></div></details>
+      <details class="settings-details"><summary>运行信息与维护 <span>连接、数据位置与故障排查</span></summary>
+        <div class="maintenance-grid"><section><h3>浏览器连接</h3><dl class="kv"><dt>内核版本</dt><dd id="kEdgeVersion">—</dd><dt>调试端口</dt><dd id="kDebugPort">—</dd><dt>浏览器数据</dt><dd id="kProfile" class="mono small">—</dd><dt>登录说明</dt><dd id="kLoginReason">—</dd><dt>账号标识</dt><dd id="kPersonId">—</dd><dt>当前页面</dt><dd id="kLoginTitle">—</dd></dl><div class="actions"><button data-action="openChaoxing">打开学习通</button><button data-action="cleanupPages">清理临时页面</button></div></section>
+        <section><h3>运行环境</h3><dl class="kv"><dt>工作目录</dt><dd class="mono small" id="kRoot">—</dd><dt>运行版本</dt><dd id="kNode">—</dd><dt>进程</dt><dd id="kPid">—</dd><dt>日志位置</dt><dd class="mono small" id="kLogDir">logs/</dd></dl><h3>连接检查</h3><ul class="checklist"><li id="ck-edge">专用浏览器 <span class="st">检查中</span></li><li id="ck-cdp">浏览器连接 <span class="st">检查中</span></li><li id="ck-console">后台服务 <span class="st">检查中</span></li><li id="ck-login">学习通登录 <span class="st">检查中</span></li></ul></section></div>
+        <h3 class="sechead2">固定运行规则</h3><dl class="kv" id="settingsReadonly"></dl>
+      </details>
+    </section>
+  </main>
+</div>
+<dialog id="desktopUpdatePanel" class="card update-panel" aria-labelledby="updateTitle" aria-describedby="updateMessage">
+  <div class="treebar"><h2 id="updateTitle">软件更新 <span id="updateCurrentVersion" class="pill"></span></h2><button id="updateLater" class="ghost" autofocus>稍后</button></div>
+  <p id="updateMessage" role="status">正在读取更新状态…</p>
+  <section id="updateNotesSection" class="update-notes hidden" aria-label="新版更新内容"><h3 id="updateNextVersion">更新内容</h3><div id="updateNotes"></div></section>
+  <progress id="updateProgress" max="100" value="0" class="hidden" aria-label="新版下载进度"></progress>
+  <div class="actions"><button id="updateCheck">检查新版</button><button id="updateDownload" class="primary hidden">下载新版</button><button id="updateInstall" class="primary hidden">保存并安装</button></div>
+  <p class="hint">下载期间可继续使用。确认安装前会保存进度并备份数据，登录状态保留在本机。</p>
+</dialog>
+<script type="module" src="/app.js"></script><script type="module" src="/desktop.js"></script><script type="module" src="/workspace-design.js"></script><script type="module" src="/library/home.js"></script>
 </body>
 </html>

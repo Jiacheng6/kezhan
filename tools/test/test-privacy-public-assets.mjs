@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { isPublicNumericAsset } from './privacy-public-assets.mjs';
+const file = 'src/ui/library/vendor/three.module.min.js';
+const content = fs.readFileSync(file, 'utf8');
+assert.equal(isPublicNumericAsset(file, content), true, 'Pinned public asset must match its upstream bytes');
+assert.equal(isPublicNumericAsset(file, content + '\n// synthetic personal content'), false, 'Any added content cancels the numeric exception');
+assert.equal(isPublicNumericAsset('src/ui/library/home.js', content), false, 'The exception cannot apply to application code');
+assert.equal(isPublicNumericAsset(file, content.replace('WebGLRenderer', 'ChangedRenderer')), false, 'Modified vendor contents must be scanned normally');
+const archiveVendor='src/ui/library/archive/assets/three-BqexGCvw.js',archiveContent=fs.readFileSync(archiveVendor,'utf8');
+assert.equal(isPublicNumericAsset(archiveVendor,archiveContent),true);
+assert.equal(isPublicNumericAsset(archiveVendor,archiveContent+'\n// synthetic content'),false);
+assert.equal(isPublicNumericAsset('src/ui/library/home.js',archiveContent),false);
+console.log('✓ 公共数学常量只按固定路径和完整 SHA-256 豁免通用数字规则，改动立即失效');

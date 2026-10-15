@@ -10,11 +10,15 @@ const data = fs.mkdtempSync(path.join(root, '.desktop-test', 'update-ui-'));
 const body = Buffer.alloc(256 * 1024, 71);
 const sha512 = crypto.createHash('sha512').update(body).digest('base64');
 let badHash = false;
+let feedVersion='9.9.9',checks=0,downloads=0;
+const notes='• 启动时检查新版本\n• 课程完成状态显示修复\n• 登录与学习进度保留';
 const server = http.createServer((request, response) => {
   if (request.url.startsWith('/latest.yml')) {
+    checks++;
     response.setHeader('content-type', 'text/yaml');
-    response.end(`version: 9.9.9\nfiles:\n  - url: fixture-Setup.exe\n    sha512: ${badHash ? Buffer.alloc(64).toString('base64') : sha512}\n    size: ${body.length}\npath: fixture-Setup.exe\nsha512: ${sha512}\nreleaseDate: '2026-10-14T00:00:00.000Z'\n`);
+    response.end(`version: ${feedVersion}\nreleaseNotes: ${JSON.stringify(notes)}\nfiles:\n  - url: fixture-Setup.exe\n    sha512: ${badHash ? Buffer.alloc(64).toString('base64') : sha512}\n    size: ${body.length}\npath: fixture-Setup.exe\nsha512: ${sha512}\nreleaseDate: '2026-10-14T00:00:00.000Z'\n`);
   } else if (request.url.startsWith('/fixture-Setup.exe')) {
+    downloads++;
     response.setHeader('content-length', body.length);
     response.end(body);
   } else { response.statusCode = 404; response.end(); }
@@ -45,13 +49,28 @@ async function closeApplication() {
   await current.close().catch(() => {});
 }
 async function launch(testData) {
-  return electron.launch({ executablePath: path.join(root, 'node_modules/electron/dist/electron.exe'), args: [root, '--test-mode'],
+  const packagedExe=process.env.XXT_UPDATE_TEST_EXE;
+  const instance = await electron.launch({ executablePath: packagedExe||path.join(root, 'node_modules/electron/dist/electron.exe'), args: [...(packagedExe?[]:[root]), '--test-mode'],
     env: { ...process.env, LOCALAPPDATA: path.join(testData, 'cache-local'), XXT_TEST_DATA_DIR: testData, XXT_TEST_UPDATE_FEED: feed } });
+  await instance.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].showInactive());
+  return instance;
 }
 try {
   application = await launch(data);
   const page = await application.firstWindow();
   await page.waitForURL('http://127.0.0.1:*/');
+  await page.locator('#desktopUpdatePanel[open]').waitFor();
+  assert.equal(await page.locator('#updateNotes').innerText(),notes);
+  assert.match(await page.locator('#updateNextVersion').innerText(),/9.9.9/);
+  assert.equal(checks,1,'启动自动检查一次');assert.equal(downloads,0);
+  await page.screenshot({path:path.join(root,'.desktop-test/update-startup-popup.png')});
+  await page.locator('#updateLater').click();
+  await page.reload();
+  await page.locator('#libraryHome #enterWorkspace').waitFor();
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('#desktopUpdatePanel').isVisible(),false,'重载不重复打扰');
+  assert.equal(checks,1);
+  await page.locator('#libraryHome #enterWorkspace').click();
   await page.locator('.tab[data-tab="courses"]').click();
   await page.locator('#treeSource').filter({ hasText: '已加载' }).waitFor();
   assert.match(await page.locator('#treeSummary').innerText(), /1 门课/);
@@ -87,12 +106,22 @@ try {
   application = await launch(corruptData);
   const corruptPage = await application.firstWindow();
   await corruptPage.waitForURL('http://127.0.0.1:*/');
+  await corruptPage.locator('#desktopUpdatePanel[open]').waitFor();
+  await corruptPage.locator('#updateLater').click();
+  await corruptPage.locator('#libraryHome #enterWorkspace').click();
   await corruptPage.locator('#desktopUpdate').click();
   await corruptPage.locator('#updateDownload').waitFor({ state: 'visible' });
   await corruptPage.locator('#updateDownload').click();
   await corruptPage.locator('#updateMessage').filter({ hasText: '校验失败' }).waitFor({ timeout: 30000 });
   assert.equal(await corruptPage.locator('#updateInstall').isVisible(), false);
-  console.log('✓ 内置更新真实检查/下载/校验、取消/保存安装、课程自动加载、登录与进度保留、坏校验阻止安装通过');
+  await closeApplication();
+  badHash=false;feedVersion=JSON.parse(fs.readFileSync('package.json','utf8')).version;
+  const beforeCurrent=checks;
+  application=await launch(fs.mkdtempSync(path.join(root,'.desktop-test','update-current-')));
+  const currentPage=await application.firstWindow();await currentPage.waitForURL('http://127.0.0.1:*/');
+  await currentPage.waitForFunction(async()=>(await window.desktopApp.updateState()).phase==='current');
+  assert.equal(checks,beforeCurrent+1);assert.equal(await currentPage.locator('#desktopUpdatePanel').isVisible(),false,'没有新版不弹窗');
+  console.log('✓ 启动自动检查/更新内容弹窗、重载不重复、最新版静默、下载校验、取消/保存安装、数据保留、坏校验阻止安装通过');
 } catch (error) {
   if (application) {
     const errorPage = await application.firstWindow().catch(() => null);

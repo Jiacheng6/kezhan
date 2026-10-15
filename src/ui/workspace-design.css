@@ -1,0 +1,1062 @@
+/* Learning workspace: quiet archive surfaces, a focused live task station. */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: #b6b4a7 #efede6;
+}
+.sidebar {
+  scrollbar-width: thin;
+  scrollbar-color: #b6b4a7 #e5e2d8;
+}
+:root {
+  --bg: #efede6;
+  --bg2: #faf8f2;
+  --bg3: #e8e5dc;
+  --fg: #252821;
+  --fg2: #55594e;
+  --fg3: #686b60;
+  --line: #d5d2c7;
+  --acc: #8a622d;
+  --ok: #34613f;
+  --warn: #805722;
+  --err: #9a4236;
+  --radius: 3px;
+  --sidebar: 210px;
+  --serif: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+html,
+body {
+  background: var(--bg);
+  letter-spacing: 0.1px;
+}
+button {
+  border-radius: 3px;
+  box-shadow: none;
+  transition:
+    background 180ms,
+    color 180ms,
+    border-color 180ms,
+    transform 240ms var(--ease-out);
+}
+button.primary {
+  background: #282c24;
+  border-color: #282c24;
+  color: #fffdf7;
+  box-shadow: none;
+}
+button.primary:hover:not(:disabled) {
+  background: #454a3c;
+  border-color: #454a3c;
+  box-shadow: none;
+  transform: translateY(-1px);
+}
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+button.stop-button {
+  color: #963d31;
+  border-color: #bda59a;
+  background: transparent;
+}
+button.stop-button:hover:not(:disabled) {
+  background: #f2e4dc;
+  border-color: #9e6c5b;
+}
+button.text-button:hover:not(:disabled) {
+  color: #805922;
+}
+input:not([type="checkbox"]),
+textarea,
+select {
+  border-radius: 3px;
+  background: #fcfaf5;
+}
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  box-shadow: 0 0 0 3px #9a6b2f0d;
+}
+.sidebar {
+  padding: 33px 20px 18px;
+  background: #e5e2d8;
+  border-right: 1px solid #d5d1c4;
+}
+.brand {
+  margin: 0 0 31px;
+  gap: 13px;
+}
+.brand h1 {
+  font-size: 17px;
+  letter-spacing: 1px;
+}
+.brand-note {
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #66685d;
+}
+.logo {
+  transform: none;
+  width: 32px;
+  height: 32px;
+}
+.nav-label {
+  font:
+    10px/1.6 "Segoe UI",
+    sans-serif;
+  letter-spacing: 2px;
+  color: #6c6d62;
+  margin-left: 0;
+}
+.tabs {
+  gap: 3px;
+  counter-reset: section;
+}
+.tab {
+  border-radius: 2px;
+  padding: 13px 12px;
+  gap: 12px;
+  min-height: 48px;
+  font-size: 13px;
+  counter-increment: section;
+}
+.tab::before {
+  content: "0" counter(section);
+  font:
+    10px/1 Consolas,
+    monospace;
+  color: #74796a;
+  letter-spacing: 1px;
+}
+.tab svg {
+  display: none;
+}
+.tab:hover:not(:disabled) {
+  background: #dcded1;
+  transform: none;
+}
+.tab.active {
+  background: #30362b;
+  color: #fbf8ee;
+  box-shadow: none;
+}
+.tab.active::before {
+  color: #c0c5b2;
+}
+.tab.active::after {
+  width: 4px;
+  height: 4px;
+  border-radius: 0;
+  background: #c39a58;
+}
+.tab .badge {
+  border-radius: 2px;
+  background: #d3bf96;
+  color: #312b1f;
+  font-size: 10px;
+  padding: 1px 5px;
+}
+.sidebar .library-entry {
+  border: 1px solid #bcb7a4;
+  border-radius: 2px;
+  background: transparent;
+  padding: 12px;
+  margin: 0 0 24px;
+  color: #343c2c;
+  font-size: 12px;
+  font-weight: 600;
+  justify-content: space-between;
+}
+.sidebar .library-entry:hover {
+  background: #dad8ca;
+  border-color: #969780;
+}
+.sidebar-bottom {
+  padding-top: 24px;
+}
+.desktop-toolbar {
+  padding: 18px 0 0;
+  border-top-color: #c8c4b6;
+}
+.browser-switch {
+  gap: 0;
+}
+.browser-switch button {
+  border-radius: 0;
+  background: #eeece3;
+  font-size: 11px;
+  padding: 7px 2px;
+}
+.browser-switch button + button {
+  border-left: 0;
+}
+.utility-button {
+  font-size: 12px;
+  color: #555d49;
+  padding-block: 9px;
+}
+.sidebar-hint {
+  font-size: 10px;
+  color: #666c5d;
+  margin-bottom: 13px;
+}
+.local-note {
+  font-size: 9px;
+  margin-left: 0;
+}
+.desktop-more > div {
+  background: var(--bg2);
+}
+.topbar {
+  height: 70px;
+  padding: 0 36px;
+  background: #f4f2ebf2;
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+}
+.breadcrumb {
+  font-size: 12px;
+  gap: 15px;
+}
+.breadcrumb > span:first-child {
+  font-size: 10px;
+  letter-spacing: 1.4px;
+}
+.header-right {
+  gap: 22px;
+}
+.header-right .sub {
+  font-size: 11px;
+}
+.topright,
+.selection-drawer,
+.inline-menu > div,
+.course-actions > div {
+  border-radius: 3px;
+  background: var(--bg2);
+  box-shadow: 0 12px 30px #25282112;
+}
+main {
+  padding: 32px 36px 50px;
+  max-width: 1550px;
+}
+.page-heading {
+  margin-bottom: 26px;
+  align-items: end;
+}
+.page-heading .eyebrow {
+  font:
+    10px/1.5 Consolas,
+    "Microsoft YaHei UI",
+    sans-serif;
+  letter-spacing: 1.5px;
+  margin-bottom: 9px;
+}
+.page-heading h2 {
+  font-family: var(--serif);
+  font-size: 29px;
+  letter-spacing: 1px;
+  font-weight: 500;
+}
+.heading-period {
+  display: none;
+}
+.page-note {
+  font-size: 11px;
+}
+.overview-grid {
+  grid-template-columns: minmax(0, 1fr) 255px;
+  gap: 28px;
+}
+.overview-primary {
+  display: flex;
+  flex-direction: column;
+}
+.task-sheet {
+  border: 0;
+  border-radius: 3px;
+  background: #30362c;
+  color: #f8f5ec;
+  padding: 27px 29px 25px;
+  box-shadow: none;
+  min-height: 244px;
+  overflow: hidden;
+}
+.task-sheet::before {
+  height: 3px;
+  width: 32px;
+  top: 0;
+  left: 29px;
+  background: #c6a16a;
+  border-radius: 0;
+}
+.sheet-top {
+  margin-bottom: 25px;
+}
+.task-sheet .eyebrow {
+  color: #c5c9bc;
+  font-size: 10px;
+  letter-spacing: 2px;
+}
+.activity-state {
+  color: #c6cbbd;
+  font-size: 10px;
+}
+.activity-state.running {
+  color: #e4d3a5;
+}
+.activity-state.running::before {
+  background: #cdb06c;
+}
+.activity-state::before {
+  background: #adb49f;
+  width: 4px;
+  height: 4px;
+  border-radius: 0;
+}
+.task-sheet h3 {
+  font: 500 clamp(24px, 2.35vw, 32px)/1.4 var(--serif);
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+.task-sheet .hero-description {
+  color: #d3d7c9;
+  max-width: 510px;
+  font-size: 12px;
+  line-height: 1.9;
+  margin-bottom: 11px;
+}
+.task-sheet .hero-course-names {
+  color: #e0dbc9;
+  font-size: 11px;
+  margin-bottom: 16px;
+}
+.task-sheet .hero-actions {
+  gap: 21px;
+}
+.task-sheet .hero-actions .primary {
+  background: #d0ac72;
+  border-color: #d0ac72;
+  color: #29281e;
+  padding: 10px 17px;
+  font-size: 12px;
+  min-width: 135px;
+}
+.task-sheet .hero-actions .primary:hover:not(:disabled) {
+  background: #e0bf89;
+  border-color: #e0bf89;
+  color: #29281e;
+}
+.task-sheet .text-button {
+  color: #e0e3d6;
+  font-size: 12px;
+}
+.task-sheet .stop-button {
+  color: #f2cec1;
+  border-color: #94897a;
+  font-size: 12px;
+}
+.task-sheet .stop-button:hover:not(:disabled) {
+  background: #614238;
+  border-color: #c59b86;
+}
+.task-sheet button:focus-visible {
+  outline-color: #e5be7e;
+}
+.task-sheet .session-progress,
+.task-sheet .session-details {
+  border-color: #606656;
+}
+.task-sheet .progress-caption,
+.task-sheet .session-meta,
+.task-sheet .session-details summary {
+  color: #d4d9c8;
+}
+.task-sheet .progress-track {
+  background: #59604e;
+  height: 3px;
+}
+.task-sheet .progress-track > div {
+  background: #d6b87f;
+}
+.task-sheet #kCurrent {
+  color: #c4cbbb;
+  font-size: 11px;
+}
+.task-sheet .progress-separator {
+  color: #adb49f;
+}
+.overview-metrics {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid var(--line);
+  gap: 0;
+  background: transparent;
+}
+.overview-metrics > div,
+.overview-metrics > button {
+  padding: 21px 20px 19px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+}
+.overview-metrics > div:first-child {
+  padding-left: 0;
+}
+.overview-metrics > button {
+  border-left: 1px solid var(--line);
+  color: var(--fg);
+  margin: 17px 0;
+  padding: 4px 0 2px 23px;
+}
+.overview-metrics > button:hover {
+  background: transparent;
+  border-color: var(--line);
+  color: var(--acc);
+}
+.overview-metrics span {
+  font-size: 10px;
+  color: var(--fg3);
+  letter-spacing: 0.4px;
+}
+.overview-metrics b {
+  font:
+    400 33px/1.3 "Segoe UI",
+    sans-serif;
+  letter-spacing: -1px;
+  color: var(--fg);
+  margin-top: 5px;
+  display: block;
+}
+.course-ledger {
+  margin-top: 23px;
+}
+.section-title h3 {
+  font-size: 13px;
+  font-weight: 600;
+}
+.section-title .text-button {
+  font-size: 11px;
+}
+.ledger-row {
+  border-radius: 0;
+  padding: 15px 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+}
+.ledger-row:hover:not(:disabled) {
+  background: #e7e5db;
+  padding-left: 7px;
+  padding-right: 7px;
+}
+.ledger-number {
+  font:
+    10px Consolas,
+    monospace;
+  color: #737567;
+}
+.ledger-name {
+  font-size: 13px;
+}
+.ledger-meta {
+  font-size: 11px;
+  color: #666e5b;
+}
+.ledger-arrow {
+  font-size: 17px;
+}
+.readiness {
+  border-top: 2px solid #565d4b;
+  padding: 16px 0 8px;
+}
+.readiness .section-title {
+  margin-bottom: 12px;
+}
+.readiness .section-title h3 {
+  font-size: 13px;
+}
+.rail-index {
+  font:
+    10px Consolas,
+    monospace;
+  color: #717769;
+}
+.ready-steps li {
+  border-bottom: 1px solid var(--line);
+  padding: 16px 0;
+  gap: 13px;
+}
+.ready-steps .step-no {
+  font:
+    10px Consolas,
+    monospace;
+  color: #777c6e;
+}
+.ready-steps li b {
+  font-size: 12px;
+  font-weight: 500;
+}
+.ready-steps li div > span {
+  font-size: 10px;
+  color: var(--fg3);
+  margin-top: 5px;
+}
+.step-mark {
+  border-radius: 0;
+  width: 4px;
+  height: 4px;
+}
+.ready-actions {
+  padding-top: 6px;
+}
+.ready-actions > button {
+  font-size: 11px;
+  border-radius: 2px;
+}
+.overview-rail .hint {
+  font-size: 10px;
+  line-height: 1.9;
+}
+.review-note {
+  margin-top: 29px;
+  padding: 18px 0;
+  background: transparent;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+.review-note .eyebrow {
+  font-size: 9px;
+  color: #805c2a;
+  letter-spacing: 1px;
+}
+.review-note h3 {
+  font: 500 18px/1.6 var(--serif);
+  letter-spacing: 0;
+  margin-bottom: 10px;
+}
+.review-note h3 br {
+  display: none;
+}
+.review-note p {
+  font-size: 11px;
+  line-height: 1.9;
+  color: var(--fg2);
+  margin-bottom: 10px;
+}
+.review-note .text-button {
+  font-size: 11px;
+}
+.quiet-note {
+  font-size: 10px;
+  color: var(--fg3);
+  border-top: 1px solid var(--line);
+  margin-top: 10px;
+  padding-top: 17px;
+  gap: 14px;
+}
+.quiet-note p {
+  line-height: 1.9;
+}
+.quiet-note > span {
+  font-size: 22px;
+}
+.card {
+  border-radius: 3px;
+  box-shadow: none;
+  border-color: var(--line);
+  background: var(--bg2);
+}
+.pill,
+.chip {
+  border-radius: 2px;
+  font-size: 11px;
+}
+.course-toolbar {
+  margin-bottom: 14px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 16px;
+}
+.treeTools {
+  border-top: 0;
+  background: transparent;
+}
+.treecourse {
+  border-radius: 3px;
+  box-shadow: none;
+  border-color: #cfcdbf;
+  margin-bottom: 16px;
+  background: var(--bg2);
+}
+.treecourse:hover {
+  box-shadow: none;
+  border-color: #b7b9a8;
+}
+.treehead {
+  border-radius: 2px 2px 0 0;
+  padding: 18px 20px;
+  min-height: 68px;
+}
+.treehead:hover {
+  background: #efeee5;
+}
+.treehead .cname {
+  font-size: 14px;
+  letter-spacing: 0.3px;
+}
+.treehead .cmeta {
+  gap: 7px;
+  font-size: 10px;
+}
+.treecourse.open .treehead {
+  background: #edeee3;
+  border-bottom: 1px solid #d3d4c5;
+}
+.treebody {
+  padding: 7px 20px 20px;
+}
+.sectionblk {
+  border-left-color: #d8d6ca;
+}
+.chaphead {
+  padding-top: 19px;
+}
+.sechead {
+  font-size: 13px;
+  padding: 12px 0;
+}
+.tprow {
+  min-height: 49px;
+  border-radius: 0;
+  border-color: #e4e3d9;
+  padding-inline: 5px;
+}
+.tprow:hover {
+  background: #eeeee3;
+}
+.tprow .tname {
+  font-size: 13px;
+  line-height: 1.7;
+}
+.tprow > .task-status {
+  font-size: 12px;
+}
+.chip.task-done {
+  background: #e5ebdf;
+  color: #3b613c;
+}
+.chip.task-pending,
+.chip.task-manual {
+  background: #eee4d0;
+  color: #775122;
+}
+.chip.work {
+  background: #efe5d1;
+  color: #775122;
+}
+.chip.video {
+  background: #e7ece5;
+  color: #476156;
+}
+.task-status::before {
+  border-radius: 0;
+  width: 3px;
+  height: 3px;
+}
+.search-field,
+.selection-tools > summary {
+  border-radius: 3px;
+  background: var(--bg2);
+}
+.search-field input {
+  padding: 10px;
+  background: transparent;
+}
+.treeTools .ttsum {
+  padding: 12px 0;
+}
+.dirtytag {
+  background: #ece0c8;
+  border-radius: 2px;
+  color: #78501d;
+}
+.runbar {
+  border-radius: 3px;
+  background: #e3e7d7;
+  border-color: #aeb89c;
+}
+.runbar-fill {
+  background: #64764c;
+}
+.settings-details,
+.reviewgroup {
+  border-radius: 3px;
+  background: transparent;
+}
+.setrow {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+.setlabel {
+  font-size: 13px;
+}
+.sethint {
+  font-size: 11px;
+  color: var(--fg3);
+}
+.settings-details > summary {
+  padding: 16px 0;
+}
+.reviewgroup {
+  border: 1px solid var(--line);
+  background: var(--bg2);
+}
+.qcard {
+  border-radius: 2px;
+  box-shadow: none;
+}
+.qedit textarea {
+  background: #fffdf7;
+  font-size: 14px;
+  line-height: 1.9;
+  border-radius: 3px;
+}
+.logbar {
+  padding: 17px 20px;
+}
+.logview {
+  background: #f7f5ee;
+  color: #30382b;
+  border-radius: 0 0 3px 3px;
+  font-size: 12px;
+}
+.banner,
+.update-panel {
+  border-radius: 3px;
+}
+.list-footnote {
+  font-size: 11px;
+}
+@media (min-width: 1500px) {
+  .overview-grid {
+    grid-template-columns: minmax(0, 1fr) 285px;
+    gap: 38px;
+  }
+  .task-sheet {
+    padding: 32px 34px;
+    min-height: 267px;
+  }
+  .task-sheet h3 {
+    font-size: 34px;
+  }
+  .task-sheet::before {
+    left: 34px;
+  }
+  .course-ledger {
+    margin-top: 30px;
+  }
+}
+@media (max-width: 1100px) {
+  .overview-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+  .overview-rail {
+    grid-row: 1;
+  }
+  .overview-rail .readiness {
+    border-top: 1px solid #b9bdab;
+    border-bottom: 1px solid var(--line);
+    padding: 11px 0;
+  }
+  .task-sheet {
+    min-height: 225px;
+  }
+  .task-sheet h3 {
+    font-size: 28px;
+  }
+  .page-heading {
+    margin-bottom: 20px;
+  }
+  .overview-metrics > div,
+  .overview-metrics > button {
+    padding-top: 17px;
+    padding-bottom: 15px;
+  }
+  .overview-metrics > button {
+    margin: 12px 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  .header-right .sub {
+    max-width: 240px;
+    text-align: right;
+  }
+}
+@media (max-width: 800px) {
+  :root {
+    --sidebar: 70px;
+  }
+  .sidebar {
+    padding: 20px 9px;
+  }
+  .brand {
+    justify-content: center;
+    margin-bottom: 23px;
+  }
+  .brand > div,
+  .nav-label,
+  .tab > span:not(.badge),
+  .tab::before {
+    display: none;
+  }
+  .tabs {
+    gap: 9px;
+  }
+  .tab {
+    justify-content: center;
+    padding: 13px 8px;
+    min-height: 46px;
+  }
+  .tab svg {
+    display: block;
+    width: 19px;
+    height: 19px;
+  }
+  .tab .badge {
+    position: absolute;
+    right: 1px;
+    top: 1px;
+    font-size: 9px;
+  }
+  .tab.active::after {
+    display: none;
+  }
+  .sidebar .library-entry {
+    font-size: 0;
+    padding: 12px 8px;
+    margin-bottom: 22px;
+  }
+  .sidebar .library-entry::before {
+    content: "▥";
+    font-size: 25px;
+    font-weight: 400;
+  }
+  .sidebar-bottom .desktop-toolbar {
+    left: var(--sidebar);
+    padding: 9px 11px;
+    gap: 12px;
+  }
+  .desktop-toolbar .browser-switch button {
+    font-size: 11px;
+    padding: 6px;
+  }
+  .topbar {
+    padding: 0 22px;
+    height: 63px;
+  }
+  .header-right .sub {
+    display: none;
+  }
+  main {
+    padding: 24px 22px 90px;
+  }
+  .page-heading h2 {
+    font-size: 26px;
+  }
+  .page-note {
+    font-size: 10px;
+  }
+  .task-sheet {
+    padding: 24px;
+    min-height: 210px;
+  }
+  .task-sheet::before {
+    left: 24px;
+  }
+  .task-sheet h3 {
+    font-size: 26px;
+  }
+  .overview-metrics b {
+    font-size: 30px;
+  }
+  .course-ledger {
+    margin-top: 22px;
+  }
+  .treehead {
+    padding: 15px 13px;
+  }
+  .treebody {
+    padding-inline: 13px;
+  }
+  .topbar .breadcrumb > span:first-child {
+    font-size: 10px;
+  }
+  .sidebar .utility-button#toggleClassicUi {
+    font-size: 0;
+  }
+  .sidebar .utility-button#toggleClassicUi::before {
+    content: "◫";
+    font-size: 20px;
+  }
+}
+@media (max-width: 560px) {
+  :root {
+    --sidebar: 58px;
+  }
+  .sidebar {
+    padding-inline: 5px;
+  }
+  .brand .logo {
+    height: 24px;
+    transform: scale(0.8);
+  }
+  main {
+    padding: 21px 15px 95px;
+  }
+  .topbar {
+    padding: 0 15px;
+  }
+  .page-heading {
+    align-items: start;
+    gap: 10px;
+  }
+  .page-heading h2 {
+    font-size: 23px;
+  }
+  .page-heading .eyebrow {
+    font-size: 9px;
+    letter-spacing: 0.3px;
+  }
+  .page-note {
+    display: none;
+  }
+  .task-sheet {
+    padding: 22px 18px;
+  }
+  .task-sheet::before {
+    left: 18px;
+  }
+  .task-sheet h3 {
+    font-size: 23px;
+  }
+  .task-sheet .hero-description {
+    font-size: 11px;
+  }
+  .task-sheet .hero-actions {
+    gap: 15px;
+  }
+  .overview-metrics > div,
+  .overview-metrics > button {
+    padding-inline: 12px;
+  }
+  .overview-metrics > div:first-child {
+    padding-left: 0;
+  }
+  .overview-metrics > button {
+    padding-left: 14px;
+  }
+  .overview-metrics span {
+    font-size: 9px;
+  }
+  .overview-metrics b {
+    font-size: 28px;
+  }
+  .ledger-row {
+    gap: 12px;
+  }
+  .ready-steps li {
+    padding: 11px 0;
+  }
+  .course-toolbar > div {
+    gap: 6px;
+  }
+  .treehead .cmeta {
+    width: 100%;
+  }
+  .desktop-toolbar .browser-switch button {
+    font-size: 10px;
+  }
+  .tprow .tname {
+    grid-column: 3;
+  }
+  .tprow {
+    grid-template-columns: 16px 58px minmax(0, 1fr);
+    gap: 7px;
+  }
+  .tprow > .task-status {
+    grid-column: 3;
+    font-size: 12px;
+  }
+  .sidebar-bottom .desktop-toolbar {
+    padding-inline: 7px;
+    gap: 7px;
+  }
+  .desktop-toolbar .utility-button {
+    width: 20px;
+  }
+}
+.tab.active:hover:not(:disabled) {
+  background: #3d4435;
+  color: #fffdf5;
+}
+.task-sheet #kDone,
+.task-sheet #kTotal {
+  color: #eee4cc;
+}
+.task-sheet #kDone {
+  font-weight: 500;
+}
+.task-sheet .hero-actions .primary,
+.task-sheet .text-button,
+.task-sheet .stop-button {
+  font-size: 13px;
+}
+.ready-steps li b {
+  font-size: 13px;
+}
+.ready-steps li div > span {
+  font-size: 11px;
+}
+@media (min-width: 801px) {
+  .sidebar {
+    padding-top: 25px;
+  }
+  .sidebar .brand {
+    margin-bottom: 23px;
+  }
+  .sidebar .library-entry {
+    margin-bottom: 18px;
+    padding-block: 10px;
+  }
+  .sidebar .tab {
+    min-height: 44px;
+    padding-block: 11px;
+  }
+  .sidebar .desktop-toolbar {
+    padding-top: 13px;
+  }
+  .sidebar .sidebar-hint {
+    margin-bottom: 9px;
+  }
+  .sidebar .utility-button {
+    padding-block: 8px;
+  }
+}
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  transition: none !important;
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

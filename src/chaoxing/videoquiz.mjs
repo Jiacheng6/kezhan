@@ -33,8 +33,8 @@
  * 安全阀（与整体决策一致）：
  *   · 只在高可靠（high）时才自动点选提交；medium/low 一律**不猜**，
  *     留着弹窗、记入待人工、把任务标成需要人处理。
- *   · 提交前强制留档（截图 + 千问原始回答 + 解析结果）。
- *   · 复用千问节流器，避免风控。
+ *   · 提交前强制留档（截图 + AI原始回答 + 解析结果）。
+ *   · 复用AI节流器，避免风控。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -186,7 +186,7 @@ export function quizKey(q) {
  * 截取弹窗区域（题目 + 选项 + 按钮，一次成像）。
  *
  * ⚠ 不能直接截 `.ans-videoquiz` 根元素！实测它只有 **40px 高**（内容绝对定位溢出），
- * 截出来就是一条黑边 —— 千问收到这种图会直接不回答（实测 4 分钟 0 字）。
+ * 截出来就是一条黑边 —— AI收到这种图会直接不回答（实测 4 分钟 0 字）。
  * 所以要往上找一个"装得下整道题"的祖先容器（≥150px 高）再截。
  */
 export async function shootVideoQuiz(frame, outDir) {
@@ -328,7 +328,7 @@ function archiveAnswer(record) {
 }
 
 /**
- * 处理一次弹窗题：截图 → 问千问 → 解析 → （高可靠才）点选 → 提交 → 留档。
+ * 处理一次弹窗题：截图 → 问AI → 解析 → （高可靠才）点选 → 提交 → 留档。
  *
  * @returns {Promise<object>} {ok, answered, needsHuman?, error?, ...}
  */
@@ -348,7 +348,7 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent 
   });
 
   if (!qianwenPage) {
-    return { ok: false, needsHuman: true, error: '没有可用的千问页面，无法自动作答', question: q, imagePath };
+    return { ok: false, needsHuman: true, error: '没有可用的AI页面，无法自动作答', question: q, imagePath };
   }
 
   await waitTurn();
@@ -365,7 +365,7 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent 
   const parsed = parseAnswer(ai.ok ? ai.answer : '', q);
   const validation = validateBeforeSubmit(parsed, q);
   log(
-    `        千问 → ${parsed.letters.join('') || '(无)'} ${confidenceLabel(parsed.confidence)} ${parsed.reason}`,
+    `        AI → ${parsed.letters.join('') || '(无)'} ${confidenceLabel(parsed.confidence)} ${parsed.reason}`,
     parsed.confidence === 'high' ? 'ok' : 'warn',
   );
 
@@ -382,8 +382,8 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent 
     validation,
   };
 
-  if (ai.errorCode === 'verification-required') {
-    archiveAnswer({ ...base, action: 'halt', note: '千问触发风控验证' });
+  if (['verification-required','rate-limited','not-logged-in','draft-not-empty','draft-attachment','already-generating','wrong-ai-page'].includes(ai.errorCode)) {
+    archiveAnswer({ ...base, action: 'halt', note: 'AI触发风控验证' });
     return { ok: false, needsHuman: true, error: ai.error, question: q, imagePath };
   }
 

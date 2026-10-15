@@ -17,6 +17,11 @@ if (app) {
   bind('desktopDataFolder', app.dataFolder);
   bind('desktopClose', app.exit);
   bind('desktopRestart', async () => { if (confirm('重启会中断当前任务并保存进度，是否继续？')) await app.restart(); });
+  function openUpdate() {
+    const panel=$('desktopUpdatePanel');
+    if(!panel.open)panel.showModal();
+  }
+  let notifiedVersion=null;
   function renderUpdate(status) {
     $('updateCurrentVersion').textContent = `当前 ${status.currentVersion}`;
     $('updateMessage').textContent = status.message;
@@ -29,15 +34,24 @@ if (app) {
     $('updateInstall').textContent = status.installed ? '保存并安装' : '安装新版（保留数据）';
     $('updateProgress').classList.toggle('hidden', !['downloading', 'ready', 'installing'].includes(status.phase));
     $('updateProgress').value = status.percent;
+    $('updateNextVersion').textContent=status.nextVersion?`${status.nextVersion} 更新内容`:'更新内容';
+    $('updateNotes').textContent=status.releaseNotes||'此版本未提供更新说明。';
+    $('updateNotesSection').classList.toggle('hidden',!status.nextVersion);
+    if(status.notificationPending&&status.phase==='available'&&status.nextVersion!==notifiedVersion){
+      notifiedVersion=status.nextVersion;
+      openUpdate();
+      app.updateNotified().catch(()=>{});
+    }
   }
   app.onUpdate(renderUpdate);
+  app.updateState().then(renderUpdate).catch(()=>{});
   bind('desktopUpdate', async () => {
-    $('desktopUpdatePanel').classList.remove('hidden');
+    openUpdate();
     renderUpdate(await app.updateState());
     renderUpdate(await app.checkUpdate());
   });
   bind('updateCheck', async () => renderUpdate(await app.checkUpdate()));
   bind('updateDownload', async () => renderUpdate(await app.downloadUpdate()));
   bind('updateInstall', async () => renderUpdate(await app.installUpdate()));
-  bind('updateLater', async () => $('desktopUpdatePanel').classList.add('hidden'));
+  bind('updateLater', async () => $('desktopUpdatePanel').close());
 }

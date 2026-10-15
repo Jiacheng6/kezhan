@@ -14,9 +14,11 @@
  *   audio    音频        —— 暂不处理
  */
 import fs from 'node:fs';
+import path from 'node:path';
 import { PATHS } from '../config.mjs';
 import { loadState } from '../state.mjs';
 import { taskCompletion } from '../ui/task-status.js';
+import {reconMetadata} from './recon-metadata.mjs';
 
 /** 执行清单的输入：侦察报告（路径由 config 唯一决定） */
 const REPORT_FILE = PATHS.taskReport;
@@ -87,6 +89,28 @@ export function loadReconReport({ force = false } = {}) {
   const mtime = fs.statSync(REPORT_FILE).mtimeMs;
   if (cache && !force && mtime === cacheMtime) return cache;
   cache = JSON.parse(fs.readFileSync(REPORT_FILE, 'utf8'));
+  // Older reports dropped the tree. Recover metadata from the matching local
+  // reconnaissance snapshot, without rescanning or rewriting personal records.
+  if(cache.courses?.some(c=>!c.empty&&!Array.isArray(c.sections))){
+    try{
+      const generated=Date.parse(cache.at);
+      const files=fs.readdirSync(PATHS.logs).filter(name=>/^recon-.*\.json$/.test(name))
+        .map(name=>({file:path.join(PATHS.logs,name),distance:Math.abs(fs.statSync(path.join(PATHS.logs,name)).mtimeMs-generated)}))
+        .filter(entry=>Number.isFinite(generated)&&entry.distance<=300000).sort((a,b)=>a.distance-b.distance);
+      for(const {file} of files){
+        let snapshot;
+        try{snapshot=JSON.parse(fs.readFileSync(file,'utf8'));}catch{continue;}
+        if(!Number.isFinite(Date.parse(snapshot.at))||Math.abs(Date.parse(snapshot.at)-generated)>300000)continue;
+        const byId=new Map((snapshot.courses||[]).map(c=>[c.courseId,c]));
+        cache={...cache,courses:cache.courses.map(course=>{
+          const original=byId.get(course.courseId);
+          if(course.empty||Array.isArray(course.sections)||!original||original.clazzId!==course.clazzId)return course;
+          return {...course,...reconMetadata(original)};
+        })};
+        if(!cache.courses.some(c=>!c.empty&&!Array.isArray(c.sections)))break;
+      }
+    }catch{/* Missing legacy snapshot means unknown completion, never assumed done. */}
+  }
   cacheMtime = mtime;
   return cache;
 }
@@ -191,6 +215,7 @@ function toCourseEntry(c, sel, summary, progress) {
 
   // 按小节聚合任务点
   const sectionMap = new Map();
+  for(const section of c.sections||[])sectionMap.set(section.knowledgeId,{...section,tasks:[]});
   for (const t of c.taskPoints || []) {
     const key = t.knowledgeId;
     if (!sectionMap.has(key)) {
@@ -286,7 +311,8 @@ function toCourseEntry(c, sel, summary, progress) {
         seq: t.seq,
         uid: t.uid,
         finished: t.finished,
-        completion: taskCompletion(t, progress[key]),
+        sectionDone:s.done===true,
+        completion: taskCompletion({...t,sectionDone:s.done===true}, progress[key]),
         condition: t.condition,
         policy: policy.action,
         policyHandle: willHandleBase,
@@ -302,8 +328,12 @@ function toCourseEntry(c, sel, summary, progress) {
     clazzId: c.clazzId,
     name: c.name,
     empty: false,
+    sectionTreeKnown:c.sectionTreeKnown===true,
+    platformSummary:c.platformSummary||null,
+    scanError:c.scanError||null,
+    sectionsProbed:c.sectionsProbed??null,
     enabled,
-    sections: sections.map((s) => ({ knowledgeId: s.knowledgeId, secNo: s.secNo, name: s.name, taskCount: s.tasks.length })),
+    sections: sections.map(({tasks,...section}) => ({...section,taskCount:tasks.length})),
     tasks,
     counts,
   };

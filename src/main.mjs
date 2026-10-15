@@ -21,6 +21,7 @@ import { updateReviewAnswer } from './state.mjs';
 import { startServer } from './server.mjs';
 import { startWindowControl, setBrowserVisible, isBrowserVisible, stopWindowControl } from './browser/window-control.mjs';
 import { ownerState, startOwnerMonitor } from './browser/owner-lifecycle.mjs';
+import {selectedProvider, ensureProviderPage} from './ai/providers.mjs';
 
 /*
  * ⚠ 不要在这里把 PERSON_ID 抄成常量。
@@ -226,16 +227,9 @@ async function boot() {
   runtime.coursePage = coursePage;
 
   // 4.5) 千问标签页（P4 答题通道）—— 复用已有的，没有就开一个待用户登录
-  let qianwenPage = await waitForAnyPage(context, ['qianwen.com', 'tongyi.com'], 5000);
-  if (!qianwenPage) {
-    try {
-      qianwenPage = await context.newPage();
-      await qianwenPage.goto(TARGETS.qianwen, { waitUntil: 'domcontentloaded', timeout: 45000 });
-      log('已打开千问标签页（答题通道）', 'info');
-    } catch (err) {
-      log(`打开千问失败（不影响刷视频）：${err.message}`, 'warn');
-    }
-  }
+  let qianwenPage = null;
+  try { qianwenPage = await ensureProviderPage(context, selectedProvider(loadSettings())); }
+  catch (err) { log(`打开${selectedProvider(loadSettings()).label}失败（不影响其他任务）：${err.message}`, 'warn'); }
   runtime.qianwenPage = qianwenPage;
 
   /* 千问登录态先探一次（界面顶栏"答题通道"那颗灯），失败不阻塞启动 */
@@ -406,23 +400,28 @@ async function readoptKeptPages() {
  * 重新探测千问登录态并推到界面（顶栏"答题通道"灯）。
  * 失败一律按"未登录"处理，绝不因此打断主流程。
  */
-async function refreshQianwenStatus() {
-  const page = runtime.qianwenPage;
-  if (!page || page.isClosed()) {
-    runtime.qianwenPage = findPage(runtime.context, 'qianwen.com') || findPage(runtime.context, 'tongyi.com');
-  }
-  const p = runtime.qianwenPage;
+async function refreshQianwenStatus({create=false}={}) {
+  const provider=selectedProvider(loadSettings());
+  const sequence=runtime.aiProbeSequence=(runtime.aiProbeSequence||0)+1;
+  const current=()=>runtime.aiProbeSequence===sequence&&selectedProvider(loadSettings()).id===provider.id;
+  const publish=(loggedIn,url=null)=>{if(current())patchStatus({ai:{provider:provider.id,label:provider.label,loggedIn,url},qianwen:{loggedIn,url}});};
+  publish(false);
+  let p;
+  try { p=runtime.context?await ensureProviderPage(runtime.context,provider,{create}):null; }
+  catch(error){if(current())runtime.qianwenPage=null;publish(false);throw error;}
+  if(!current())return {loggedIn:false,stale:true};
+  runtime.qianwenPage=p;
   if (!p) {
-    patchStatus({ qianwen: { loggedIn: false, url: null } });
+    publish(false);
     return { loggedIn: false };
   }
   try {
     const { checkLogin } = await import('./ai/ai.mjs');
     const l = await checkLogin(p);
-    patchStatus({ qianwen: { loggedIn: !!l.loggedIn, url: p.url().slice(0, 80) } });
+    publish(!!l.loggedIn, p.url().slice(0,80));
     return { loggedIn: !!l.loggedIn };
   } catch {
-    patchStatus({ qianwen: { loggedIn: false, url: p.url().slice(0, 80) } });
+    publish(false,p.url().slice(0,80));
     return { loggedIn: false };
   }
 }
@@ -444,7 +443,13 @@ function buildHooks() {
     refreshLogin: async () => refreshLogin(),
 
     /** 重新探测千问登录态（界面「答题通道」灯） */
-    checkQianwen: async () => refreshQianwenStatus(),
+    checkQianwen: async () => refreshQianwenStatus({create:true}),
+    openAI: async () => {
+      await refreshQianwenStatus({create:true});
+      if(runtime.qianwenPage)await bringToFront(runtime.qianwenPage);
+      if(process.env.XXT_DESKTOP==='1'){await setBrowserVisible(true);patchStatus({browserVisible:true});}
+      return {provider:selectedProvider(loadSettings()).id};
+    },
 
     // —— 设置（设置页可编辑） ——
     getSettings: async () => ({
@@ -461,6 +466,8 @@ function buildHooks() {
     saveSettings: async (patch = {}) => {
       const before = loadSettings();
       const r = normalizeSettings(patch, before);
+      const providerChanged=selectedProvider(r.settings).id!==selectedProvider(before).id;
+      if(providerChanged&&batchRunner.running)throw new Error('请先停止当前任务，再切换 AI 网页版通道');
       if (r.rejected.length) {
         log(`设置未保存：无法识别的项 ${r.rejected.join('、')}`, 'error');
         return { ok: false, error: `无法识别的设置项：${r.rejected.join('、')}`, ...r };
@@ -486,15 +493,18 @@ function buildHooks() {
         changedKeys.length ? 'ok' : 'info',
       );
       if (r.errors.length) for (const e of r.errors) log(`    ! ${e}`, 'warn');
+      if(providerChanged)await refreshQianwenStatus({create:true}).catch(error=>log(`设置已保存，答题网页尚未就绪：${error.message}`,'warn'));
       return { ok: true, applied: r.applied, errors: r.errors, changed };
     },
 
     /** 恢复出厂设置（会清掉 state.json 里的 settings 段） */
     resetSettings: async () => {
+      if(batchRunner.running)throw new Error('请先停止当前任务，再恢复设置');
       mutateState((s) => {
         s.settings = {};
       });
       patchStatus({ settings: loadSettings() });
+      await refreshQianwenStatus({create:true}).catch(()=>{});
       log('设置已恢复为默认值', 'ok');
       return { ok: true };
     },
@@ -672,7 +682,7 @@ function buildHooks() {
 
       log('=== 开始执行刷课 ===', 'info');
       // 开跑前刷新一次千问登录态：没登录的话答题会全线失败，界面要看得见
-      await refreshQianwenStatus().catch(() => {});
+      await refreshQianwenStatus({create:true}).catch(() => {});
       if (enabledCourses.length === 12) {
         log(`⚠ 本次会刷全部 ${enabledCourses.length} 门课（共 ${runnable.length} 个任务点）`, 'warn');
         log('   如果你只想刷某几门课：到「课程树」取消勾选不要的课程 → 点「保存选择」→ 再开始', 'warn');

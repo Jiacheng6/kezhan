@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { UpdateController, backupUserData } = require('../../desktop/updates.cjs');
+const { UpdateController, backupUserData, releaseNotesText } = require('../../desktop/updates.cjs');
 const { waitForOwnedExit } = await import('../../src/browser/launch.mjs');
 const browserProcess = new EventEmitter();
 Object.assign(browserProcess, { pid: 1, exitCode: null, signalCode: null });
@@ -21,6 +21,35 @@ class FakeUpdater extends EventEmitter {
   quitAndInstall() { this.installs++; }
 }
 const events = [];
+assert.equal(releaseNotesText('<h2>改进</h2><ul><li>启动检查</li><li>保留 &amp; 进度</li></ul><script>alert(1)</script>'),'改进\n• 启动检查\n• 保留 & 进度');
+assert.match(releaseNotesText([{version:'0.4.1',note:'修复课程显示'}]),/0.4.1\n修复课程显示/);
+assert.equal(releaseNotesText(null),'此版本未提供更新说明。');
+let startupChecks=0,startupDownloads=0;
+const startupFake=new FakeUpdater();
+startupFake.checkForUpdates=async()=>{startupChecks++;startupFake.emit('checking-for-update');await new Promise(resolve=>setTimeout(resolve,10));startupFake.emit('update-available',{version:'0.4.1',releaseNotes:'修复课程显示'});return {};};
+startupFake.downloadUpdate=async()=>{startupDownloads++;};
+const startup=new UpdateController(startupFake,{version:'0.4.0'});
+await Promise.all([startup.checkAtStartup(),startup.checkAtStartup(),startup.check()]);
+assert.equal(startupChecks,1,'同一启动并发检查合并，只联网一次');
+assert.equal(startup.snapshot().notificationPending,true);
+assert.equal(startup.snapshot().releaseNotes,'修复课程显示');
+assert.equal(startupDownloads,0,'启动提醒不会自动下载或安装');
+startup.acknowledgeNotification();
+await startup.checkAtStartup();
+assert.equal(startupChecks,1);
+assert.equal(startup.snapshot().notificationPending,false,'重载界面不重复通知');
+const currentFake=new FakeUpdater();
+currentFake.checkForUpdates=async()=>{currentFake.emit('update-not-available');return {};};
+const current=new UpdateController(currentFake,{version:'0.4.1'});
+await current.checkAtStartup();
+assert.equal(current.snapshot().notificationPending,false,'最新版静默');
+const offlineFake=new FakeUpdater();offlineFake.checkForUpdates=async()=>{throw new Error('network unavailable');};
+const offline=new UpdateController(offlineFake,{version:'0.4.1'});
+await offline.checkAtStartup();
+assert.equal(offline.snapshot().phase,'error');
+assert.equal(offline.snapshot().notificationPending,false,'启动断网不弹框');
+const disabled=new UpdateController(startupFake,{version:'0.4.1',startupEnabled:false});await disabled.checkAtStartup();
+assert.equal(startupChecks,1,'隔离测试默认不检查正式更新源');
 const fake = new FakeUpdater();
 let cancel = true;
 const update = new UpdateController(fake, { version: '0.3.0', prepareInstall: async () => {

@@ -1,0 +1,34 @@
+<link rel="stylesheet" href="/library/style.css">
+<div class="landing">
+  <div id="stage" role="img" aria-label="持续旋转的悬浮书页和展开的课程书，拖动或滚轮切换课程，点击书本查看课程"></div>
+  <div class="veil"></div>
+  <header>
+    <div class="identity"><span class="identity-mark" aria-hidden="true"><i></i><i></i><i></i></span><div><b>学习通助手</b><span>LEARNING ARCHIVE</span></div></div>
+    <button id="skip">直接进入工作台 ↗</button>
+  </header>
+  <main>
+    <p class="eyebrow"><span class="signal"></span> KNOWLEDGE / UNFOLDING</p>
+    <h1 id="homeFocus" tabindex="-1">无限<span>图书馆</span><i>.</i></h1>
+    <p class="intro">书页流转，从你停下的地方继续。</p>
+    <section class="course-entry" aria-label="快速进入课程">
+      <div class="course-nav"><span id="coursePosition">你的课程</span><div><button id="previousCourse" aria-label="上一门课程">←</button><button id="nextCourse" aria-label="下一门课程">→</button></div></div>
+      <button id="openCourse"><span><b id="courseTitle">正在读取课程…</b><small id="courseMeta">读取本机清单</small></span><span>查看章节 ↗</span></button>
+    </section>
+    <button id="enterWorkspace" class="enter">进入工作台 <span aria-hidden="true">↗</span></button>
+  </main>
+  <aside class="archive-caption"><span>拖动 / 滚轮 · 切换课程</span><span>点击书页，直接查看章节</span></aside>
+  <footer>
+    <span class="edition">学习空间 <i>/</i> THE OPEN LIBRARY</span>
+    <div class="preferences">
+      <label><input type="checkbox" id="showOnStartup"> 启动时显示此页</label>
+      <button id="motion" aria-pressed="false">减少动态</button>
+      <button id="appearance" aria-expanded="false" aria-controls="displayOptions">画面设置 <span aria-hidden="true">＋</span></button>
+    </div>
+  </footer>
+  <section id="displayOptions" aria-label="起始页画面设置" hidden>
+    <div class="options-heading"><b>画面设置</b><button id="closeOptions" aria-label="关闭画面设置">×</button></div>
+    <label>渲染模式<select id="quality"><option value="standard">标准</option><option value="smooth">流畅 · 30 帧</option><option value="static">静态</option></select></label>
+    <p>原创实时书页场景 · 所有课程数据保留在本机</p>
+  </section>
+  <p id="notice" role="status" hidden></p><button id="retryScene" hidden>重新加载画面</button>
+</div>

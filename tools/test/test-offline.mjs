@@ -33,6 +33,7 @@ if (!process.env.XXT_DATA_DIR) {
 }
 
 const suite = [
+  ['课程完成分组 / 旧清单只读恢复', 'tools/test/test-course-groups.mjs'],
   ['课程树分任务完成状态 / 保留选择', 'tools/test/test-tree-progress.mjs'],
   ['更新状态 / 保存退出 / 数据备份', 'tools/test/test-updates.mjs'],
   ['运行中止 / 心跳进程判断', 'tools/test/test-runtime-fixes.mjs'],
@@ -53,6 +54,7 @@ const suite = [
   ['界面接线自检', 'tools/test/check-ui-ids.mjs'],
   ['隐私自检（上传前必跑）', 'tools/test/check-privacy.mjs'],
   ['学习信息隐私拦截', 'tools/test/test-privacy-learning.mjs'],
+  ['公共资源数字误报 / 篡改保护', 'tools/test/test-privacy-public-assets.mjs'],
 ];
 
 const results = [];

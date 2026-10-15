@@ -21,6 +21,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadLearningTerms, containsLearningTerms } from './privacy-learning.mjs';
+import { isPublicNumericAsset } from './privacy-public-assets.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SCAN_ALL = process.argv.includes('--all');
@@ -221,7 +222,7 @@ if (tracked) {
 
 /* ---------------- 3) 敏感模式 ---------------- */
 
-const TEXT_EXT = /\.(mjs|js|json|md|html|css|bat|vbs|cs|txt|yml|yaml|sh|ps1)$/i;
+const TEXT_EXT = /\.(mjs|js|ts|tsx|json|md|html|css|bat|vbs|cs|txt|yml|yaml|sh|ps1)$/i;
 
 /*
  * 学习通账号内部 ID（cpi）：优先从 local.json 取，其次从环境变量 / 命令行取。
@@ -316,6 +317,7 @@ for (const rel of files) {
     continue;
   }
   for (const [re, why] of PATTERNS) {
+    if ((why === '手机号' || why === '身份证号') && isPublicNumericAsset(rel, text)) continue;
     const m = text.match(re);
     if (m) hits.push({ rel, why, sample: String(m[0]).slice(0, 60) });
   }

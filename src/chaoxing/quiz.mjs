@@ -168,41 +168,100 @@ export async function getWorkMeta(workFrame) {
  * 截取单道题的图片（精确裁剪）。
  * @returns {Promise<string>} 图片文件路径
  */
-export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop } = {}) {
+export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, readTimeoutMs = 8000, onRecovery } = {}) {
   throwIfStopped(shouldStop);
   fs.mkdirSync(outDir, { recursive: true });
-  const els = await workFrame.$$('.TiMu, [class*="TiMu"]');
+  const read = async (stage, operation) => {
+    try {
+      return await waitForRead(operation, { shouldStop, timeoutMs: readTimeoutMs, message: `题目截图超时（${stage}）` });
+    } catch (error) {
+      if (error.code === 'STOPPED') throw error;
+      error.captureStage = stage;
+      throw error;
+    }
+  };
+  const els = await read('定位题目', () => workFrame.$$('.TiMu, [class*="TiMu"]'));
   const el = els[domIndex];
   if (!el) throw new Error(`找不到第 ${domIndex + 1} 题的元素`);
 
   // Win32 隐藏窗口没有稳定的动画帧；元素截图/scrollIntoViewIfNeeded
   // 会一直等「元素稳定」。直接滚动、读坐标，用 CDP 捕获，不需要先显示窗口。
-  const read = (operation) => waitForRead(operation, { shouldStop, timeoutMs: 8000, message: '题目截图读取超时' });
-  await read(() => el.evaluate((node) => node.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'instant' })));
-  await read(() => workFrame.evaluate(() => document.fonts.ready.then(() => true)));
+  await read('滚动题目', () => el.evaluate((node) => node.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'instant' })));
+  // fonts.ready waits for *every* font on the page, including unrelated editor
+  // toolbars. Wait only for text actually used in the question/options instead.
+  // Never send an encrypted question rendered with a missing fallback font.
+  const fontsStarted = Date.now();
+  for (;;) {
+    const fonts = await read('检查题目字体', () => el.evaluate((node) => {
+      const roots = [...node.querySelectorAll('.Zy_TItle, .Zy_ulTop')];
+      const requests = new Map();
+      for (const root of roots.length ? roots : [node]) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          const text = walker.currentNode.textContent.trim(), parent = walker.currentNode.parentElement;
+          if (!text || !parent || !parent.getClientRects().length) continue;
+          const style = getComputedStyle(parent);
+          if (style.visibility !== 'visible' || style.display === 'none') continue;
+          const font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+          requests.set(font, (requests.get(font) || '') + text);
+        }
+      }
+      let pending = 0, failed = false;
+      const normalize = (value) => value.replace(/["']/g, '').trim().toLowerCase();
+      for (const [font, text] of requests) {
+        const families = font.slice(font.indexOf('px') + 2).split(',').map(normalize);
+        if (!document.fonts.check(font, text)) {
+          pending++;
+          if ([...document.fonts].some(face => families.includes(normalize(face.family)) && face.status === 'error')) failed = true;
+        }
+      }
+      return { pending, failed };
+    }));
+    if (fonts.failed) throw Object.assign(new Error('题目字体加载失败，请刷新题目后重试；未发送可能乱码的截图'), { captureStage: '题目字体' });
+    if (!fonts.pending) break;
+    if (Date.now() - fontsStarted >= readTimeoutMs) throw Object.assign(new Error('题目截图超时（题目字体尚未加载）'), { captureStage: '题目字体' });
+    await interruptibleSleep(100, shouldStop);
+  }
   await interruptibleSleep(100, shouldStop);
-  const box = await read(() => el.boundingBox());
+  const box = await read('读取题目坐标', () => el.boundingBox());
   if (!box || ![box.x, box.y, box.width, box.height].every(Number.isFinite) || box.width <= 0 || box.height <= 0) {
     throw new Error('题目没有可截图的显示区域');
   }
   if (box.width > 16000 || box.height > 16000) throw new Error('题目截图区域过大，请人工处理');
   const page = workFrame.page();
-  const session = await page.context().newCDPSession(page);
   const file = path.join(outDir, `q${String(domIndex + 1).padStart(2, '0')}-${Date.now()}.png`);
-  try {
-    const metrics = await read(() => session.send('Page.getLayoutMetrics'));
-    const viewport = metrics.cssLayoutViewport || metrics.layoutViewport;
-    const result = await read(() => session.send('Page.captureScreenshot', {
-      format: 'png', fromSurface: true, captureBeyondViewport: true,
-      clip: { x: Math.max(0, box.x + viewport.pageX), y: Math.max(0, box.y + viewport.pageY),
-        width: box.width, height: box.height, scale: 1 },
-    }));
-    throwIfStopped(shouldStop);
-    const image = Buffer.from(result.data, 'base64');
-    if (image.length < 24 || image.readUInt32BE(0) !== 0x89504e47) throw new Error('浏览器没有返回有效截图');
-    fs.writeFileSync(file, image);
-    return file;
-  } finally { await session.detach().catch(() => {}); }
+  // A fresh session per attempt avoids reusing a timed-out capture connection.
+  // Focus emulation wakes the target renderer without showing the native window
+  // or switching the user's selected tab.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const session = await read('连接浏览器成像', () => page.context().newCDPSession(page));
+    let focusEmulated = false;
+    try {
+      if (attempt) {
+        await read('恢复页面绘制', () => session.send('Page.setWebLifecycleState', { state: 'active' }));
+        focusEmulated = true;
+        await read('恢复页面焦点', () => session.send('Emulation.setFocusEmulationEnabled', { enabled: true }));
+      }
+      const metrics = await read('读取页面尺寸', () => session.send('Page.getLayoutMetrics'));
+      const viewport = metrics.cssLayoutViewport || metrics.layoutViewport;
+      const result = await read('浏览器成像', () => session.send('Page.captureScreenshot', {
+        format: 'png', fromSurface: true, captureBeyondViewport: true,
+        clip: { x: Math.max(0, box.x + viewport.pageX), y: Math.max(0, box.y + viewport.pageY),
+          width: box.width, height: box.height, scale: 1 },
+      }));
+      throwIfStopped(shouldStop);
+      const image = Buffer.from(result.data, 'base64');
+      if (image.length < 24 || image.readUInt32BE(0) !== 0x89504e47) throw new Error('浏览器没有返回有效截图');
+      fs.writeFileSync(file, image);
+      return file;
+    } catch (error) {
+      if (error.code === 'STOPPED' || attempt || error.captureStage !== '浏览器成像') throw error;
+      onRecovery?.('浏览器成像未返回，正在恢复绘制并重新截图一次');
+    } finally {
+      if (focusEmulated) await waitForRead(() => session.send('Emulation.setFocusEmulationEnabled', { enabled: false }), { timeoutMs: 1000 }).catch(() => {});
+      await waitForRead(() => session.detach(), { timeoutMs: 1000 }).catch(() => {});
+    }
+  }
 }
 
 /**

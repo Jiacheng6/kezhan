@@ -20,7 +20,8 @@ import {
   matchesQuery,
   recalc,
 } from './selection.js';
-import { completionOf, completionCounts, mergeTaskCompletion } from './task-status.js';
+import { completionOf, completionCounts, courseCompletion, sectionCompletion, mergeTaskCompletion } from './task-status.js';
+import { changePanel, expandCourse, preserveTreeFocus } from './motion.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -31,14 +32,85 @@ const state = {
   autoScroll: true,
   filter: '',
 };
+const workspaceListeners = new Set();
+let checklistLoading = true;
+const workspaceSnapshot = () => ({ status: state.status, checklist: tree.data, dirty: tree.dirty, loading: checklistLoading });
+function emitWorkspace() {
+  for (const callback of workspaceListeners) {
+    try { callback(workspaceSnapshot()); } catch (error) { console.warn('首页更新失败', error); }
+  }
+}
+// Both home views use the same selection, status and action implementation.
+export const workspace = Object.freeze({
+  snapshot: workspaceSnapshot,
+  subscribe(callback) { workspaceListeners.add(callback); callback(workspaceSnapshot()); return () => workspaceListeners.delete(callback); },
+  navigate: switchTab,
+  action: runAction,
+  reload: loadChecklist,
+  save: saveSelection,
+  refresh: refreshTreeProgress,
+  selectCourse(courseId, enabled) {
+    const course = tree.data?.courses.find(c => c.courseId === courseId);
+    if (!course || state.status?.running || state.status?.reconRunning) return;
+    course.enabled = enabled; recalc(course); tree.dirty = true; renderTree();
+  },
+  selectTask(courseId, key, selected) {
+    const course = tree.data?.courses.find(c => c.courseId === courseId);
+    const task = course?.tasks.find(t => t.key === key);
+    if (!task || task.policyHandle === false || state.status?.running || state.status?.reconRunning) return;
+    if (selected) course.enabled = true;
+    task.excluded = !selected; recalc(course); tree.dirty = true; renderTree();
+  },
+  onlyUnfinished(courseId) {
+    if (!tree.data?.courses.some(course => course.courseId === courseId) || state.status?.running || state.status?.reconRunning) return;
+    for (const course of tree.data.courses) {
+      course.enabled = course.courseId === courseId;
+      if (course.enabled) for (const task of course.tasks) task.excluded = completionOf(task).finished;
+      recalc(course);
+    }
+    tree.dirty = true; renderTree();
+  },
+  openCourse(courseId) {
+    if(courseCompletion(tree.data?.courses.find(c=>c.courseId===courseId)||{}).finished)tree.completedOpen=true;
+    tree.expanded.add(courseId); tree.query = ''; $('#treeSearch').value = '';
+    switchTab('courses'); if (tree.data) renderTree();
+  },
+});
+const compactLayout = matchMedia('(max-width:1100px)');
+let readinessLayoutState = '';
+compactLayout.addEventListener('change', () => { if (state.status) renderReadinessLayout(state.status); });
+
+// 原生展开菜单可用键盘操作；点击外部或 Escape 时收起。
+const menuSelector = '.connection-menu[open], .inline-menu[open], .selection-tools[open], .course-actions[open], .desktop-more[open]';
+document.addEventListener('click', (event) => {
+  for (const menu of $$(menuSelector)) if (!menu.contains(event.target)) menu.open = false;
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  for (const menu of $$(menuSelector)) {
+    if (menu.contains(document.activeElement)) menu.querySelector('summary')?.focus();
+    menu.open = false;
+  }
+});
 
 /* ---------------- 标签页 ---------------- */
 $$('.tab').forEach((btn) => {
   btn.addEventListener('click', () => {
+    const previous = $('.panel.active');
     $$('.tab').forEach((b) => b.classList.toggle('active', b === btn));
+    $$('.tab').forEach((b) => {
+      if (b === btn) b.setAttribute('aria-current', 'page');
+      else b.removeAttribute('aria-current');
+    });
     const name = btn.dataset.tab;
     $$('.panel').forEach((p) => p.classList.toggle('active', p.id === `panel-${name}`));
+    changePanel(previous, document.getElementById('panel-' + name));
+    $('#pageTitle').textContent = ({ overview: '学习概览', courses: '课程清单', review: '待审答案', logs: '运行记录', settings: '偏好设置' })[name] || '学习空间';
   });
+});
+
+$$('[data-navigate]').forEach((btn) => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.navigate));
 });
 
 function switchTab(name) {
@@ -62,11 +134,12 @@ function setCheck(id, pass, text) {
 }
 
 function renderStatus(s) {
+  const reconJustFinished = state.status?.reconRunning && !s.reconRunning;
   state.status = s;
 
   // 顶栏
   const edgeOk = !!s.edge?.connected;
-  setPill($('#pillEdge'), edgeOk ? 'Edge 已接管' : 'Edge 未连接', edgeOk ? 'ok' : 'bad');
+  setPill($('#pillEdge'), edgeOk ? '专用浏览器已连接' : '专用浏览器未连接', edgeOk ? 'ok' : 'bad');
   const loggedIn = !!s.login?.loggedIn;
   setPill($('#pillLogin'), loggedIn ? '已登录' : '未登录', loggedIn ? 'ok' : 'warn');
   /*
@@ -82,12 +155,14 @@ function renderStatus(s) {
     submitAuto ? 'ok' : 'warn',
   );
   const qOk = !!s.qianwen?.loggedIn;
-  setPill($('#pillQuiz'), qOk ? '答题通道：千问就绪' : '答题通道：未登录千问', qOk ? 'ok' : 'warn');
+  const aiLabel=s.ai?.label||({doubao:'豆包',deepseek:'DeepSeek'}[s.settings?.ai?.provider]||'千问');
+  setPill($('#pillQuiz'), qOk ? `答题通道：${aiLabel}就绪` : `答题通道：未登录${aiLabel}`, qOk ? 'ok' : 'warn');
+  const channelTitle=$('#readyQianwen b');if(channelTitle)channelTitle.textContent=`${aiLabel}答题通道`;
 
   $('#phaseLine').textContent = s.running ? '任务运行中 · 隐藏窗口后继续运行' : '选择课程后开始 · 进度自动保存';
 
   // 概览：浏览器
-  $('#kEdgeState').textContent = edgeOk ? (s.edge.launched ? '本次启动并接管' : '接管已有实例') : '未连接';
+  $('#kEdgeState').textContent = edgeOk ? '已连接，可在后台运行' : '等待连接';
   $('#kEdgeVersion').textContent = s.edge?.version || '—';
   $('#kDebugPort').textContent = s.debugPort || '—';
   $('#kProfile').textContent = s.edgeProfile || '—';
@@ -109,6 +184,23 @@ function renderStatus(s) {
   $('#kTotal').textContent = p.total ?? 0;
   $('#kCurrent').textContent = p.current || '空闲';
   $('#kRunning').textContent = s.running ? '运行中' : '未运行';
+  $('#overviewReviewCount').textContent = s.reviewCount ?? 0;
+  $('#overviewQianwen').textContent = qOk ? '已登录，答题通道就绪' : `使用答题功能前请登录${aiLabel}`;
+  for (const [id, ready] of [['readyBrowser', edgeOk], ['readyLogin', loggedIn], ['readyQianwen', qOk]]) {
+    $(`#${id}`).classList.toggle('ready', ready);
+  }
+  renderReadinessLayout(s);
+  const activity = $('#overviewActivity');
+  activity.textContent = s.reconRunning ? '正在扫描' : s.running ? '学习进行中' : !loggedIn ? '等待登录' : '已就绪';
+  activity.classList.toggle('running', !!s.running || !!s.reconRunning);
+  $('#overviewHeadline').textContent = s.reconRunning ? '正在整理课程清单' : s.running ? '学习任务运行中' : !loggedIn ? '先登录学习通' : '准备开始学习';
+  $('#overviewSubtitle').textContent = s.reconRunning ? '正在读取课程与章节任务，原有进度会保留。' : s.running ? '你可以隐藏浏览器，让任务继续在后台运行。' : !loggedIn ? '在专用浏览器完成登录，回来后检测登录状态。' : '选择课程与任务范围，再开始这一次学习。';
+  const sessionPercent = p.total ? Math.min(100, ((p.done || 0) / p.total) * 100) : 0;
+  $('#overviewProgressFill').style.width = `${sessionPercent}%`;
+  $('#overviewSessionProgress').classList.toggle('hidden', !p.total && !s.running);
+  $('#overviewSessionDetails').classList.toggle('hidden', !p.total && !s.running);
+  $('#overviewProgressTitle').textContent = s.running ? '本次任务进度' : '最近一次运行';
+  renderOverviewSelection();
 
   // 概览：本次运行范围（避免"以为只刷一门，其实刷了全部"）
   const sc = s.runScope;
@@ -156,6 +248,21 @@ function renderStatus(s) {
 
   // 待审队列计数
   $('#reviewCount').textContent = s.reviewCount ?? 0;
+  if (!tree.data) renderOverviewCourses();
+  if (reconJustFinished && !tree.dirty) loadChecklist().catch(() => {});
+  emitWorkspace();
+}
+
+function renderReadinessLayout(s) {
+  const ready = !!s.edge?.connected && !!s.login?.loggedIn && !!s.qianwen?.loggedIn;
+  const key = `${compactLayout.matches}:${ready}`;
+  if (key !== readinessLayoutState) {
+    $('#readinessDetails').open = !compactLayout.matches || !ready;
+    readinessLayoutState = key;
+  }
+  $('.overview-rail').classList.toggle('all-ready', ready);
+  $('#readinessTitle').textContent = compactLayout.matches && ready ? '连接已就绪' : '连接与登录';
+  $('#readinessIndex').textContent = compactLayout.matches && ready ? '3 项已就绪 · 展开查看' : '01—03';
 }
 
 /** 执行中/停止状态条 */
@@ -164,17 +271,18 @@ function renderRunBar(s) {
   const p = s.progress || {};
   const st = s.runStats;
   const running = !!s.running || !!s.reconRunning;
+  const hasSelectedTasks = !!tree.data && willSummary(tree.data.courses).tasks > 0;
 
   /*
    * 按钮可用性必须无条件更新 —— 之前放在"状态条显示"的早退之后，
    * 结果空闲时「开始」按钮保持 HTML 里的 disabled，"停止"反而可用，正好反了。
    */
   $$('[data-action="startRun"]').forEach((runBtn) => {
-    runBtn.disabled = running || !s.ready || !s.edge?.connected || !!s.reconRunning;
-    runBtn.textContent = s.reconRunning ? '正在读取课程…' : running ? '执行中…' : '▶ 开始执行刷课';
+    runBtn.disabled = running || !s.ready || !s.edge?.connected || !s.login?.loggedIn || !hasSelectedTasks;
+    runBtn.textContent = s.reconRunning ? '正在扫描课程…' : running ? '学习进行中…' : '开始学习 ↗';
   });
   $$('[data-action="stopRun"]').forEach((stopBtn) => { stopBtn.disabled = !running; });
-  $$('[data-action="startRecon"]').forEach((btn) => { btn.disabled = running || !s.ready || !s.edge?.connected || !!s.reconRunning; });
+  $$('[data-action="startRecon"]').forEach((btn) => { btn.disabled = running || !s.ready || !s.edge?.connected || !s.login?.loggedIn; });
 
   if (!bar) return;
 
@@ -309,6 +417,7 @@ function renderSettingRow(row) {
   }
 
   input.className = 'setinput';
+  input.setAttribute('aria-label',row.label);
   right.appendChild(input);
   if (row.unit) right.appendChild(el('span', 'setunit', row.unit));
   if (row.kind === 'int' || row.kind === 'number') {
@@ -467,11 +576,11 @@ async function runAction(name, btn) {
           level: 'error',
           message: `课程选择自动保存失败，已中止执行：${r?.error || '未知错误'}（请手动点「保存选择」）`,
         });
-        return;
+        return { ok: false, error: r?.error || '课程选择保存失败' };
       }
     } catch (err) {
       appendLog({ t: Date.now(), level: 'error', message: `课程选择自动保存异常，已中止执行：${err.message}` });
-      return;
+      return { ok: false, error: err.message };
     }
   }
 
@@ -486,12 +595,15 @@ async function runAction(name, btn) {
     if (!body.ok) {
       appendLog({ t: Date.now(), level: 'error', message: `动作 ${name} 失败：${body.error || res.status}` });
     }
+    return body;
   } catch (err) {
     appendLog({ t: Date.now(), level: 'error', message: `动作 ${name} 请求失败：${err.message}` });
+    return { ok: false, error: err.message };
   } finally {
     if (btn) {
       btn.classList.remove('busy');
       btn.textContent = btn.dataset.old || label;
+      if (state.status && ['startRun', 'stopRun', 'startRecon'].includes(name)) renderRunBar(state.status);
     }
   }
 }
@@ -581,6 +693,8 @@ const tree = {
   query: '', // 搜索词
   expanded: new Set(), // 展开的课程 courseId
   previewOpen: false,
+  completedOpen: false,
+  completedSectionsOpen: new Map(),
 };
 
 // 暴露到 window，便于在浏览器控制台里排查（不影响正常使用）
@@ -602,6 +716,8 @@ function el(tag, cls, text) {
 }
 
 async function loadChecklist() {
+  checklistLoading = true;
+  try {
   const res = await fetch('/api/checklist');
   const body = await res.json();
   if (!body.ok) {
@@ -612,12 +728,14 @@ async function loadChecklist() {
   if (!body.result) {
     $('#treeSummary').textContent = '还没有侦察数据。点「重新侦察」抓取。';
     $('#treeSource').textContent = '无数据';
+    renderOverviewCourses();
     return;
   }
   tree.data = body.result;
   tree.dirty = false;
   $('#treeSource').textContent = '已加载';
   renderTree();
+  } finally { checklistLoading = false; emitWorkspace(); }
 }
 
 let progressRefreshing = false;
@@ -632,36 +750,127 @@ async function refreshTreeProgress() {
 }
 
 setInterval(() => {
-  if ($('#panel-courses').classList.contains('active')) refreshTreeProgress();
+  const library = document.getElementById('libraryHome');
+  if ($('#panel-courses').classList.contains('active') || (library && !library.hidden)) refreshTreeProgress();
 }, 5000);
 
+function renderOverviewSelection() {
+  const selection = willSummary(tree.data?.courses || []);
+  const s = state.status || {};
+  const names = selection.list.map((c) => c.name);
+  const hasCourses = (tree.data?.courses || []).some((c) => !c.empty);
+  const primary = $('#overviewStart');
+  primary.dataset.action = hasCourses ? 'startRun' : 'startRecon';
+  if (!hasCourses) primary.textContent = s.reconRunning ? '正在扫描课程…' : '扫描课程 ↗';
+  $('#overviewSelectedNames').textContent = names.join(' / ');
+  $('#overviewSelectedNames').title = names.join('、');
+  if (s.login?.loggedIn && !s.running && !s.reconRunning) {
+    $('#overviewSubtitle').textContent = selection.tasks
+      ? `已选 ${selection.courses} 门课 · ${selection.tasks} 个任务，已完成的内容会自动跳过。`
+      : hasCourses ? '课程清单已保留，可在课程树中查看待完成与已完成内容。' : '先扫描课程，再选择这次要学习的范围。';
+  }
+}
+
+function renderOverviewCourses() {
+  renderOverviewSelection();
+  const courses = tree.data?.courses || [];
+  const progress = completionCounts(courses.flatMap((c) => c.tasks || []));
+  $('#overviewTaskCount').textContent = progress.total;
+  $('#overviewDoneCount').textContent = progress.done;
+  const box = $('#overviewCourses');
+  box.innerHTML = '';
+  const visible = courses.filter((c) => !c.empty).slice(0, 3);
+  if (!visible.length) {
+    box.appendChild(el('p', 'placeholder', '还没有课程清单。首次使用先扫描课程，之后会自动读取。'));
+    const scan = el('button', 'text-button', '扫描课程 →');
+    scan.addEventListener('click', () => runAction('startRecon', scan));
+    scan.disabled = !state.status?.ready || !state.status?.edge?.connected;
+    box.appendChild(scan);
+    return;
+  }
+  visible.forEach((course, index) => {
+    const progress = completionCounts(course.tasks);
+    const row = el('button', 'ledger-row');
+    row.appendChild(el('span', 'ledger-number', String(index + 1).padStart(2, '0')));
+    const name = el('span', 'ledger-name');
+    name.appendChild(el('b', null, course.name));
+    name.appendChild(el('small', null, `${course.sections.length} 个小节 · 清单内 ${progress.total} 个任务`));
+    row.appendChild(name);
+    const completion=courseCompletion(course);
+    row.appendChild(el('span', 'ledger-remaining', completion.finished?'已完成':progress.remaining?`${progress.remaining} 项待完成`:completion.label));
+    row.appendChild(el('span', 'ledger-arrow', '↗'));
+    row.addEventListener('click', () => {
+      if(completion.finished)tree.completedOpen=true;
+      tree.expanded.add(course.courseId);
+      tree.query = '';
+      $('#treeSearch').value = '';
+      switchTab('courses');
+      renderTree();
+    });
+    box.appendChild(row);
+  });
+}
+
+const courseViews = new WeakMap();
+const completionGroups=new Map();
+function syncChildren(parent,nodes){
+  const retained=new Set(nodes);
+  for(const child of [...parent.children])if(!retained.has(child))child.remove();
+  nodes.forEach((node,index)=>{if(parent.children[index]!==node)parent.insertBefore(node,parent.children[index]||null);});
+}
+function completionGroup(id,label,count,matching,query){
+  if(!completionGroups.has(id)){
+    const node=el('section','course-completion-group');node.dataset.completionGroup=id;
+    const heading=el('button','completion-group-heading');heading.type='button';
+    const content=el('div','completion-group-content');content.id=`course-group-${id}`;
+    heading.setAttribute('aria-controls',content.id);
+    if(id==='completed')heading.onclick=()=>{tree.completedOpen=!tree.completedOpen;renderTree();};
+    else heading.disabled=true;
+    node.append(heading,content);completionGroups.set(id,{node,heading,content});
+  }
+  const group=completionGroups.get(id),open=id==='pending'||tree.completedOpen||!!query;
+  group.heading.textContent=`${id==='completed'?(open?'▾ ':'▸ '):''}${label} ${count} 门${query?` · 匹配 ${matching} 门`:''}`;
+  group.heading.setAttribute('aria-expanded',String(open));group.content.hidden=!open;
+  return group;
+}
 function renderTree() {
   const body = $('#treeBody');
   const summary = $('#treeSummary');
   if (!tree.data) return;
+  renderOverviewCourses();
 
   const s = tree.data.summary;
-  const typeParts = Object.entries(s.byType || {}).map(([k, v]) => `${k} ${v}`);
   const progress = completionCounts(tree.data.courses.flatMap((c) => c.tasks || []));
+  const completedCount=tree.data.courses.filter(course=>courseCompletion(course).finished).length;
   summary.innerHTML =
-    `共 <b>${s.totalCourses}</b> 门课 · 任务点 <b>${s.totalTasks}</b> 个 · ` +
-    `已完成 <b>${progress.done}</b> · 未完成 / 待确认 <b>${progress.remaining}</b> · ` +
-    (typeParts.length ? `<span class="muted">类型分布：${typeParts.join(' · ')}</span>` : '');
+    `共 <b>${s.totalCourses}</b> 门课 · 已完成 <b>${completedCount}</b> 门 · 待完成 <b>${s.totalCourses-completedCount}</b> 门 · 已读取任务点 <b>${s.totalTasks}</b> 个 · ` +
+    `已完成 <b>${progress.done}</b> · 未完成 <b>${progress.remaining}</b>`;
 
   const q = tree.query || '';
-  body.innerHTML = '';
-  let shown = 0;
+  preserveTreeFocus(body, () => {
+  const grouped={pending:[],completed:[]};
   for (const c of tree.data.courses) {
     if (!courseVisible(c, q)) continue;
-    shown += 1;
-    body.appendChild(renderCourse(c, q));
+    const signature = JSON.stringify([q, c, tree.expanded.has(c.courseId),tree.completedSectionsOpen.get(c.courseId)]);
+    let cached = courseViews.get(c);
+    if (!cached || cached.signature !== signature) {
+      cached = { signature, node: renderCourse(c, q) };
+      courseViews.set(c, cached);
+    }
+    grouped[courseCompletion(c).finished?'completed':'pending'].push(cached.node);
   }
-  if (!shown) {
-    body.appendChild(el('p', 'placeholder', q ? `没有匹配「${q}」的课程或任务点。` : '清单里没有可显示的课程。'));
+  const nodes=[];
+  for(const [id,label,total]of [['pending','待完成',tree.data.courses.length-completedCount],['completed','已完成',completedCount]]){
+    const group=completionGroup(id,label,total,grouped[id].length,q);
+    syncChildren(group.content,grouped[id].length?grouped[id]:[el('p','placeholder',q?'本组没有匹配的课程。':id==='completed'?'暂无已完成课程。':'暂无待完成课程。')]);
+    nodes.push(group.node);
   }
+  syncChildren(body,nodes);
+  });
 
   renderWillSummary();
   renderPreview();
+  if (state.status) renderRunBar(state.status);
 
   // 待人工清单
   const hb = s.handbook || [];
@@ -696,6 +905,7 @@ function scopeOf() {
 
 /** 常驻汇总条：本次到底会刷什么（用户最想要的"看得见"） */
 function renderWillSummary() {
+  renderOverviewSelection();
   const box = $('#treeWillSummary');
   if (!box || !tree.data) return;
   const s = willSummary(tree.data.courses);
@@ -707,7 +917,7 @@ function renderWillSummary() {
   if (by.other) parts.push(`其它 ${by.other}`);
 
   if (!s.tasks) {
-    box.innerHTML = `<b class="warn">本次将刷 0 个任务点</b> <span class="muted">（没有任何课程/任务点被选中）</span>`;
+    box.innerHTML = `<b class="warn">尚未选择任务</b> <span class="muted">勾选需要学习的课程或任务</span>`;
   } else {
     // 类型范围没全勾时明确提示，免得"为什么只有视频"
     const sc = scopeOf();
@@ -715,12 +925,13 @@ function renderWillSummary() {
       .filter(([, v]) => !v)
       .map(([k]) => ({ video: '视频', work: '测验', doc: '文档', other: '其它' })[k]);
     box.innerHTML =
-      `本次将刷 <b>${s.courses}</b> 门课 · <b>${s.tasks}</b> 个任务点` +
+      `已选 <b>${s.courses}</b> 门课 · <b>${s.tasks}</b> 个任务` +
       (parts.length ? ` <span class="muted">（${parts.join(' · ')}）</span>` : '') +
       (off.length ? ` <span class="warn">（类型范围不含：${off.join('、')}）</span>` : '');
   }
   const dirty = $('#treeDirty');
   if (dirty) dirty.classList.toggle('hidden', !tree.dirty);
+  emitWorkspace();
 }
 
 /** 预览：逐条列出将被执行的任务点 */
@@ -830,16 +1041,20 @@ function bindTreeTools() {
         appendLog({ t: Date.now(), level: 'info', message: '已清空节号区间（一键操作本来就不受区间影响）' });
       } else if (act === 'preview') {
         tree.previewOpen = !tree.previewOpen;
-        btn.textContent = tree.previewOpen ? '收起预览' : '预览将刷清单';
+        btn.textContent = tree.previewOpen ? '收起预览' : '预览任务';
         renderPreview();
       } else if (act === 'expandAll' || act === 'collapseAll') {
+        tree.completedOpen=act==='expandAll';
+        for(const course of tree.data.courses)tree.completedSectionsOpen.set(course.courseId,act==='expandAll');
         const all = $$('#treeBody .treecourse');
         for (const w of all) {
           const open = act === 'expandAll';
-          w.classList.toggle('open', open);
+          if (open) tree.expanded.add(w.dataset.courseId); else tree.expanded.delete(w.dataset.courseId);
+          expandCourse(w, open);
           const caret = w.querySelector('.caret');
-          if (caret) caret.textContent = open ? '▾' : '▸';
+          if (caret) { caret.textContent = open ? '▾' : '▸'; caret.setAttribute('aria-expanded', String(open)); }
         }
+        renderTree();
       }
     });
   }
@@ -847,14 +1062,18 @@ function bindTreeTools() {
 
 function renderCourse(c, q = '') {
   const wrap = el('div', 'treecourse');
+  wrap.dataset.courseId = c.courseId;
   const head = el('div', 'treehead');
 
-  const caret = el('span', 'caret', '▸');
+  const caret = el('button', 'caret', '▸');
+  caret.dataset.motionKey = c.courseId + ':caret';
+  caret.setAttribute('aria-label', `展开或收起${c.name}`);
   head.appendChild(caret);
 
   if (!c.empty) {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
+    cb.dataset.motionKey = c.courseId + ':enabled';
     cb.checked = c.enabled !== false;
     cb.title = '是否处理这门课';
     cb.addEventListener('click', (e) => e.stopPropagation());
@@ -876,22 +1095,32 @@ function renderCourse(c, q = '') {
   } else {
     const counts = c.counts || {};
     for (const [k, v] of Object.entries(counts)) {
-      const chip = el('span', `chip ${['video', 'work', 'doc'].includes(k) ? k : 'skip'}`, `${k} ${v}`);
+      const chip = el('span', 'type-count', `${({video:'视频',work:'测验',doc:'文档',read:'阅读'})[k] || '其他'} ${v}`);
       meta.appendChild(chip);
     }
     const progress = completionCounts(c.tasks);
-    meta.appendChild(el('span', 'chip', `已完成 ${progress.done}/${progress.total}`));
+    const completion=courseCompletion(c);
+    meta.appendChild(el('span',`chip ${completion.finished?'task-done':''}`,completion.label));
+    if(progress.total)meta.appendChild(el('span', 'chip', `已读取任务 ${progress.done}/${progress.total}`));
+    if(completion.totalSections)meta.appendChild(el('span','chip',`小节 ${completion.completedSections}/${completion.totalSections}`));
     const will = c.tasks.filter((t) => t.willHandle).length;
-    meta.appendChild(el('span', 'chip', `将处理 ${will}/${c.tasks.length}`));
+    meta.appendChild(el('span', 'chip', `已选 ${will}/${c.tasks.length}`));
   }
   head.appendChild(meta);
 
   // 课程头：停用/启用、只刷这门课、只留前 N 个
   if (!c.empty) {
+    const menu = el('details', 'course-actions');
+    const menuToggle = el('summary', null, '课程操作 ···');
+    const menuBody = el('div');
+    menu.appendChild(menuToggle);
+    menu.appendChild(menuBody);
+    menu.addEventListener('click', (event) => event.stopPropagation());
     const only = el('button', 'ghost onlybtn', '只刷这门课');
     only.title = '禁用其它课程并保存选择（执行时就只会刷这一门）';
     only.addEventListener('click', async (e) => {
       e.stopPropagation();
+      menu.open = false;
       for (const x of tree.data.courses) {
         if (x.empty) continue;
         x.enabled = x.courseId === c.courseId;
@@ -904,12 +1133,13 @@ function renderCourse(c, q = '') {
       }
       renderTree();
     });
-    head.appendChild(only);
+    menuBody.appendChild(only);
 
     const firstN = el('button', 'ghost onlybtn', '只留前 N 个');
     firstN.title = '只保留这门课最前面的 N 个任务点（其余排除），适合"先刷一小段试试"';
     firstN.addEventListener('click', (e) => {
       e.stopPropagation();
+      menu.open = false;
       const ans = window.prompt(`《${c.name}》\n只保留最前面的几个任务点？（其余会被排除）`, '5');
       if (ans == null) return;
       const n = Number(ans);
@@ -922,22 +1152,27 @@ function renderCourse(c, q = '') {
       appendLog({ t: Date.now(), level: 'ok', message: `《${c.name}》已只留前 ${r.kept} 个任务点（共 ${r.total} 个）` });
       renderTree();
     });
-    head.appendChild(firstN);
+    menuBody.appendChild(firstN);
+    head.appendChild(menu);
   }
 
-  head.addEventListener('click', () => {
-    wrap.classList.toggle('open');
+  const toggleCourse = () => {
+    expandCourse(wrap, !wrap.classList.contains('open'));
     caret.textContent = wrap.classList.contains('open') ? '▾' : '▸';
+    caret.setAttribute('aria-expanded', String(wrap.classList.contains('open')));
     if (wrap.classList.contains('open')) tree.expanded.add(c.courseId);
     else tree.expanded.delete(c.courseId);
-  });
+  };
+  head.addEventListener('click', toggleCourse);
+  caret.addEventListener('click', (event) => { event.stopPropagation(); toggleCourse(); });
 
   // 搜索时自动展开命中的课程，省得还要手点
-  if (q && courseNameMatches(c, q)) wrap.classList.add('open');
+  if (q) wrap.classList.add('open');
   if (tree.expanded.has(c.courseId)) {
     wrap.classList.add('open');
     caret.textContent = '▾';
   }
+  caret.setAttribute('aria-expanded', String(wrap.classList.contains('open')));
 
   wrap.appendChild(head);
 
@@ -949,16 +1184,32 @@ function renderCourse(c, q = '') {
      * 按"章"分组（节号第一段相同 = 同一章，如 2.1/2.9 同属第 2 章）。
      * 章级复选框一键勾选/取消整章 —— 用户要的"按章节批量选"。
      */
+    const pendingSections=(c.sections||[]).filter(sec=>!sectionCompletion(c,sec).finished);
+    const doneSections=(c.sections||[]).filter(sec=>sectionCompletion(c,sec).finished);
+    for(const [finished,sections]of [[false,pendingSections],[true,doneSections]]){
+      if(!sections.length)continue;
+      const group=el('section','section-completion-group');
+      group.dataset.sectionCompletion=finished?'completed':'pending';
+      const title=el('button','section-group-heading');title.type='button';
+      title.dataset.motionKey=c.courseId+':section-group:'+(finished?'completed':'pending');
+      const open=!finished||!!q||(tree.completedSectionsOpen.get(c.courseId)??!pendingSections.length);
+      title.textContent=`${finished?(open?'▾ ':'▸ '):''}${finished?'已完成小节':'待完成小节'} ${sections.length}`;
+      title.setAttribute('aria-expanded',String(open));
+      if(finished)title.onclick=()=>{tree.completedSectionsOpen.set(c.courseId,!open);renderTree();};
+      else title.disabled=true;
+      const content=el('div','section-group-content');content.hidden=!open;
+      group.append(title,content);bodyEl.appendChild(group);
     const groups = new Map();
-    for (const sec of c.sections || []) {
+    for (const sec of sections) {
       const ch = String(sec.secNo || '').split('.')[0] || '?';
       if (!groups.has(ch)) groups.set(ch, []);
       groups.get(ch).push(sec);
     }
 
     for (const [ch, secs] of groups) {
-      const chTasks = tasksOf(c, { chapterNo: ch });
-      if (q && !courseNameHit && !chTasks.some((t) => matchesQuery(c.name, t, q))) {
+      const sectionIds=new Set(secs.map(sec=>sec.knowledgeId));
+      const chTasks = (c.tasks||[]).filter(task=>sectionIds.has(task.knowledgeId));
+      if (q && !courseNameHit && !chTasks.some((t) => matchesQuery(c.name, t, q))&&!secs.some(sec=>[sec.secNo,sec.name].some(value=>String(value||'').toLowerCase().includes(q.toLowerCase())))) {
         // 该章在搜索结果里没有命中的任务点 → 整章不显示
         continue;
       }
@@ -966,13 +1217,15 @@ function renderCourse(c, q = '') {
       const chHead = el('div', 'chaphead');
       const chCb = document.createElement('input');
       chCb.type = 'checkbox';
+      chCb.dataset.motionKey = c.courseId + ':chapter:' + (finished?'completed:':'pending:') + ch;
       const chState = selectionState(chTasks);
       chCb.checked = chState.state === 'all';
       chCb.indeterminate = chState.state === 'partial';
+      chCb.disabled=chState.total===0;
       chCb.title = `第 ${ch} 章：一键勾选/取消本章全部 ${chState.total} 个任务点`;
       chCb.addEventListener('click', (e) => e.stopPropagation());
       chCb.addEventListener('change', () => {
-        batchSelectBookChapter(c, ch, chCb.checked ? 'select' : 'deselect');
+        for(const sec of secs)batchSelectChapter(c,sec,chCb.checked ? 'select' : 'deselect');
         tree.dirty = true;
         appendLog({
           t: Date.now(),
@@ -984,7 +1237,7 @@ function renderCourse(c, q = '') {
       chHead.appendChild(chCb);
       chHead.appendChild(el('span', 'chapname', `第 ${ch} 章`));
       chHead.appendChild(el('span', 'chip', `${chTasks.filter((t) => t.policyHandle !== false).length} 个任务点`));
-      bodyEl.appendChild(chHead);
+      content.appendChild(chHead);
 
       for (const sec of secs) {
         const blk = el('div', 'sectionblk');
@@ -992,7 +1245,9 @@ function renderCourse(c, q = '') {
 
         const secCb = document.createElement('input');
         secCb.type = 'checkbox';
+        secCb.dataset.motionKey = c.courseId + ':section:' + sec.knowledgeId;
         const st = chapterState(c, sec);
+        secCb.disabled=st.total===0;
         secCb.checked = st.state === 'all';
         secCb.indeterminate = st.state === 'partial';
         secCb.title = `整节勾选/取消（${sec.secNo}，共 ${st.total} 个任务点）`;
@@ -1007,17 +1262,19 @@ function renderCourse(c, q = '') {
         sh.appendChild(el('span', 'sno', sec.secNo || ''));
         sh.appendChild(el('span', null, sec.name || ''));
         const all = (c.tasks || []).filter((t) => t.knowledgeId === sec.knowledgeId);
-        const progress = completionCounts(all);
-        sh.appendChild(el('span', `chip ${progress.done === progress.total ? 'task-done' : ''}`,
-          `已完成 ${progress.done}/${progress.total}`));
+        const progress = sectionCompletion(c,sec);
+        sh.appendChild(el('span', `chip ${progress.finished ? 'task-done' : ''}`,
+          progress.total?`${!progress.finished&&!progress.remaining?progress.label+' · 已读取任务 ': '已完成 '}${progress.done}/${progress.total}`:progress.label));
         blk.appendChild(sh);
+        if(!all.length)blk.appendChild(el('p','section-coverage-note',sec.done?'平台已标记此小节完成，未重复读取任务详情。':progress.label));
 
         const tasks = q && !courseNameHit ? all.filter((t) => matchesQuery(c.name, t, q)) : all;
         for (let i = 0; i < tasks.length; i += 1) {
           blk.appendChild(renderTaskRow(c, all, all.indexOf(tasks[i])));
         }
-        bodyEl.appendChild(blk);
+        content.appendChild(blk);
       }
+    }
     }
     wrap.appendChild(bodyEl);
   }
@@ -1051,6 +1308,7 @@ function renderTaskRow(course, tasks, index) {
   // 勾选（排除）
   const cb = document.createElement('input');
   cb.type = 'checkbox';
+  cb.dataset.motionKey = t.key + ':selected';
   cb.checked = !t.excluded;
   cb.title = t.excluded ? '已排除，点击恢复' : '取消勾选即排除';
   cb.addEventListener('change', () => {
@@ -1123,6 +1381,7 @@ async function saveSelection() {
   const body = await res.json();
   if (body.ok) {
     tree.dirty = false;
+    renderWillSummary();
     appendLog({ t: Date.now(), level: 'ok', message: `已保存选择：排除 ${excluded.length} 个任务点` });
   }
   return body;
@@ -1228,6 +1487,7 @@ function renderReview(data) {
 
 function renderQCard(it, taskKey) {
   const card = el('div', 'qcard');
+  if (!it.imagePath) card.classList.add('no-shot');
   const isEssay = it.qtype === 'essay';
 
   const head = el('div', 'qhead');
@@ -1290,7 +1550,7 @@ function renderQCard(it, taskKey) {
   info.appendChild(r3);
 
   const r4 = el('div', 'row');
-  r4.appendChild(el('span', 'lbl', '千问原始回答'));
+  r4.appendChild(el('span', 'lbl', 'AI 原始回答'));
   const ai = el('div', 'ai-text', (it.aiAnswer || it.aiError || '(无)').slice(0, 1500));
   r4.appendChild(ai);
   info.appendChild(r4);

@@ -2,7 +2,7 @@
  * 章节测验 / 作业 执行器（P4）。
  *
  * 流程：
- *   打开作业 frame → 提取题目 → 逐题截图 → 问千问 → 解析 → 分级校验
+ *   打开作业 frame → 提取题目 → 逐题截图 → 问AI → 解析 → 分级校验
  *     → 高可靠且允许自动提交 → 填答案
  *     → 否则 → 进「待审队列」等人工确认
  *   → 全部就绪后按策略提交，并强制留档
@@ -11,7 +11,7 @@
  *   - 默认 submitMode = 'manual'：只填不交，等你在界面确认
  *   - submitMode = 'auto'：仅「高可靠」答案会被提交；中/低可靠一律转待审
  *   - 简答可自动填草稿，整份作业必须人工确认；填空仍转人工
- *   - 每次提交前强制留档（题目截图 + 千问原始回答 + 解析结果）
+ *   - 每次提交前强制留档（题目截图 + AI原始回答 + 解析结果）
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -59,7 +59,7 @@ function sleep(ms) {
 }
 
 /**
- * 读一道题 + 问千问 + 解析。不填、不交。
+ * 读一道题 + 问AI + 解析。不填、不交。
  *
  * @returns {Promise<object>} 含 question / imagePath / aiAnswer / parsed / validation
  */
@@ -67,9 +67,10 @@ async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, sh
   const dir = archiveDir();
 
   // 截图（唯一可靠输入 —— 题干是自定义字体加密的）
-  const imagePath = await shootQuestion(workFrame, domIndex, dir, { shouldStop });
+  const imagePath = await shootQuestion(workFrame, domIndex, dir, { shouldStop, onRecovery: (message) => log(`    ${message}`, 'warn') });
+  log('        题目截图已就绪，准备发送给AI', 'info');
 
-  // 节流：保护千问账号不被风控（踩过坑）
+  // 节流：保护AI账号不被风控（踩过坑）
   await waitTurn({ shouldStop });
   throwIfStopped(shouldStop);
 
@@ -87,7 +88,7 @@ async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, sh
   if (ai.ok) reportSuccess();
   else reportFailure({ errorCode: ai.errorCode, error: ai.error });
 
-  const parsed = parseAnswer(ai.ok ? ai.answer : `（千问调用失败：${ai.error}）`, question);
+  const parsed = parseAnswer(ai.ok ? ai.answer : `（AI调用失败：${ai.error}）`, question);
   const validation = validateBeforeSubmit(parsed, question);
 
   return {
@@ -107,7 +108,7 @@ async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, sh
  *
  * @param {object} opts
  * @param {import('playwright-core').BrowserContext} opts.ctx
- * @param {import('playwright-core').Page} opts.qianwenPage 千问标签页
+ * @param {import('playwright-core').Page} opts.qianwenPage AI标签页
  * @param {object} opts.task 执行清单里的任务点
  * @param {string} opts.personId
  * @param {Function} [opts.onProgress]
@@ -207,9 +208,9 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
     if (!meta.questionTotal) throw new Error('未读到任何题目');
     if (!meta.submitBtn) log('    ! 未找到提交按钮，将只填不交', 'warn');
 
-    // —— 3) 千问登录检查 ——
+    // —— 3) AI登录检查 ——
     const login = await checkLogin(qianwenPage);
-    if (!login.loggedIn) throw new Error('千问未登录 —— 请在受控 Edge 里登录千问后重试');
+    if (!login.loggedIn) throw new Error('AI未登录 —— 请在受控 Edge 里登录AI后重试');
 
     // —— 4) 逐题处理 ——
     const questions = await extractQuestions(workFrame);
@@ -228,7 +229,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
         break;
       }
       const q = questions[i];
-      log(`    [${i + 1}/${questions.length}] ${q.qtypeRaw} ${q.optionCount} 选项 —— 问千问…`, 'info');
+      log(`    [${i + 1}/${questions.length}] ${q.qtypeRaw} ${q.optionCount} 选项 —— 读取题目截图…`, 'info');
 
       if (onProgress) onProgress({ index: i, total: questions.length, phase: 'asking' });
 
@@ -243,27 +244,27 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
 
       const tag = confidenceLabel(solved.parsed.confidence);
       log(
-        `        千问：${q.qtype === 'essay' ? `简答正文 ${solved.parsed.textAnswer?.length || 0} 字符` : solved.parsed.letters.join('') || '(无)'}  ${tag}  ${solved.parsed.reason}`,
+        `        AI：${q.qtype === 'essay' ? `简答正文 ${solved.parsed.textAnswer?.length || 0} 字符` : solved.parsed.letters.join('') || '(无)'}  ${tag}  ${solved.parsed.reason}`,
         solved.parsed.confidence === 'high' ? 'ok' : 'warn',
       );
 
       // 风控验证：立刻停止整批，不继续无意义地等待
-      if (solved.aiErrorCode === 'verification-required') {
+      if (['verification-required','rate-limited','not-logged-in','draft-not-empty','draft-attachment','already-generating','wrong-ai-page'].includes(solved.aiErrorCode)) {
         result.phase = 'blocked-verification';
         result.error = solved.aiError;
-        result.needsHuman = '千问滑块验证';
+        result.needsHuman = solved.aiError || '请检查 AI 网页';
         log(`    ⛔ ${solved.aiError}`, 'error');
-        log(`    ⛔ 已停止本批次 —— 请在千问标签页完成验证后重新开始`, 'error');
+        log(`    ⛔ 已停止本批次 —— 请在AI标签页完成验证后重新开始`, 'error');
         break;
       }
 
-      // 千问连续未返回（疑似被限流）→ 也停下，别继续撞
+      // AI连续未返回（疑似被限流）→ 也停下，别继续撞
       {
         const st = throttleState();
         const limit = loadSettings().ai?.consecutiveFailLimit ?? 2;
         if (st.consecutiveFail >= limit) {
           result.phase = 'blocked-throttled';
-          result.error = `千问连续 ${st.consecutiveFail} 次未正常返回（疑似限流），已停止`;
+          result.error = `AI连续 ${st.consecutiveFail} 次未正常返回（疑似限流），已停止`;
           result.needsHuman = `等待约 ${Math.round(st.cooldownLeftMs / 60000)} 分钟后重试，或减少每批题量`;
           log(`    ⛔ ${result.error}`, 'error');
           break;
@@ -414,6 +415,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
       return result;
     }
     result.error = err.message;
+    if (err.captureStage) result.captureStage = err.captureStage;
     log(`    ✗ 失败：${err.message}`, 'error');
     return result;
   } finally {

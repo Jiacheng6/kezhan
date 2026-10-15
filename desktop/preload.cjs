@@ -10,9 +10,17 @@ contextBridge.exposeInMainWorld('desktopApp', Object.freeze({
   checkUpdate: () => ipcRenderer.invoke('desktop:update-check'),
   downloadUpdate: () => ipcRenderer.invoke('desktop:update-download'),
   installUpdate: () => ipcRenderer.invoke('desktop:update-install'),
+  updateNotified: () => ipcRenderer.invoke('desktop:update-notified'),
   onUpdate: (callback) => {
     const listener = (_, status) => callback(status);
     ipcRenderer.on('desktop:update-status', listener);
     return () => ipcRenderer.removeListener('desktop:update-status', listener);
+  },
+  onVisibility: (callback) => {
+    let revision = 0;
+    const listener = (_, visible) => { revision += 1; callback(visible); };
+    ipcRenderer.on('desktop:visibility', listener);
+    ipcRenderer.invoke('desktop:visibility').then(visible => { if (!revision) callback(visible); }).catch(() => {});
+    return () => ipcRenderer.removeListener('desktop:visibility', listener);
   },
 }));

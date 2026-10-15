@@ -18,6 +18,7 @@ import { DEFAULT_SETTINGS } from './config.mjs';
  *   advanced: 是否折叠到"高级"里
  */
 export const SETTING_SPEC = [
+  { path: 'ai.provider', label: 'AI 网页版答题通道', kind: 'select', options: [['qianwen', '千问网页版'], ['doubao', '豆包网页版'], ['deepseek', 'DeepSeek 网页版']], help: '使用自己的网页账号，无需 API Key。保存后打开所选平台；任务运行期间不可切换。额度和验证限制以网页提示为准。' },
   {
     path: 'submitMode',
     label: '测验提交模式',
@@ -46,15 +47,15 @@ export const SETTING_SPEC = [
   { path: 'greenDotPatientStepMs', label: '绿点轮询间隔', kind: 'int', min: 2000, max: 60000, unit: '秒', unitScale: 1000, step: 1 },
   { path: 'docDwellSec', label: '文档/阅读类停留时长', kind: 'int', min: 3, max: 120, unit: '秒' },
   { path: 'quizSubmitTimeoutMs', label: '弹窗题提交后等待反馈上限', kind: 'int', min: 5000, max: 120000, unit: '秒', unitScale: 1000, step: 1, advanced: true },
-  { path: 'ai.minIntervalMs', label: '两次问千问的最小间隔', kind: 'int', min: 5000, max: 600000, unit: '秒', unitScale: 1000, step: 1, help: '太短会触发阿里风控（滑块验证）。' },
+  { path: 'ai.minIntervalMs', label: '两次 AI 提问的最小间隔', kind: 'int', min: 5000, max: 600000, unit: '秒', unitScale: 1000, step: 1, help: '太短可能触发网站限流或人工验证。' },
   { path: 'ai.jitterMs', label: '随机抖动上限', kind: 'int', min: 0, max: 120000, unit: '秒', unitScale: 1000, step: 1, advanced: true },
   {
     path: 'ai.askRetries',
-    label: '千问没回答时重新提问几次',
+    label: 'AI 没回答时重新提问几次',
     kind: 'int',
     min: 0,
     max: 4,
-    help: '千问卡住/没反应时，不干等也不放弃，而是重新提问（重新粘贴题目再发一次）。0 = 不重问。',
+    help: 'AI 卡住/没反应时，不干等也不放弃，而是重新提问（重新粘贴题目再发一次）。0 = 不重问。',
   },
   {
     path: 'ai.answerStuckMs',
@@ -79,12 +80,12 @@ export const SETTING_SPEC = [
     advanced: true,
     help: '正在正常生成时会一直等，直到这个上限。',
   },
-  { path: 'ai.freshChatPerQuestion', label: '每道题都新建千问对话', kind: 'bool', advanced: true },
+  { path: 'ai.freshChatPerQuestion', label: '每道题都新建 AI 对话', kind: 'bool', advanced: true },
   { path: 'ai.stuckCooldownMs', label: '千问"卡住"时的冷却时间', kind: 'int', min: 30000, max: 1800000, unit: '分钟', unitScale: 60000, step: 0.5, advanced: true },
-  { path: 'ai.consecutiveFailLimit', label: '千问连续失败几次就停批', kind: 'int', min: 1, max: 10, advanced: true },
+  { path: 'ai.consecutiveFailLimit', label: 'AI 连续失败几次就停批', kind: 'int', min: 1, max: 10, advanced: true },
   { path: 'homeworkModule', label: '处理独立作业模块', kind: 'bool', help: '默认关闭：作业通常只有一次提交机会。' },
   { path: 'cardsPopupWatch', label: '监听 cards 页老式弹窗', kind: 'bool', advanced: true, help: '视频内弹窗题走 .ans-videoquiz，与这个无关；默认关闭避免两套监听抢答。' },
-  { path: 'quizPrompt', label: '问千问的提问词', kind: 'textarea', advanced: true },
+  { path: 'quizPrompt', label: '选择题提问词', kind: 'textarea', advanced: true },
   { path: 'qianwenUrl', label: '千问地址', kind: 'text', advanced: true },
 ];
 

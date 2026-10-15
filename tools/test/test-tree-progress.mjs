@@ -23,7 +23,7 @@ const cl = buildChecklist({ includeProgress: true });
 const course = cl.courses[0];
 assert.equal(course.tasks.length, 2, '视频完成后仍保留答题任务');
 assert.equal(course.tasks[0].completion.label, '已完成');
-assert.equal(course.tasks[1].completion.label, '未完成 · 待人工');
+assert.equal(course.tasks[1].completion.label, '待你核对');
 assert.deepEqual(completionCounts(course.tasks), { total: 2, done: 1, remaining: 1 });
 assert.equal(course.tasks[0].finished, false, '仅展示合并状态，不改侦察结果或执行输入');
 assert.equal(buildChecklist().courses[0].tasks[0].completion.finished, false, '执行清单保留原有判定');
