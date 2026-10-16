@@ -13,6 +13,10 @@ for (const excluded of ['edge-profile', 'logs', 'data', 'local.json', 'state.jso
 }
 assert.ok(fs.existsSync(path.join(app, 'desktop', 'native', 'BrowserWindowControl.exe')));
 assert.ok(fs.existsSync(path.join(app, 'src', 'chaoxing', 'essay.mjs')), '缺少简答填写模块');
+for (const relative of ['src/onboarding.mjs', 'src/ui/onboarding.js', 'src/ui/onboarding.css', 'src/ui/selection-desk.js', 'src/ui/selection-plan.js', 'src/ui/learning-focus.css', 'src/chaoxing/selection-presets.mjs', 'src/ui/close-dialog.js', 'src/ui/dialogs.css', 'desktop/close-confirmation.cjs']) {
+  assert.ok(fs.existsSync(path.join(app, relative)), '缺少本次更新模块：' + relative);
+  assert.equal(fs.readFileSync(path.join(app, relative)).equals(fs.readFileSync(path.join(ROOT, relative))), true, '打包源码不一致：' + relative);
+}
 for (const file of ['review-recovery.mjs', 'review-lock.mjs']) assert.ok(fs.existsSync(path.join(app, 'src', 'chaoxing', file)), '缺少作业恢复模块：' + file);
 assert.ok(fs.existsSync(path.join(app, 'node_modules', 'playwright-core', 'package.json')));
 assert.ok(fs.existsSync(path.join(app, 'node_modules', 'ws', 'package.json')));

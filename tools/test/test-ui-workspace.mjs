@@ -1,3 +1,4 @@
+import { requestTestExit, enterTestWorkspace, revealTestTools, openTestArchive } from './desktop-test-helpers.mjs';
 // Local UI review only: isolated synthetic records and mocked account/task status.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -35,9 +36,9 @@ try{
   const page=await application.firstWindow();
   page.on('pageerror',e=>errors.push(e.message));
   await page.waitForURL('http://127.0.0.1:*/');
-  await page.locator('#libraryHome #appearance').click();
+  await openTestArchive(page);await page.locator('#libraryHome #appearance').click();
   await page.locator('#libraryHome #showOnStartup').uncheck();
-  await page.locator('#libraryHome #enterWorkspace').click();
+  await enterTestWorkspace(page);
   const initial=await page.evaluate(async()=>fetch('/api/status').then(r=>r.json()));
   const status={...initial,ready:true,bootError:null,edge:{connected:true,launched:true,version:'演示浏览器'},login:{loggedIn:true,reason:'演示账号已连接'},qianwen:{loggedIn:true},account:{},running:false,reviewCount:1,progress:{done:0,total:0,current:null},runStats:null};
   const sockets=new Set();
@@ -53,18 +54,19 @@ try{
     await route.fulfill({json:{ok:true,result:{started:true}}});sendStatus();
   });
   await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows()[0];win.setContentSize(1240,800);win.setTitle('学习通助手 · 本地界面预览（演示数据）');win.showInactive();});
-  await page.reload();
+  await page.reload();await revealTestTools(page);await page.locator('[data-tab=overview]').click();
+  await revealTestTools(page);await page.locator('[data-tab=overview]').click();
   await page.locator('#overviewTaskCount').filter({hasText:'18'}).waitFor();
   await page.locator('#kLoginState').filter({hasText:'已登录'}).waitFor();
   const capture=async name=>page.screenshot({path:path.join(output,'round-'+round+'-'+name+'.png'),fullPage:false,animations:'disabled'});
-  await capture('overview');
-  await page.locator('#toggleClassicUi').click();
+  await revealTestTools(page);await page.locator('[data-tab=overview]').click();await capture('overview');
+  await revealTestTools(page);await page.locator('#toggleClassicUi').click();
   assert.equal(await page.locator('#workspaceDesign').evaluate(el=>el.disabled),true);
-  await page.locator('#toggleClassicUi').click();
+  await revealTestTools(page);await page.locator('#toggleClassicUi').click();
   assert.equal(await page.locator('#workspaceDesign').evaluate(el=>el.disabled),false);
   await page.waitForTimeout(250); // Read steady colours after the appearance transition.
   // 键盘焦点与核心文字对比度。
-  await page.locator('.tab[data-tab=overview]').focus();
+  await revealTestTools(page);await page.locator('.tab[data-tab=overview]').focus();
   await page.keyboard.press('Tab');
   const focus=await page.evaluate(()=>({width:getComputedStyle(document.activeElement).outlineWidth,style:getComputedStyle(document.activeElement).outlineStyle}));
   assert.equal(focus.width,'2px');assert.equal(focus.style,'solid');
@@ -78,6 +80,7 @@ try{
   });
   for(const check of contrasts)assert.ok(check.ratio>=4.5,JSON.stringify(check));
   await page.locator('.tab[data-tab=courses]').click();
+  await page.locator('#deskLegacy').click();
   await page.locator('.treehead').first().click();
   await page.locator('.tprow .task-status').first().filter({hasText:'已完成'}).waitFor();
   await capture('courses');
@@ -109,7 +112,7 @@ try{
   await page.locator('.qedit textarea').waitFor();
   assert.match(await page.locator('.qedit textarea').inputValue(),/好的设计/);
   await capture('review');
-  await page.locator('.tab[data-tab=settings]').click();
+  await revealTestTools(page);await page.locator('.tab[data-tab=settings]').click();
   await page.locator('.setrow').first().waitFor();
   await capture('settings');
   assert.equal(await page.locator('#settingsAdvanced').isVisible(),false);
@@ -118,7 +121,7 @@ try{
   await page.locator('#saveSettings').click();await saved;
   await page.locator('#settingsDirty').filter({hasText:'已改'}).waitFor();
   assert.equal(JSON.parse(fs.readFileSync(path.join(data,'state.json'),'utf8')).settings.muted,false);
-  await page.locator('.tab[data-tab=overview]').click();
+  await revealTestTools(page);await page.locator('.tab[data-tab=overview]').click();
   status.running=true;status.progress={done:2,total:8,current:'设计入门 · 1.2 从物品到设计'};sendStatus();
   await page.locator('#overviewActivity').filter({hasText:'学习进行中'}).waitFor();
   await capture('overview-running');
@@ -137,7 +140,7 @@ try{
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'窄窗口 '+tab+' 溢出');
     await capture('narrow-'+tab);
   }
-  await page.locator('.tab[data-tab=overview]').click();
+  await revealTestTools(page);await page.locator('.tab[data-tab=overview]').click();
   await page.emulateMedia({reducedMotion:'reduce'});
   assert.equal(await page.locator('#overviewProgressFill').evaluate(e=>getComputedStyle(e).transitionDuration),'0s');
   await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows()[0];win.setMinimumSize(960,660);win.setContentSize(1240,800);});
@@ -145,7 +148,7 @@ try{
   // 首次使用：无清单时主按钮扫描，扫描结束自动加载清单。
   status.progress={done:0,total:0,current:null};status.runStats=null;
   await page.route('**/api/checklist',route=>route.fulfill({json:{ok:true,result:null}}));
-  await page.reload();await page.locator('#overviewStart').filter({hasText:'扫描课程'}).waitFor();
+  await page.reload();await revealTestTools(page);await page.locator('[data-tab=overview]').click();await page.locator('#overviewStart').filter({hasText:'扫描课程'}).waitFor();
   await capture('first-use');await page.locator('#overviewStart').click();
   await page.waitForFunction(()=>document.querySelector('#overviewActivity').textContent==='正在扫描');
   assert.ok(actions.includes('startRecon'));
@@ -157,11 +160,11 @@ try{
   await capture('logged-out');
   status.login={loggedIn:true};sendStatus();
   fs.writeFileSync(path.join(data,'recon-selection.json'),JSON.stringify({courseOrder:[],courses:{},taskOrder:{},excluded:[]}));
-  await page.reload();await page.locator('#overviewTaskCount').filter({hasText:'18'}).waitFor();
+  await page.reload();await revealTestTools(page);await page.locator('[data-tab=overview]').click();await page.locator('#overviewTaskCount').filter({hasText:'18'}).waitFor();
   const workspaceUrl=page.url();
   await application.evaluate(async({app,BrowserWindow})=>{const path=process.getBuiltinModule('path');await BrowserWindow.getAllWindows()[0].loadFile(path.join(app.getAppPath(),'desktop','loading.html'));});
   await page.locator('#message').waitFor();await capture('loading');
-  await page.goto(workspaceUrl);await page.locator('#overviewTaskCount').filter({hasText:'18'}).waitFor();
+  await page.goto(workspaceUrl);await revealTestTools(page);await page.locator('[data-tab=overview]').click();await page.locator('#overviewTaskCount').filter({hasText:'18'}).waitFor();
   assert.deepEqual(errors,[]);
   assert.ok(actions.includes('startRun')&&actions.includes('stopRun'));
   fs.writeFileSync(path.join(output,'round-'+round+'-checks.json'),JSON.stringify({navigation:true,search:true,selectionSaved:true,startStopWiring:true,essayEditor:true,compactNoOverflow:true,narrowNoOverflow:true,reducedMotion:true,keyboardFocus:true,menuEscape:true,courseKeyboardExpand:true,settingsSaved:true,firstScanAutoLoads:true,loggedOutDisabled:true,contrasts,pageErrors:errors,data},null,2));
@@ -175,7 +178,7 @@ try{
 }finally{
   if(!keepOpen){
     const exited=new Promise(resolve=>application.process().once('exit',resolve));
-    await application.evaluate(({app,dialog})=>{dialog.showMessageBox=async()=>({response:1});app.quit();}).catch(()=>{});
+    await requestTestExit(application).catch(()=>{});
     let timer;await Promise.race([exited,new Promise(resolve=>{timer=setTimeout(resolve,15000)})]);clearTimeout(timer);
     await application.close().catch(()=>{});
   }

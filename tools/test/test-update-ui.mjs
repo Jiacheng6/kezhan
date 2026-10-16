@@ -1,3 +1,4 @@
+import { requestTestExit, enterTestWorkspace, revealTestTools, openTestArchive } from './desktop-test-helpers.mjs';
 // 本机伪更新服务 + 隔离 Electron，不连接真实账号、不运行真实安装器。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,11 +13,12 @@ const sha512 = crypto.createHash('sha512').update(body).digest('base64');
 let badHash = false;
 let feedVersion='9.9.9',checks=0,downloads=0;
 const notes='• 启动时检查新版本\n• 课程完成状态显示修复\n• 登录与学习进度保留';
+let feedNotes = '# 学习通助手 9.9.9\n\n## 本次更新\n\n' + notes + '\n• 更多细节说明\n\n## 下载与升级\n\n- Windows 10 / 11，64 位\n- 安装版：fixture-Setup.exe';
 const server = http.createServer((request, response) => {
   if (request.url.startsWith('/latest.yml')) {
     checks++;
     response.setHeader('content-type', 'text/yaml');
-    response.end(`version: ${feedVersion}\nreleaseNotes: ${JSON.stringify(notes)}\nfiles:\n  - url: fixture-Setup.exe\n    sha512: ${badHash ? Buffer.alloc(64).toString('base64') : sha512}\n    size: ${body.length}\npath: fixture-Setup.exe\nsha512: ${sha512}\nreleaseDate: '2026-10-14T00:00:00.000Z'\n`);
+    response.end(`version: ${feedVersion}\nreleaseNotes: ${JSON.stringify(feedNotes)}\nfiles:\n  - url: fixture-Setup.exe\n    sha512: ${badHash ? Buffer.alloc(64).toString('base64') : sha512}\n    size: ${body.length}\npath: fixture-Setup.exe\nsha512: ${sha512}\nreleaseDate: '2026-10-14T00:00:00.000Z'\n`);
   } else if (request.url.startsWith('/fixture-Setup.exe')) {
     downloads++;
     response.setHeader('content-length', body.length);
@@ -44,7 +46,7 @@ async function closeApplication() {
     const timer = setTimeout(() => reject(new Error('测试软件退出超时')), 20000);
     current.process().once('exit', () => { clearTimeout(timer); resolve(); });
   });
-  await current.evaluate(({ app, dialog }) => { dialog.showMessageBox = async () => ({ response: 1 }); app.quit(); }).catch(() => {});
+  await requestTestExit(current).catch(()=>{});
   await exited;
   await current.close().catch(() => {});
 }
@@ -60,22 +62,32 @@ try {
   const page = await application.firstWindow();
   await page.waitForURL('http://127.0.0.1:*/');
   await page.locator('#desktopUpdatePanel[open]').waitFor();
-  assert.equal(await page.locator('#updateNotes').innerText(),notes);
+  assert.deepEqual(await page.locator('#updateNotes li').allTextContents(),notes.split('\n').map(note=>note.slice(2)));
+  assert.equal(await page.locator('#updateFullSection').getAttribute('open'),null);
+  assert.equal(await page.locator('#updateFullNotes').isVisible(),false);
+  await page.locator('#updateFullSection summary').click();
+  assert.equal(await page.locator('#updateFullNotes').innerText(),feedNotes);
+  await page.locator('#updateFullSection summary').click();
   assert.match(await page.locator('#updateNextVersion').innerText(),/9.9.9/);
   assert.equal(checks,1,'启动自动检查一次');assert.equal(downloads,0);
   await page.screenshot({path:path.join(root,'.desktop-test/update-startup-popup.png')});
+  await page.evaluate(()=>{ void window.desktopApp.exit(); });
+  await page.locator('#desktopClosePanel[open]').waitFor();
+  await page.keyboard.press('Escape');
+  await page.locator('#desktopClosePanel').waitFor({state:'hidden'});
+  assert.equal(await page.locator('#desktopUpdatePanel').isVisible(),true,'关闭确认取消后可继续查看更新');
   await page.locator('#updateLater').click();
   await page.reload();
-  await page.locator('#libraryHome #enterWorkspace').waitFor();
+  await page.locator('#selectionDesk').waitFor();
   await page.waitForTimeout(300);
   assert.equal(await page.locator('#desktopUpdatePanel').isVisible(),false,'重载不重复打扰');
   assert.equal(checks,1);
-  await page.locator('#libraryHome #enterWorkspace').click();
+  await enterTestWorkspace(page);
   await page.locator('.tab[data-tab="courses"]').click();
-  await page.locator('#treeSource').filter({ hasText: '已加载' }).waitFor();
-  assert.match(await page.locator('#treeSummary').innerText(), /1 门课/);
+  await page.locator('#treeSource').filter({ hasText: '已加载' }).waitFor({state:'attached'});
+  assert.match(await page.locator('#deskCourseCount').innerText(), /1 门/);
   assert.equal((await page.evaluate(() => window.desktopApp.info())).dataDir, data);
-  await page.locator('#desktopUpdate').click();
+  await revealTestTools(page);await page.locator('#desktopUpdate').click();
   await page.locator('#updateDownload').waitFor({ state: 'visible' });
   await page.locator('#updateDownload').click();
   await page.locator('#updateInstall').waitFor({ state: 'visible', timeout: 30000 });
@@ -106,10 +118,14 @@ try {
   application = await launch(corruptData);
   const corruptPage = await application.firstWindow();
   await corruptPage.waitForURL('http://127.0.0.1:*/');
+  await corruptPage.locator('#onboardingPanel[open]').waitFor();
+  await corruptPage.waitForFunction(async () => (await window.desktopApp.updateState()).phase === 'available');
+  assert.equal(await corruptPage.locator('#desktopUpdatePanel').isVisible(), false, '首次向导优先于更新提示');
+  await corruptPage.locator('#onboardingLater').click();
   await corruptPage.locator('#desktopUpdatePanel[open]').waitFor();
   await corruptPage.locator('#updateLater').click();
-  await corruptPage.locator('#libraryHome #enterWorkspace').click();
-  await corruptPage.locator('#desktopUpdate').click();
+  await enterTestWorkspace(corruptPage);
+  await revealTestTools(corruptPage);await corruptPage.locator('#desktopUpdate').click();
   await corruptPage.locator('#updateDownload').waitFor({ state: 'visible' });
   await corruptPage.locator('#updateDownload').click();
   await corruptPage.locator('#updateMessage').filter({ hasText: '校验失败' }).waitFor({ timeout: 30000 });

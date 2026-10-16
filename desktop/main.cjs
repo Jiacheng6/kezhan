@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const net = require('node:net');
 const { pathToFileURL } = require('node:url');
 const { createUpdates, backupUserData } = require('./updates.cjs');
+const { CloseConfirmation } = require('./close-confirmation.cjs');
 
 const title = '学习通助手';
 const smokeTest = process.argv.includes('--smoke-test');
@@ -17,7 +18,10 @@ app.setAppUserModelId('com.xuexitong.assistant');
 const loadingUrl = pathToFileURL(path.join(__dirname, 'loading.html')).href;
 let mainWindow, tray, worker, serviceUrl, error = '', quitting = false, closeDialog = false, restarting = false;
 let heartbeat, startupTimer, blocker;
-let updates;
+let updates, rendererGone = false;
+const closeConfirmation = new CloseConfirmation(request => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:close-request', request);
+});
 const logFile = path.join(dataDir, 'logs', 'desktop.log');
 function log(message) {
   try { fs.mkdirSync(path.dirname(logFile), { recursive: true }); fs.appendFileSync(logFile, `${new Date().toISOString()} ${message}\n`); } catch {}
@@ -94,16 +98,17 @@ async function exitApplication() {
   app.quit();
 }
 async function requestClose() {
-  if (closeDialog || quitting) return;
+  if (quitting) return;
+  // A close request can already be pending when the renderer fails. Recover
+  // the local page before checking the pending flag so the choice remains usable.
+  if (rendererGone) { rendererGone = false; await mainWindow.loadURL(loadingUrl); }
+  if (closeDialog) return;
   closeDialog = true;
   try {
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: 'question', title, message: '关闭窗口后要怎样处理？',
-      detail: '隐藏到托盘会继续运行任务。退出会停止任务、保存进度，并关闭本软件的专用浏览器。',
-      buttons: ['隐藏到托盘，继续运行', '停止任务并退出', '取消'], defaultId: 0, cancelId: 2, noLink: true,
-    });
-    if (result.response === 0) mainWindow.hide();
-    if (result.response === 1) await exitApplication();
+    // The local startup/error page and the workspace share this same prompt.
+    const choice = await closeConfirmation.request();
+    if (choice === 'hide') mainWindow.hide();
+    if (choice === 'exit') await exitApplication();
   } finally { closeDialog = false; }
 }
 async function startWorker() {
@@ -183,10 +188,10 @@ else {
       if (!mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:visibility', mainWindow.isVisible() && !mainWindow.isMinimized());
     };
     for (const event of ['show', 'hide', 'minimize', 'restore']) mainWindow.on(event, notifyVisibility);
-    mainWindow.webContents.on('did-finish-load', notifyVisibility);
+    mainWindow.webContents.on('did-finish-load', () => { rendererGone = false; notifyVisibility(); });
     mainWindow.webContents.on('will-navigate', (event, url) => { if (!safePage(url)) event.preventDefault(); });
     mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-    mainWindow.webContents.on('render-process-gone', () => showError('界面发生异常，请从托盘重新打开或重启服务。'));
+    mainWindow.webContents.on('render-process-gone', () => { rendererGone = true; showError('界面发生异常，请从托盘重新打开或重启服务。'); });
     updates = createUpdates({ app, dataDir, testMode,
       onStatus: (status) => { if (!mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:update-status', status); },
       prepareInstall: async () => {
@@ -224,6 +229,8 @@ else {
     handle('desktop:browser', (visible) => serviceAction(visible ? 'showBrowser' : 'hideBrowser'));
     handle('desktop:hide', () => mainWindow.hide());
     handle('desktop:exit', requestClose);
+    handle('desktop:close-state', () => closeConfirmation.snapshot());
+    handle('desktop:close-choice', (id, choice) => ({ ok: closeConfirmation.choose(id, choice) }));
     handle('desktop:restart', restartService);
     handle('desktop:data-folder', () => shell.openPath(dataDir));
     handle('desktop:info', () => ({ version: app.getVersion(), dataDir, error, serviceUrl }));

@@ -47,7 +47,7 @@ class UpdateController {
     this.checkPromise = null;
     this.state = { phase: 'idle', currentVersion: version, nextVersion: null, percent: 0, enabled, installed,
       releaseNotes: '', notificationPending: false,
-      message: enabled ? '点击检查更新。登录状态、课程清单和进度会继续保留。' : '开发模式不连接正式更新服务。' };
+      message: enabled ? '检查是否有新版本。' : '开发模式不连接正式更新服务。' };
     updater.autoDownload = false;
     updater.autoInstallOnAppQuit = false;
     updater.autoRunAppAfterInstall = true;
@@ -57,14 +57,14 @@ class UpdateController {
     updater.on('checking-for-update', () => this.patch({ phase: 'checking', message: '正在检查新版…' }));
     updater.on('update-available', (info) => {
       this.downloadReady = false;
-      this.patch({ phase: 'available', nextVersion: info.version, releaseNotes: releaseNotesText(info.releaseNotes), percent: 0, message: `发现新版 ${info.version}，点击下载后仍可继续使用软件。` });
+      this.patch({ phase: 'available', nextVersion: info.version, releaseNotes: releaseNotesText(info.releaseNotes), percent: 0, message: `发现新版 ${info.version}。` });
     });
     updater.on('update-not-available', () => this.patch({ phase: 'current', nextVersion: null, releaseNotes: '', notificationPending: false, message: '当前已是最新版。' }));
     updater.on('download-progress', (info) => this.patch({ phase: 'downloading', percent: Math.max(0, Math.min(100, info.percent || 0)), message: '正在下载新版，任务可以继续运行…' }));
     updater.on('update-downloaded', (info) => {
       this.downloadReady = true;
       this.patch({ phase: 'ready', nextVersion: info.version, percent: 100,
-        message: installed ? '新版下载并校验完成。安装前会停止任务、保存进度。' : '新版下载并校验完成。此免安装版本将升级为安装版，当前账号和课程数据会保留。' });
+        message: installed ? '下载并校验完成，可以安装。' : '下载并校验完成；安装后将切换为安装版，原数据保留。' });
     });
     updater.on('error', (error) => this.patch({ phase: 'error', message: readableError(error) }));
   }

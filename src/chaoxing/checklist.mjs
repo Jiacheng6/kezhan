@@ -19,6 +19,7 @@ import { PATHS } from '../config.mjs';
 import { loadState } from '../state.mjs';
 import { taskCompletion } from '../ui/task-status.js';
 import {reconMetadata} from './recon-metadata.mjs';
+import { readSelectionDocument, writeSelectionDocument } from './selection-presets.mjs';
 
 /** 执行清单的输入：侦察报告（路径由 config 唯一决定） */
 const REPORT_FILE = PATHS.taskReport;
@@ -146,7 +147,8 @@ export function loadSelection() {
 }
 
 export function saveSelection(sel) {
-  fs.writeFileSync(SELECTION_FILE, JSON.stringify(sel, null, 2), 'utf8');
+  const previous = readSelectionDocument();
+  writeSelectionDocument({ ...sel, presets: previous.presets || [] });
   return sel;
 }
 

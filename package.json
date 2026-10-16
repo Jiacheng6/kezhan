@@ -1,6 +1,6 @@
 {
   "name": "xuexitong-auto",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "private": true,
   "type": "module",
   "description": "学习通自动刷课 + AI 答题助手（本机 Edge 接管式）",
@@ -9,6 +9,7 @@
     "start": "electron .",
     "start:service": "node src/main.mjs",
     "preview:ui": "node tools/preview/workspace.mjs",
+    "preview:selection": "node tools/preview/workspace.mjs --selection",
     "build:native": "node tools/build/build-native.mjs",
     "build:archive": "node tools/build/build-course-archive.mjs",
     "build": "npm run build:archive && node tools/build/build-native.mjs && electron-builder --win nsis zip --x64 --publish never",
@@ -28,7 +29,7 @@
   },
   "build": {
     "releaseInfo": {
-      "releaseNotesFile": "docs/releases/0.4.2.md"
+      "releaseNotesFile": "docs/releases/0.4.3.md"
     },
     "publish": [
       {

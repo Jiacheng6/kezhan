@@ -20,6 +20,7 @@ import { listKeptPages, registerKeptPage, editKeptEssayReviewAnswer } from './ch
 import { reopenReviewWork, submitPendingReviews, withReviewLock } from './chaoxing/review-recovery.mjs';
 import { updateReviewAnswer } from './state.mjs';
 import { startServer } from './server.mjs';
+import { getOnboarding } from './onboarding.mjs';
 import { startWindowControl, setBrowserVisible, isBrowserVisible, stopWindowControl } from './browser/window-control.mjs';
 import { ownerState, startOwnerMonitor } from './browser/owner-lifecycle.mjs';
 import {selectedProvider, ensureProviderPage} from './ai/providers.mjs';
@@ -223,7 +224,7 @@ async function boot() {
 
   // 4.5) 千问标签页（P4 答题通道）—— 复用已有的，没有就开一个待用户登录
   let qianwenPage = null;
-  try { qianwenPage = await ensureProviderPage(context, selectedProvider(loadSettings())); }
+  try { qianwenPage = await ensureProviderPage(context, selectedProvider(loadSettings()), { create: !!getOnboarding().completedAt }); }
   catch (err) { log(`打开${selectedProvider(loadSettings()).label}失败（不影响其他任务）：${err.message}`, 'warn'); }
   runtime.qianwenPage = qianwenPage;
 

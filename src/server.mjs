@@ -10,6 +10,8 @@ import { PATHS, CONSOLE_PORT_START, CONSOLE_PORT_MAX_TRIES } from './config.mjs'
 import { bus, getRecentLogs, getStatus, patchStatus, log } from './logbus.mjs';
 import { buildChecklist, loadSelection, saveSelection, loadReconReport } from './chaoxing/checklist.mjs';
 import { listReviewItems, reviewStats, updateReviewAnswer, markReviewItem } from './state.mjs';
+import { listSelectionPresets, changeSelectionPreset } from './chaoxing/selection-presets.mjs';
+import { getOnboarding, completeOnboarding } from './onboarding.mjs';
 
 /** 读取请求体 JSON（限长，防滥用） */
 function readJson(req, limit = 4 * 1024 * 1024) {
@@ -104,6 +106,9 @@ function listen(server, port) {
  * @param {object} hooks 由 main 注入的动作处理器
  */
 export async function startServer(hooks = {}) {
+  // Decide first-use before startup can discover a new account. A damaged data
+  // file must still leave the diagnostic UI accessible.
+  try { getOnboarding(); } catch (error) { log(`使用向导暂不可用：${error.message}`, 'warn'); }
   const server = http.createServer(async (req, res) => {
     try {
     const expectedHost = `127.0.0.1:${server.address().port}`;
@@ -113,6 +118,13 @@ export async function startServer(hooks = {}) {
     const { pathname } = new URL(req.url, 'http://x');
 
     if (pathname === '/api/status') return json(res, 200, getStatus());
+    if (pathname === '/api/onboarding') {
+      try {
+        if (req.method === 'GET') return json(res, 200, { ok: true, result: getOnboarding() });
+        if (req.method === 'POST') return json(res, 200, { ok: true, result: completeOnboarding(await readJson(req, 4096), getStatus()) });
+        return json(res, 405, { ok: false, error: '不支持的请求方式' });
+      } catch (error) { return json(res, 400, { ok: false, error: error.message }); }
+    }
     if (pathname === '/api/logs') return json(res, 200, getRecentLogs());
 
     // 任务点清单（P1 产物）
@@ -123,6 +135,15 @@ export async function startServer(hooks = {}) {
       } catch (err) {
         return json(res, 200, { ok: false, error: err.message });
       }
+    }
+
+    if (pathname === '/api/selection/presets') {
+      try {
+        if (req.method === 'GET') return json(res, 200, { ok: true, result: listSelectionPresets() });
+        if (req.method !== 'POST') return json(res, 405, { ok: false, error: '不支持的请求方式' });
+        if (getStatus().running || getStatus().reconRunning) return json(res, 409, { ok: false, error: '请先停止当前任务或等待扫描完成' });
+        return json(res, 200, { ok: true, result: changeSelectionPreset(await readJson(req)) });
+      } catch (error) { return json(res, 400, { ok: false, error: error.message }); }
     }
 
     // 保存界面里的勾选与排序

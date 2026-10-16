@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+fs.mkdirSync('.desktop-test', { recursive: true });
+process.env.XXT_DATA_DIR = fs.mkdtempSync(path.resolve('.desktop-test/onboarding-api-'));
+const { PATHS, setPersonId } = await import('../../src/config.mjs');
+const { getOnboarding } = await import('../../src/onboarding.mjs');
+const { mutateState, invalidateCache, loadState } = await import('../../src/state.mjs');
+const { patchStatus } = await import('../../src/logbus.mjs');
+const { startServer } = await import('../../src/server.mjs');
+const first = getOnboarding();
+assert.equal(first.completedAt, null); assert.equal(first.migrated, false);
+mutateState(s => { s.taskPoints.example = { status: 'done' }; s.settings = { ai: { provider: 'doubao' } }; });
+assert.equal(getOnboarding().completedAt, null, '途中发现账号或课程不能跳过未完成向导');
+const service = await startServer();
+const endpoint = new URL('/api/onboarding', service.url);
+const post = body => fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+try {
+  assert.equal((await fetch(endpoint)).status, 200);
+  assert.equal((await fetch(endpoint, { method: 'DELETE' })).status, 405);
+  assert.equal((await post({ action: 'complete', provider: 'other' })).status, 400);
+  assert.equal((await post({ action: 'complete', provider: 'doubao' })).status, 400, '未登录不能完成');
+  patchStatus({ login: { loggedIn: true }, running: true });
+  assert.equal((await post({ action: 'complete', provider: 'doubao' })).status, 400);
+  patchStatus({ running: false, reconRunning: true });
+  assert.equal((await post({ action: 'complete', provider: 'doubao' })).status, 400);
+  patchStatus({ reconRunning: false });
+  assert.equal((await post({ action: 'complete', provider: 'qianwen' })).status, 400, '未保存所选 AI 不能完成');
+  assert.equal((await post({ action: 'complete', provider: 'doubao' })).status, 200);
+  invalidateCache(); assert.ok(getOnboarding().completedAt);
+  assert.equal(getOnboarding().provider, 'doubao');
+  assert.equal(loadState().taskPoints.example.status, 'done', '不能破坏进度');
+  assert.equal((await fetch(endpoint, { method: 'POST', headers: { Origin: 'https://example.invalid' }, body: '{}' })).status, 403);
+} finally {
+  for (const client of service.wss.clients) client.terminate();
+  await new Promise(resolve => service.wss.close(resolve));
+  service.server.closeAllConnections(); await new Promise(resolve => service.server.close(resolve));
+}
+fs.writeFileSync(PATHS.state, '{}'); invalidateCache();
+setPersonId('fixture-previous-user', { persist: false }); assert.equal(getOnboarding().migrated, true);
+setPersonId('', { persist: false }); fs.writeFileSync(PATHS.state, '{}'); invalidateCache();
+fs.mkdirSync(PATHS.probeOut, { recursive: true }); fs.writeFileSync(PATHS.taskReport, '{"courses":[]}');
+assert.equal(getOnboarding().migrated, true);
+fs.unlinkSync(PATHS.taskReport); fs.writeFileSync(PATHS.state, '{"taskPoints":{"old":{"status":"done"}}}'); invalidateCache();
+assert.equal(getOnboarding().migrated, true);
+fs.writeFileSync(PATHS.state, 'broken'); invalidateCache(); assert.throws(getOnboarding, /无法读取/);
+assert.equal(fs.readFileSync(PATHS.state, 'utf8'), 'broken');
+console.log('✓ 首次识别、完成持久化、运行/扫描保护、登录/通道校验、进度保留、老用户迁移、损坏文件保护通过');

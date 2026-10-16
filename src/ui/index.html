@@ -7,20 +7,23 @@
 <title>学习通助手</title>
 <link rel="stylesheet" href="/style.css" />
 <link rel="stylesheet" href="/workspace-design.css" id="workspaceDesign" />
+<link rel="stylesheet" href="/selection-desk.css" />
+<link rel="stylesheet" href="/dialogs.css" />
+<link rel="stylesheet" href="/onboarding.css" />
+<link rel="stylesheet" href="/learning-focus.css" />
 <link rel="icon" href="/icon.svg" type="image/svg+xml" />
 </head>
-<body>
+<body data-panel="courses">
 <aside class="sidebar">
   <div class="brand"><span class="logo" aria-hidden="true"><img src="/icon.svg" alt="" width="32" height="32" /></span><div><h1>学习通助手</h1><span class="brand-note">课程 · 任务 · 进度</span></div></div>
   <p class="nav-label">学习空间</p>
   <nav class="tabs" aria-label="主导航">
-    <button class="tab active" data-tab="overview" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10H3Z"/><path d="M9 20v-7h6v7"/></svg><span>学习概览</span></button>
-    <button class="tab" data-tab="courses"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6a3 3 0 0 1 3 3v14a5 5 0 0 0-5-2H4Zm16 0h-4a3 3 0 0 0-3 3v14a5 5 0 0 1 5-2h2Z"/></svg><span>课程清单</span></button>
+    <button class="tab active" aria-current="page" data-tab="courses"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6a3 3 0 0 1 3 3v14a5 5 0 0 0-5-2H4Zm16 0h-4a3 3 0 0 0-3 3v14a5 5 0 0 1 5-2h2Z"/></svg><span>选课与学习</span></button>
     <button class="tab" data-tab="review"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H5v18h14V9Z"/><path d="M14 3v6h5M8 13h8m-8 4h5"/></svg><span>待审答案</span><span class="badge" id="reviewCount">0</span></button>
-    <button class="tab" data-tab="logs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4Zm4 4 3 3-3 3m5 0h4"/></svg><span>运行记录</span></button>
-    <button class="tab" data-tab="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg><span>偏好设置</span></button>
   </nav>
   <div class="sidebar-bottom">
+    <details id="workspaceUtilities" class="workspace-utilities"><summary>设置与工具 <span>⌄</span></summary><div class="utilities-content">
+      <nav class="secondary-tabs" aria-label="辅助导航"><button class="tab" data-tab="overview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10H3Z"/><path d="M9 20v-7h6v7"/></svg><span>连接与概览</span></button><button class="tab" data-tab="logs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4Zm4 4 3 3-3 3m5 0h4"/></svg><span>运行记录</span></button><button class="tab" data-tab="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg><span>偏好设置</span></button></nav><div id="libraryTools"></div>
     <div id="desktopToolbar" class="desktop-toolbar hidden">
       <p class="nav-label">专用浏览器</p>
       <div class="browser-switch"><button id="desktopShowBrowser">显示浏览器</button><button id="desktopHideBrowser">隐藏浏览器</button></div>
@@ -29,17 +32,18 @@
       <button id="desktopDataFolder" class="utility-button" title="打开数据与日志"><span aria-hidden="true">↳</span> 数据与日志</button>
       <details class="desktop-more"><summary>更多操作 <span>···</span></summary><div><button id="desktopRestart">重启服务</button><button id="desktopClose">关闭软件…</button></div></details>
     </div>
+    </div></details>
     <div class="local-note"><span class="status-dot"></span><span>进度与账号数据保存在本机</span></div>
   </div>
 </aside>
 <div class="workspace">
   <header class="topbar">
-    <div class="breadcrumb"><span>学习空间</span><span class="breadcrumb-slash">/</span><strong id="pageTitle">学习概览</strong></div>
+    <div class="breadcrumb"><span>学习空间</span><span class="breadcrumb-slash">/</span><strong id="pageTitle">选课与学习</strong></div>
     <div class="header-right"><span id="phaseLine" class="sub">正在连接后台服务…</span><details class="connection-menu"><summary>连接状态 <span aria-hidden="true">⌄</span></summary><div class="topright"><span class="pill" id="pillEdge">浏览器未连接</span><span class="pill" id="pillLogin">登录未知</span><span class="pill" id="pillRecon">提交模式未知</span><span class="pill" id="pillQuiz">答题通道未知</span></div></details></div>
   </header>
   <div id="bootError" class="banner error hidden" role="alert"></div>
   <main>
-    <section class="panel active" id="panel-overview" aria-label="学习概览">
+    <section class="panel" id="panel-overview" aria-label="学习概览">
       <div class="page-heading"><div><p class="eyebrow">WORKSPACE / 学习工作台</p><h2>学习概览<span class="heading-period">.</span></h2></div><span class="page-note">课程与进度，接着上次继续</span></div>
       <div class="overview-grid">
         <div class="overview-primary">
@@ -63,9 +67,12 @@
         </aside>
       </div>
     </section>
-    <section class="panel" id="panel-courses" aria-label="课程清单">
-      <div class="page-heading"><div><p class="eyebrow">选好范围，按自己的节奏</p><h2>课程清单<span class="heading-period">.</span></h2></div><div class="actions"><button data-action="startRun" class="primary">开始学习 ↗</button><button data-action="stopRun" class="stop-button">停止任务</button></div></div>
-      <div class="course-toolbar"><div><span class="pill" id="treeSource">未加载</span><p id="treeSummary">正在读取已保存的课程清单…</p></div><details class="inline-menu"><summary>清单操作 <span>⌄</span></summary><div><button data-action="startRecon">重新扫描课程</button><button data-action="loadChecklist">读取已有清单</button></div></details></div>
+    <section class="panel active" id="panel-courses" aria-label="课程清单">
+      <div class="page-heading"><div><h2>选课与学习</h2></div><div class="actions"><button data-action="startRun" class="primary">开始学习 ↗</button><button data-action="stopRun" class="stop-button">停止任务</button></div></div>
+      <div class="course-toolbar"><details class="course-info"><summary>课程与完成情况 ⌄</summary><div><span class="pill" id="treeSource">未加载</span><p id="treeSummary">正在读取课程清单…</p></div></details><details class="inline-menu"><summary>更新课程 ⌄</summary><div><button data-action="startRecon">重新扫描课程</button><button data-action="loadChecklist">读取已有清单</button></div></details></div>
+      <div id="runBar" class="runbar hidden"><div class="runbar-main"><span class="runlabel" id="runLabel">执行中…</span><span class="runprog" id="runProg"></span></div><div class="runbar-track"><div class="runbar-fill" id="runFill"></div></div><div class="runbar-sub" id="runSub"></div></div>
+      <section id="selectionDesk" aria-label="三栏选课台"></section>
+      <div id="legacyCourseTree" hidden><button id="deskReturn" class="text-button">← 返回三栏选课台</button>
       <div class="treeTools" id="treeTools">
         <div class="ttrow search-row"><div class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input id="treeSearch" type="search" aria-label="搜索课程或任务" placeholder="搜索课程、章节或任务…" /></div><button data-tree="unfinished">只选未完成</button><details class="selection-tools"><summary>批量选择 <span>⌄</span></summary><div class="selection-drawer">
           <div class="ttrow"><button data-tree="select">全选</button><button data-tree="deselect">全不选</button><button data-tree="invert">反选</button><button data-tree="expandAll">全部展开</button><button data-tree="collapseAll">全部收起</button></div>
@@ -76,8 +83,7 @@
         <div class="ttrow ttsum"><span id="treeWillSummary">—</span><span id="treeDirty" class="dirtytag hidden">有未保存改动</span><button class="text-button" data-tree="preview">预览任务</button><button data-action="saveSelection">保存选择</button></div>
       </div>
       <div id="treePreview" class="treepreview hidden"></div>
-      <div id="runBar" class="runbar hidden"><div class="runbar-main"><span class="runlabel" id="runLabel">执行中…</span><span class="runprog" id="runProg"></span></div><div class="runbar-track"><div class="runbar-fill" id="runFill"></div></div><div class="runbar-sub" id="runSub"></div></div>
-      <div id="treeBody"></div><p class="hint list-footnote">完成状态按任务分别记录。在其他设备完成的任务，请重新扫描课程。</p>
+      <div id="treeBody"></div></div><p class="hint list-footnote">完成状态按任务分别记录。在其他设备完成的任务，请重新扫描课程。</p>
       <section class="card wide" id="handbookCard" style="display:none"><h2>需要你处理</h2><p class="hint">直播、讨论等无法自动处理的任务会列在这里。</p><div id="handbookBody"></div></section>
     </section>
     <section class="panel" id="panel-review" aria-label="待审答案">
@@ -91,6 +97,7 @@
     <section class="panel" id="panel-settings" aria-label="偏好设置">
       <div class="page-heading"><div><p class="eyebrow">让助手按你的习惯工作</p><h2>偏好设置<span class="heading-period">.</span></h2></div><div class="actions"><span class="pill" id="settingsDirty">未修改</span><button id="saveSettings" class="primary">保存设置</button></div></div>
       <div class="settings-intro"><p>改动保存后，从下一个任务开始生效。切换 AI 通道前请先停止任务。</p><div class="actions"><button data-action="openAI">打开所选 AI 网页 ↗</button><button data-action="checkQianwen">检测 AI 登录</button><button id="resetSettings" class="text-button">恢复默认</button><button id="reloadSettings" class="text-button">重新读取</button></div></div>
+      <p><button id="reopenOnboarding">重新打开使用向导</button></p>
       <div id="settingsForm" class="settingsform"></div>
       <details class="settings-details"><summary>高级设置 <span>提问词、等待与重试参数</span></summary><div id="settingsAdvanced" class="settingsform"></div></details>
       <details class="settings-details"><summary>运行信息与维护 <span>连接、数据位置与故障排查</span></summary>
@@ -104,11 +111,11 @@
 <dialog id="desktopUpdatePanel" class="card update-panel" aria-labelledby="updateTitle" aria-describedby="updateMessage">
   <div class="treebar"><h2 id="updateTitle">软件更新 <span id="updateCurrentVersion" class="pill"></span></h2><button id="updateLater" class="ghost" autofocus>稍后</button></div>
   <p id="updateMessage" role="status">正在读取更新状态…</p>
-  <section id="updateNotesSection" class="update-notes hidden" aria-label="新版更新内容"><h3 id="updateNextVersion">更新内容</h3><div id="updateNotes"></div></section>
+  <section id="updateNotesSection" class="update-notes hidden" aria-label="新版更新内容"><h3 id="updateNextVersion">主要变化</h3><div id="updateNotes"></div><details id="updateFullSection" class="update-full hidden"><summary>完整更新说明</summary><div id="updateFullNotes"></div></details></section>
   <progress id="updateProgress" max="100" value="0" class="hidden" aria-label="新版下载进度"></progress>
   <div class="actions"><button id="updateCheck">检查新版</button><button id="updateDownload" class="primary hidden">下载新版</button><button id="updateInstall" class="primary hidden">保存并安装</button></div>
-  <p class="hint">下载期间可继续使用。确认安装前会保存进度并备份数据，登录状态保留在本机。</p>
+  <p class="hint">下载不影响任务；确认安装时会保存、备份数据并退出。</p>
 </dialog>
-<script type="module" src="/app.js"></script><script type="module" src="/desktop.js"></script><script type="module" src="/workspace-design.js"></script><script type="module" src="/library/home.js"></script>
+<script src="/close-dialog.js"></script><script type="module" src="/app.js"></script><script type="module" src="/onboarding.js"></script><script type="module" src="/desktop.js"></script><script type="module" src="/workspace-design.js"></script><script type="module" src="/library/home.js"></script>
 </body>
 </html>

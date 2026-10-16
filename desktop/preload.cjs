@@ -3,6 +3,14 @@ contextBridge.exposeInMainWorld('desktopApp', Object.freeze({
   browser: (visible) => ipcRenderer.invoke('desktop:browser', !!visible),
   hide: () => ipcRenderer.invoke('desktop:hide'),
   exit: () => ipcRenderer.invoke('desktop:exit'),
+  closeChoice: (id, choice) => ipcRenderer.invoke('desktop:close-choice', id, choice),
+  onCloseRequest: (callback) => {
+    let revision = 0;
+    const listener = (_, request) => { revision++; callback(request); };
+    ipcRenderer.on('desktop:close-request', listener);
+    ipcRenderer.invoke('desktop:close-state').then(request => { if (!revision && request) callback(request); }).catch(() => {});
+    return () => ipcRenderer.removeListener('desktop:close-request', listener);
+  },
   restart: () => ipcRenderer.invoke('desktop:restart'),
   dataFolder: () => ipcRenderer.invoke('desktop:data-folder'),
   info: () => ipcRenderer.invoke('desktop:info'),

@@ -33,6 +33,9 @@ if (!process.env.XXT_DATA_DIR) {
 }
 
 const suite = [
+  ['首次使用向导 / 完成持久化与老用户识别', 'tools/test/test-onboarding.mjs'],
+  ['关闭确认 / 更新内容精简', 'tools/test/test-dialogs.mjs'],
+  ['选课规则 / 方案保存与账号隔离', 'tools/test/test-selection-plan.mjs'],
   ['作业页面关闭恢复 / 身份核对', 'tools/test/test-review-recovery.mjs'],
   ['课程完成分组 / 旧清单只读恢复', 'tools/test/test-course-groups.mjs'],
   ['课程树分任务完成状态 / 保留选择', 'tools/test/test-tree-progress.mjs'],

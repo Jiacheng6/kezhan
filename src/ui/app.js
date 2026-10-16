@@ -22,6 +22,7 @@ import {
 } from './selection.js';
 import { completionOf, completionCounts, courseCompletion, sectionCompletion, mergeTaskCompletion } from './task-status.js';
 import { changePanel, expandCourse, preserveTreeFocus } from './motion.js';
+import { createSelectionDesk } from './selection-desk.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -71,6 +72,7 @@ export const workspace = Object.freeze({
     tree.dirty = true; renderTree();
   },
   openCourse(courseId) {
+    selectionDesk.focusCourse(courseId);
     if(courseCompletion(tree.data?.courses.find(c=>c.courseId===courseId)||{}).finished)tree.completedOpen=true;
     tree.expanded.add(courseId); tree.query = ''; $('#treeSearch').value = '';
     switchTab('courses'); if (tree.data) renderTree();
@@ -81,7 +83,7 @@ let readinessLayoutState = '';
 compactLayout.addEventListener('change', () => { if (state.status) renderReadinessLayout(state.status); });
 
 // 原生展开菜单可用键盘操作；点击外部或 Escape 时收起。
-const menuSelector = '.connection-menu[open], .inline-menu[open], .selection-tools[open], .course-actions[open], .desktop-more[open]';
+const menuSelector = '.connection-menu[open], .inline-menu[open], .course-info[open], .selection-tools[open], .course-actions[open], .desktop-more[open]';
 document.addEventListener('click', (event) => {
   for (const menu of $$(menuSelector)) if (!menu.contains(event.target)) menu.open = false;
 });
@@ -103,9 +105,10 @@ $$('.tab').forEach((btn) => {
       else b.removeAttribute('aria-current');
     });
     const name = btn.dataset.tab;
+    document.body.dataset.panel = name;
     $$('.panel').forEach((p) => p.classList.toggle('active', p.id === `panel-${name}`));
     changePanel(previous, document.getElementById('panel-' + name));
-    $('#pageTitle').textContent = ({ overview: '学习概览', courses: '课程清单', review: '待审答案', logs: '运行记录', settings: '偏好设置' })[name] || '学习空间';
+    $('#pageTitle').textContent = ({ overview: '连接与概览', courses: '选课与学习', review: '待审答案', logs: '运行记录', settings: '偏好设置' })[name] || '学习空间';
   });
 });
 
@@ -250,6 +253,7 @@ function renderStatus(s) {
   $('#reviewCount').textContent = s.reviewCount ?? 0;
   if (!tree.data) renderOverviewCourses();
   if (reconJustFinished && !tree.dirty) loadChecklist().catch(() => {});
+  selectionDesk.updateStatus();
   emitWorkspace();
 }
 
@@ -641,7 +645,8 @@ $$('[data-action]').forEach((btn) => {
       return;
     }
 
-    await runAction(name, btn);
+    const result = await runAction(name, btn);
+    document.dispatchEvent(new CustomEvent('workspace-action-result', { detail: { name, result } }));
   });
 });
 
@@ -683,6 +688,8 @@ const tree = {
   completedOpen: false,
   completedSectionsOpen: new Map(),
 };
+const selectionDesk = createSelectionDesk({ root: $('#selectionDesk'), snapshot: workspaceSnapshot,
+  change() { tree.dirty = true; renderTree(); }, save: saveSelection, navigate: switchTab, action: runAction });
 
 // 暴露到 window，便于在浏览器控制台里排查（不影响正常使用）
 window.__console = {
@@ -791,6 +798,7 @@ function renderOverviewCourses() {
       tree.expanded.add(course.courseId);
       tree.query = '';
       $('#treeSearch').value = '';
+      selectionDesk.focusCourse(course.courseId);
       switchTab('courses');
       renderTree();
     });
@@ -918,6 +926,7 @@ function renderWillSummary() {
   }
   const dirty = $('#treeDirty');
   if (dirty) dirty.classList.toggle('hidden', !tree.dirty);
+  selectionDesk.render();
   emitWorkspace();
 }
 
@@ -1378,6 +1387,7 @@ async function saveSelection() {
 $$('.tab').forEach((btn) => {
   btn.addEventListener('click', () => {
     if (btn.dataset.tab === 'courses') {
+      selectionDesk.refreshPresets();
       if (!tree.data) loadChecklist();
       else refreshTreeProgress();
     }

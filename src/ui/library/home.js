@@ -20,9 +20,9 @@ const entry = document.createElement("button");
 entry.id = "enterLibrary";
 entry.className = "utility-button library-entry";
 entry.textContent = "课程档案 ↗";
-document.querySelector(".tabs").before(entry);
+document.querySelector("#libraryTools").append(entry);
 const media = matchMedia("(prefers-reduced-motion: reduce)");
-let startup = preferences.read("startup", "show") === "show",
+let startup = preferences.read("startup", "skip") === "show",
   reduced =
     preferences.read("motion") === null
       ? media.matches

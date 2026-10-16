@@ -26,6 +26,7 @@ data/
 state.json
 #   任务进度 + 设置 + 待审队列（含题目与 AI 答案）
 recon-selection.json
+recon-selection.json.*
 #   你的选课范围（哪些课要刷）
 backup-*/
 #   手工备份：包含以上全部内容（体积可达数百 MB）
@@ -129,6 +130,13 @@ tools/test/*
 !tools/test/test-course-groups.mjs
 !tools/test/test-review-recovery.mjs
 !tools/test/test-review-recovery-ui.mjs
+!tools/test/test-selection-plan.mjs
+!tools/test/test-selection-desk-ui.mjs
+!tools/test/desktop-test-helpers.mjs
+!tools/test/test-dialogs.mjs
+!tools/test/test-onboarding.mjs
+!tools/test/test-onboarding-ui.mjs
+!tools/test/test-close-ui.mjs
 !tools/test/test-web-ai.mjs
 !tools/test/test-ai-settings-ui.mjs
 !tools/test/test-question-capture.mjs

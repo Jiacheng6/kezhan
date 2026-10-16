@@ -1,3 +1,4 @@
+import { requestTestExit, enterTestWorkspace, revealTestTools, openTestArchive } from './desktop-test-helpers.mjs';
 // 隔离软件实例验证真实课程树，不连接真实账号，不启动课程任务。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -34,11 +35,12 @@ try {
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].showInactive());
   const page = await application.firstWindow();
   await page.waitForURL('http://127.0.0.1:*/');
-  await page.locator('#libraryHome #appearance').click();
+  await openTestArchive(page);await page.locator('#libraryHome #appearance').click();
   await page.locator('#libraryHome #showOnStartup').uncheck();
-  await page.locator('#libraryHome #enterWorkspace').click();
+  await enterTestWorkspace(page);
   await page.locator('.tab[data-tab="courses"]').click();
-  await page.locator('#treeSource').filter({ hasText: '已加载' }).waitFor();
+  await page.locator('#deskLegacy').click();
+  await page.locator('#treeSource').filter({ hasText: '已加载' }).waitFor({state:'attached'});
   const completed=page.locator('[data-completion-group="completed"]');
   const pending=page.locator('[data-completion-group="pending"]');
   assert.equal(await completed.locator('.completion-group-content').isVisible(),false,'已完成默认折叠');
@@ -79,7 +81,7 @@ try {
   await page.evaluate(async()=>{const {workspace}=await import('/app.js');workspace.openCourse('already-done');});
   assert.equal(await page.locator('[data-course-id="already-done"] .section-coverage-note').isVisible(),true,'从档案跳转能打开已完成课程');
   assert.equal(fs.existsSync(path.join(data, 'recon-selection.json')), false, '刷新不自动保存选择');
-  await page.locator('#enterLibrary').click();
+  await openTestArchive(page);
   const frame=page.locator('#libraryHome #archiveFrame').contentFrame();
   await page.evaluate(async()=>{window.__courseGroupLibrary=(await import('/library/home.js')).libraryDiagnostics;});
   await page.waitForFunction(()=>window.__courseGroupLibrary.snapshot().scene?.ready,null,{timeout:60000});
@@ -102,9 +104,7 @@ try {
   console.log('✓ 真实桌面课程分组、完成组默认折叠、后台完成迁移、保留选择、已完成小节搜索与跳转通过');
 } finally {
   const exited = new Promise((resolve) => application.process().once('exit', resolve));
-  await application.evaluate(({ app, dialog }) => {
-    dialog.showMessageBox = async () => ({ response: 1 }); app.quit();
-  }).catch(() => {});
+  await requestTestExit(application).catch(()=>{});
   await exited;
   await application.close().catch(() => {});
 }

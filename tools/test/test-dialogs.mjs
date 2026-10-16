@@ -1,0 +1,22 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import {createRequire} from 'node:module';
+import {summarizeReleaseNotes} from '../../src/ui/update-notes.js';
+const require=createRequire(import.meta.url);const {CloseConfirmation}=require('../../desktop/close-confirmation.cjs');
+const notices=[],close=new CloseConfirmation(request=>notices.push(request));
+const first=close.request(),id=close.snapshot().id;
+assert.equal(close.request(),first,'重复关闭只显示一个确认框');assert.equal(notices.length,1);
+assert.equal(close.choose(id,'invalid'),false);assert.equal(close.choose(id+1,'exit'),false);assert.equal(close.snapshot().id,id);
+assert.equal(close.choose(id,'cancel'),true);assert.equal(await first,'cancel');assert.equal(close.snapshot(),null);
+assert.equal(close.choose(id,'exit'),false,'旧回答不能退出软件');
+for(const choice of ['hide','exit']){const pending=close.request();assert.notEqual(close.snapshot().id,id);assert.equal(close.choose(close.snapshot().id,choice),true);assert.equal(await pending,choice);}
+const notes=fs.readFileSync('docs/releases/0.4.2.md','utf8'),summary=summarizeReleaseNotes(notes);
+assert.equal(summary.items.length,3);assert.equal(summary.hasMore,true);assert.ok(summary.items.every(item=>[...item].length<=68));assert.ok(!summary.items.join('').includes('Windows'));
+assert.deepEqual(summarizeReleaseNotes('• 启动检查\n• 课程状态修复\n• 数据保留'),{items:['启动检查','课程状态修复','数据保留'],hasMore:false});
+assert.deepEqual(summarizeReleaseNotes(null),{items:[],hasMore:false});
+assert.deepEqual(summarizeReleaseNotes('此版本未提供更新说明。'),{items:[],hasMore:false});
+assert.equal(summarizeReleaseNotes('# 0.4.2\n## 本次更新\n- **课程** [恢复](https://example.invalid)。还有更多详情。\n## 下载与升级\n- 安装程序').items[0],'课程 恢复');
+assert.deepEqual(summarizeReleaseNotes('0.4.2\n• 本次修复\n\n0.4.1\n• 上次修复').items,['本次修复']);
+assert.equal(summarizeReleaseNotes('## 本次更新\n- 第一行\n  继续说明\n- 第二项').items[0],'第一行 继续说明');
+assert.ok(!summarizeReleaseNotes('## 更新内容\n- 修复显示\n## 安装\n下载地址').items.join('').includes('下载'));
+console.log('✓ 关闭确认唯一请求、取消/隐藏/退出、过期响应保护；更新摘要三条上限、长度、完整说明和安装段落过滤通过');

@@ -1,3 +1,4 @@
+import { requestTestExit } from '../test/desktop-test-helpers.mjs';
 // Reproduce the original Three.js RoomEnvironment once at build time.
 // The app loads its exact half-float CubeUV pixels instead of compiling PMREM on startup.
 import fs from 'node:fs';
@@ -31,6 +32,6 @@ try{
   fs.writeFileSync(path.join(output,'archive-studio.json'),JSON.stringify(metadata,null,2)+'\n');
   console.log({...metadata,rawBytes:bytes.length,compressedBytes:fs.statSync(path.join(output,'archive-studio.bin.gz')).size});
 }finally{
-  if(app){await app.evaluate(({app,dialog})=>{dialog.showMessageBox=async()=>({response:1});app.quit();}).catch(()=>{});await app.close().catch(()=>{});}
+  if(app){await requestTestExit(app).catch(()=>{});await app.close().catch(()=>{});}
   server.closeAllConnections();await new Promise(resolve=>server.close(resolve));
 }

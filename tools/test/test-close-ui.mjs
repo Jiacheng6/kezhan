@@ -1,0 +1,51 @@
+// Actual desktop close controls, isolated data; no account or installed app.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';import path from 'node:path';
+import {_electron as electron} from 'playwright-core';
+import { requestTestExit, enterTestWorkspace, revealTestTools, openTestArchive } from './desktop-test-helpers.mjs';
+const root=process.cwd(),out=path.join(root,'.desktop-test/dialogs');fs.mkdirSync(out,{recursive:true});
+const data=fs.mkdtempSync(path.join(root,'.desktop-test/close-ui-'));
+fs.writeFileSync(path.join(data,'state.json'),JSON.stringify({version:3,taskPoints:{fixture:{status:'done'}},reviewQueue:[]}));
+const application=await electron.launch({executablePath:path.join(root,'node_modules/electron/dist/electron.exe'),args:[root,'--test-mode'],env:{...process.env,XXT_TEST_DATA_DIR:data}});
+const errors=[];let exited=false;
+try {
+  const page=await application.firstWindow();page.on('pageerror',error=>errors.push(error.message));
+  await page.waitForURL('http://127.0.0.1:*/');const url=page.url();
+  await application.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];w.setContentSize(1240,840);w.showInactive();});
+  await enterTestWorkspace(page);
+  const closeWindow=()=>application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].close());
+  await closeWindow();await page.locator('#desktopClosePanel[open]').waitFor();
+  await page.screenshot({path:path.join(out,'close-workspace.png'),animations:'disabled'});
+  assert.equal(await page.locator('#desktopClosePanel').count(),1);
+  await closeWindow();assert.equal(await page.locator('#desktopClosePanel[open]').count(),1);
+  assert.equal(await page.locator('#closeCancel').evaluate(e=>e===document.activeElement),true,'默认焦点为取消');
+  await page.keyboard.press('Escape');await page.locator('#desktopClosePanel').waitFor({state:'hidden'});
+  assert.equal(await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible()),true);
+  assert.ok((await page.evaluate(()=>fetch('/api/status').then(r=>r.json()))).startedAt);
+  await closeWindow();await page.locator('#closeHide').click();
+  await page.waitForFunction(()=>!document.getElementById('desktopClosePanel').open);
+  assert.equal(await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible()),false);
+  assert.ok((await page.evaluate(()=>fetch('/api/status').then(r=>r.json()))).startedAt,'隐藏不会关闭服务');
+  await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].showInactive());
+  // Pending request survives a local page navigation and its renderer reload.
+  await closeWindow();await page.locator('#desktopClosePanel[open]').waitFor();
+  await application.evaluate(({app,BrowserWindow})=>{const path=process.getBuiltinModule('path');return BrowserWindow.getAllWindows()[0].loadFile(path.join(app.getAppPath(),'desktop/loading.html'));});
+  await page.locator('#desktopClosePanel[open]').waitFor();
+  await page.screenshot({path:path.join(out,'close-startup.png'),animations:'disabled'});
+  await page.locator('#closeCancel').click();await page.locator('#desktopClosePanel').waitFor({state:'hidden'});
+  await closeWindow();await page.locator('#desktopClosePanel[open]').waitFor();await page.locator('#closeCancelIcon').click();
+  await page.locator('#desktopClosePanel').waitFor({state:'hidden'});
+  await page.goto(url);await enterTestWorkspace(page);
+  await revealTestTools(page);await page.locator('#toggleClassicUi').click();await closeWindow();await page.locator('#desktopClosePanel[open]').waitFor();
+  const colors=await page.locator('#desktopClosePanel').evaluate(el=>({dialog:getComputedStyle(el).backgroundColor,page:getComputedStyle(document.documentElement).getPropertyValue('--bg2').trim()}));
+  assert.ok(colors.dialog!=='rgba(0, 0, 0, 0)');
+  await page.screenshot({path:path.join(out,'close-classic.png'),animations:'disabled'});
+  await page.locator('#closeCancel').click();
+  await revealTestTools(page);await page.locator('#toggleClassicUi').click();
+  const ended=new Promise(resolve=>application.process().once('exit',resolve));
+  await closeWindow();await page.locator('#closeExit').click();await ended;exited=true;
+  assert.match(fs.readFileSync(path.join(data,'logs/desktop.log'),'utf8'),/后台退出 0/);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(data,'state.json'),'utf8')).taskPoints.fixture.status,'done');
+  assert.deepEqual(errors,[]);
+  console.log('✓ 真实关闭确认：工作台/启动页同款、重复关闭、默认取消、Esc、隐藏后台继续、重载恢复、经典外观和保存退出通过；未更新任何安装。');
+} finally { if(!exited)await requestTestExit(application).catch(()=>{});await application.close().catch(()=>{}); }
