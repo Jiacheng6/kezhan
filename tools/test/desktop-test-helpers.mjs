@@ -9,7 +9,10 @@ export async function requestTestExit(application) {
 }
 export async function enterTestWorkspace(page) {
   await dismissTestOnboarding(page);
-  if (await page.locator('#libraryHome').isVisible()) await page.locator('#libraryHome #enterWorkspace').click();
+  if (await page.locator('#libraryHome').isVisible()) {
+    await page.locator('#libraryHome #enterWorkspace').click();
+    await page.locator('#libraryHome').waitFor({ state: 'hidden' });
+  }
 }
 export async function revealTestTools(page) {
   await dismissTestOnboarding(page);

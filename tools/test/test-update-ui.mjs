@@ -108,7 +108,9 @@ try {
     catch { return false; }
   });
   assert.equal((await page.evaluate(() => window.desktopApp.updateState())).downloadReady, true);
-  const backups = fs.readdirSync(path.join(data, 'updates', 'backups'));
+  const backupRoot = path.join(data, 'updates', 'backups');
+  for (let attempt=0;attempt<50 && !fs.existsSync(backupRoot);attempt++) await new Promise(resolve=>setTimeout(resolve,100));
+  const backups = fs.readdirSync(backupRoot);
   assert.equal(backups.length, 1, '安装前自动备份');
   for (const name of Object.keys(fixtures)) assert.equal(fs.readFileSync(path.join(data, name), 'utf8'), before[name], name);
   await closeApplication();
