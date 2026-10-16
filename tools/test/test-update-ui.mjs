@@ -32,7 +32,9 @@ const report = { at: '2026-10-14T00:00:00.000Z', courses: [{ courseId: 'sample-c
 ] }] };
 fs.mkdirSync(path.join(data, 'data', 'probe-out'), { recursive: true });
 fs.mkdirSync(path.join(data, 'edge-profile'), { recursive: true });
-const fixtures = { 'state.json': { version: 3, taskPoints: { sample: { status: 'done' } }, settings: { maxRetries: 4 } },
+// This fixture has already completed the current guide. Upgrade migration and
+// first-use priority are covered separately, so updating must preserve it exactly.
+const fixtures = { 'state.json': { version: 3, onboarding: {version: 2, completedAt: '2026-01-01T00:00:00.000Z'}, taskPoints: { sample: { status: 'done' } }, settings: { maxRetries: 4 } },
   'local.json': { personId: 'fixture-user' }, 'recon-selection.json': { courses: { 'sample-course': { enabled: true } } },
   'data/probe-out/task-report.json': report, 'edge-profile/Cookies': 'fixture-login-data' };
 for (const [name, value] of Object.entries(fixtures)) fs.writeFileSync(path.join(data, name), typeof value === 'string' ? value : JSON.stringify(value));

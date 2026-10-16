@@ -10,7 +10,7 @@ const data = fs.mkdtempSync(path.resolve('.desktop-test/onboarding-ui-'));
 const output = path.join(root, '.desktop-test/onboarding'); fs.mkdirSync(output, { recursive: true });
 process.env.XXT_DATA_DIR = data;
 const { loadSettings, DEFAULT_SETTINGS } = await import('../../src/config.mjs');
-const { mutateState } = await import('../../src/state.mjs');
+const { mutateState, invalidateCache } = await import('../../src/state.mjs');
 const { normalizeSettings, toSparseSettings } = await import('../../src/settings.mjs');
 const { patchStatus, bus } = await import('../../src/logbus.mjs');
 const { startServer } = await import('../../src/server.mjs');
@@ -82,6 +82,15 @@ try {
   await page.screenshot({ path: path.join(output, '03-narrow.png') });
   assert.equal(await page.locator('#onboardingPanel').evaluate(e => e.scrollWidth <= e.clientWidth), true);
   await page.keyboard.press('Escape'); assert.equal(await page.locator('#onboardingPanel').evaluate(e => e.open), false);
+  mutateState(s => { s.onboarding = {version: 1, completedAt: '2026-01-01T00:00:00.000Z'}; s.taskPoints.previous = {status: 'done'}; });
+  invalidateCache();
+  await page.reload(); await page.locator('#onboardingPanel[open]').waitFor();
+  await page.locator('#onboardingNext').click();
+  assert.equal(await page.locator('input[value=deepseek]').isChecked(), true, '升级引导沿用已选 AI');
+  await page.locator('#onboardingNext').click(); await page.locator('#onboardingPanel').waitFor({state:'hidden'});
+  assert.equal(JSON.parse(fs.readFileSync(path.join(data, 'state.json'), 'utf8')).taskPoints.previous.status, 'done');
+  await page.reload(); await page.waitForFunction(() => document.documentElement.dataset.onboardingPending === 'false');
+  assert.equal(await page.locator('#onboardingPanel').evaluate(e => e.open), false, '内置引导完成后不重复弹出');
   assert.deepEqual(errors, []);
   console.log('✓ 真实桌面向导：首次弹出、未登录阻断、跳过重开、失败反馈、三通道选择、登录隔离、运行保护、关闭覆盖、完成持久化、设置重开和窄窗通过');
 } finally {

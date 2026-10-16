@@ -38,7 +38,8 @@ const EDITOR = '[contenteditable="true"]';
 const SEND_BTN = 'button[aria-label="发送消息"]';
 
 /**
- * 检查千问是否已登录（未登录时会出现「登录」按钮）。
+ * 检查千问聊天界面是否就绪。没有登录按钮不代表已登录，
+ * 空白、加载或错误页面也没有按钮，必须同时找到可见编辑器和发送控件。
  */
 export async function checkLogin(page) {
   if(!page)return {loggedIn:false};
@@ -46,10 +47,16 @@ export async function checkLogin(page) {
   if(typeof page.url==='function'&&!provider)return {loggedIn:false,error:'非官方 AI 网页'};
   if(provider&&provider.id!=='qianwen')return webChatState(page,provider);
   return page.evaluate(() => {
-    const btn = Array.from(document.querySelectorAll('button')).find((x) =>
-      /^(登录|立即登录)$/.test((x.textContent || '').trim()) && x.checkVisibility(),
+    const visible = (e) => !!e?.checkVisibility();
+    const btn = Array.from(document.querySelectorAll('button, a, [role="button"]')).find((x) =>
+      /^(登录|立即登录|登录注册|登录\/注册|登录或注册)$/.test((x.textContent || x.getAttribute('aria-label') || '').trim()) && visible(x),
     );
-    return { loggedIn: !btn, hasLoginButton: !!btn };
+    const editor = Array.from(document.querySelectorAll('[contenteditable="true"]')).find(visible);
+    // 空输入框的发送按钮可以 disabled，不影响界面就绪判断。
+    const send = Array.from(document.querySelectorAll('button[aria-label="发送消息"]')).find(visible);
+    const loading = document.readyState === 'loading';
+    const signedOut = !!btn || /(?:^|\/)(?:login|sign[-_]?in)(?:\/|$)/i.test(location.pathname);
+    return { loggedIn: !loading && !signedOut && !!editor && !!send, hasLoginButton: !!btn, editor: !!editor, chatReady: !!editor && !!send };
   });
 }
 

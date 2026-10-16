@@ -4,19 +4,21 @@ import { loadState, mutateState } from './state.mjs';
 
 const providers = new Set(['qianwen', 'doubao', 'deepseek']);
 
-// Persist with account/progress data: an app update or port change isn't first use.
+// Version 2 introduces the embedded-web setup. Legacy completion only covered
+// external-browser accounts, so upgrades need this guide once as well.
+const ONBOARDING_VERSION = 2;
 export function getOnboarding() {
   const state = loadState();
-  if (state.onboarding?.version === 1) return { ...state.onboarding };
+  if (state.onboarding?.version === ONBOARDING_VERSION) return { ...state.onboarding };
   const used = !!PERSON_ID || fs.existsSync(PATHS.taskReport)
     || Object.keys(state.taskPoints || {}).length > 0
     || (state.reviewQueue || []).length > 0 || Object.keys(state.quizzes || {}).length > 0;
   const now = new Date().toISOString();
   const record = {
-    version: 1, startedAt: now, completedAt: used ? now : null, migrated: used,
+    version: ONBOARDING_VERSION, startedAt: now, completedAt: null,
+    migrated: used || !!state.onboarding,
   };
-  // Existing installations don't need a write just to suppress the welcome UI.
-  if (used) return record;
+  // Course lists and progress are not proof that embedded login setup completed.
   return mutateState(s => (s.onboarding = record));
 }
 
@@ -27,6 +29,6 @@ export function completeOnboarding(body, status) {
   if (loadSettings().ai.provider !== body.provider) throw new Error('请先保存所选 AI');
   getOnboarding();
   return mutateState(s => (s.onboarding = {
-    ...s.onboarding, version: 1, completedAt: new Date().toISOString(), provider: body.provider,
+    ...s.onboarding, version: ONBOARDING_VERSION, completedAt: new Date().toISOString(), provider: body.provider,
   }));
 }

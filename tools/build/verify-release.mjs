@@ -16,7 +16,7 @@ assert.ok(fs.existsSync(path.join(app, 'src', 'chaoxing', 'essay.mjs')), '缺少
 for (const relative of ['src/chaoxing/playback-policy.mjs', 'src/ui/task-progress.js', 'src/ui/task-progress.css', 'src/ui/web-pages.js', 'src/ui/workbench-restore.css']) {
   assert.equal(fs.readFileSync(path.join(app, relative)).equals(fs.readFileSync(path.join(ROOT, relative))), true, '缺少或打包版本不一致：' + relative);
 }
-for (const relative of ['src/onboarding.mjs', 'src/ui/onboarding.js', 'src/ui/onboarding.css', 'src/ui/selection-desk.js', 'src/ui/selection-plan.js', 'src/ui/learning-focus.css', 'src/chaoxing/selection-presets.mjs', 'src/ui/close-dialog.js', 'src/ui/dialogs.css', 'desktop/close-confirmation.cjs', 'desktop/embedded-browser.cjs', 'src/browser/embedded.mjs', 'src/ui/embedded-browser.js', 'src/ui/embedded-browser.css']) {
+for (const relative of ['src/ai/ai.mjs', 'src/onboarding.mjs', 'src/ui/onboarding.js', 'src/ui/onboarding.css', 'src/ui/selection-desk.js', 'src/ui/selection-plan.js', 'src/ui/learning-focus.css', 'src/chaoxing/selection-presets.mjs', 'src/ui/close-dialog.js', 'src/ui/dialogs.css', 'desktop/close-confirmation.cjs', 'desktop/embedded-browser.cjs', 'src/browser/embedded.mjs', 'src/ui/embedded-browser.js', 'src/ui/embedded-browser.css']) {
   assert.ok(fs.existsSync(path.join(app, relative)), '缺少本次更新模块：' + relative);
   assert.equal(fs.readFileSync(path.join(app, relative)).equals(fs.readFileSync(path.join(ROOT, relative))), true, '打包源码不一致：' + relative);
 }

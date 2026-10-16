@@ -9,7 +9,7 @@ const { mutateState, invalidateCache, loadState } = await import('../../src/stat
 const { patchStatus } = await import('../../src/logbus.mjs');
 const { startServer } = await import('../../src/server.mjs');
 const first = getOnboarding();
-assert.equal(first.completedAt, null); assert.equal(first.migrated, false);
+assert.equal(first.version, 2); assert.equal(first.completedAt, null); assert.equal(first.migrated, false);
 mutateState(s => { s.taskPoints.example = { status: 'done' }; s.settings = { ai: { provider: 'doubao' } }; });
 assert.equal(getOnboarding().completedAt, null, '途中发现账号或课程不能跳过未完成向导');
 const service = await startServer();
@@ -28,6 +28,9 @@ try {
   assert.equal((await post({ action: 'complete', provider: 'qianwen' })).status, 400, '未保存所选 AI 不能完成');
   assert.equal((await post({ action: 'complete', provider: 'doubao' })).status, 200);
   invalidateCache(); assert.ok(getOnboarding().completedAt);
+  assert.equal(getOnboarding().version, 2);
+  const completedAt = getOnboarding().completedAt;
+  invalidateCache(); assert.equal(getOnboarding().completedAt, completedAt, '完成后重启或覆盖更新不应重复引导');
   assert.equal(getOnboarding().provider, 'doubao');
   assert.equal(loadState().taskPoints.example.status, 'done', '不能破坏进度');
   assert.equal((await fetch(endpoint, { method: 'POST', headers: { Origin: 'https://example.invalid' }, body: '{}' })).status, 403);
@@ -38,11 +41,24 @@ try {
 }
 fs.writeFileSync(PATHS.state, '{}'); invalidateCache();
 setPersonId('fixture-previous-user', { persist: false }); assert.equal(getOnboarding().migrated, true);
+assert.equal(getOnboarding().completedAt, null, '旧账号不能跳过内置网页引导');
 setPersonId('', { persist: false }); fs.writeFileSync(PATHS.state, '{}'); invalidateCache();
 fs.mkdirSync(PATHS.probeOut, { recursive: true }); fs.writeFileSync(PATHS.taskReport, '{"courses":[]}');
 assert.equal(getOnboarding().migrated, true);
+assert.equal(getOnboarding().completedAt, null, '旧课程清单不能跳过引导');
 fs.unlinkSync(PATHS.taskReport); fs.writeFileSync(PATHS.state, '{"taskPoints":{"old":{"status":"done"}}}'); invalidateCache();
 assert.equal(getOnboarding().migrated, true);
+assert.equal(getOnboarding().completedAt, null, '旧任务进度不能跳过引导');
+assert.equal(loadState().taskPoints.old.status, 'done');
+for (const completedAt of [null, '2026-01-01T00:00:00.000Z']) {
+  fs.writeFileSync(PATHS.state, JSON.stringify({ onboarding: {version: 1, completedAt}, taskPoints: {old: {status: 'done'}}, settings: {ai: {provider: 'deepseek'}} }));
+  invalidateCache(); const migrated = getOnboarding();
+  assert.equal(migrated.version, 2); assert.equal(migrated.completedAt, null, '旧版引导记录需要一次内置设置');
+  assert.equal(migrated.migrated, true);
+  assert.equal(loadState().settings.ai.provider, 'deepseek');
+  assert.equal(loadState().taskPoints.old.status, 'done');
+  assert.deepEqual(getOnboarding(), migrated, '未完成引导不会在再次读取时被跳过');
+}
 fs.writeFileSync(PATHS.state, 'broken'); invalidateCache(); assert.throws(getOnboarding, /无法读取/);
 assert.equal(fs.readFileSync(PATHS.state, 'utf8'), 'broken');
 console.log('✓ 首次识别、完成持久化、运行/扫描保护、登录/通道校验、进度保留、老用户迁移、损坏文件保护通过');

@@ -41,6 +41,26 @@ try{
   const limited=await askImage({page,imagePath,prompt:'another question',freshChat:false});assert.equal(limited.errorCode,'rate-limited');assert.equal(await page.evaluate(()=>window.sent),2);
   await page.close();console.log(`✓ ${provider.label}：图片上传、真实新轮次回答、同答案多轮、草稿保护、验证与限额停止`);
  }
- const q=await context.newPage();await q.route('**/*',r=>r.fulfill({contentType:'text/html; charset=utf-8',body:'<button>登录</button>'}));await q.goto(AI_PROVIDERS.qianwen.url);assert.equal((await checkLogin(q)).loggedIn,false);
+ const q=await context.newPage();let qMarkup='';
+ await q.route('**/*',r=>r.fulfill({contentType:'text/html; charset=utf-8',body:qMarkup}));
+ const composer='<div contenteditable="true" data-placeholder="向千问提问" style="min-height:40px"> </div><button aria-label="发送消息" disabled>发送</button>';
+ for(const [name,body,expected] of [
+  ['空白页','',false],
+  ['加载页','<p>正在加载…</p>',false],
+  ['错误页','<h1>该页面暂时不可用</h1>',false],
+  ['缺少发送控件','<div contenteditable="true">输入</div>',false],
+  ['隐藏聊天控件',`<div hidden>${composer}</div>`,false],
+  ['未登录按钮','<button>登录</button>'+composer,false],
+  ['未登录链接','<a href="/login">登录/注册</a>'+composer,false],
+  ['未登录角色控件','<div role="button">立即登录</div>'+composer,false],
+  ['已登录聊天界面',composer,true],
+  ['隐藏登录按钮','<button hidden>登录</button>'+composer,true],
+ ]) {
+  qMarkup=body;await q.goto(AI_PROVIDERS.qianwen.url);
+  assert.equal((await checkLogin(q)).loggedIn,expected,`千问：${name}`);
+ }
+ qMarkup=composer;await q.goto('https://www.qianwen.com/login');
+ assert.equal((await checkLogin(q)).loggedIn,false,'登录路径不能误报就绪');
+ console.log('✓ 千问就绪检测：空白、加载、错误、隐藏控件及不同登录入口均不误报');
  console.log('✓ 官方域名识别、通道设置、页面复用和千问兼容');
 }finally{await browser.close();}
