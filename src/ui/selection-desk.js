@@ -267,14 +267,28 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
   for (const [id, action] of [['deskCreatePreset', 'create'], ['deskReplacePreset', 'replace'], ['deskRenamePreset', 'rename'], ['deskDeletePreset', 'delete']]) $(id).onclick = () => mutatePreset(action);
   const legacy = document.getElementById('legacyCourseTree');
   const legacySession = node('div'); legacySession.id = 'legacySession'; document.getElementById('deskReturn').after(legacySession);
-  $('deskLegacy').onclick = () => { legacySession.append(runProgress, runActions); root.hidden = true; legacy.hidden = false; document.getElementById('deskReturn').focus(); };
-  document.getElementById('deskReturn').onclick = () => { $('deskConnection').before(runProgress, runActions); legacy.hidden = true; root.hidden = false; render(); $('deskLegacy').focus(); };
+  function setView(view, focus = false) {
+    const treeView = view === 'tree';
+    if (treeView) legacySession.append(runProgress, runActions);
+    else $('deskConnection').before(runProgress, runActions);
+    root.hidden = treeView; legacy.hidden = !treeView;
+    document.getElementById('viewColumns')?.setAttribute('aria-pressed', String(!treeView));
+    document.getElementById('viewTree')?.setAttribute('aria-pressed', String(treeView));
+    try { localStorage.setItem('xxt-course-view', treeView ? 'tree' : 'columns'); } catch {}
+    if (!treeView) render();
+    if (focus) (treeView ? document.getElementById('deskReturn') : $('deskLegacy')).focus();
+  }
+  $('deskLegacy').onclick = () => setView('tree', true);
+  document.getElementById('deskReturn').onclick = () => setView('columns', true);
+  document.getElementById('viewColumns')?.addEventListener('click', () => setView('columns'));
+  document.getElementById('viewTree')?.addEventListener('click', () => setView('tree'));
   function render() {
     const courses = data(); root.classList.toggle('sd-no-courses', !courses.length);
     if (!courses.some(c => c.courseId === active)) active = courses.find(c => c.enabled !== false && !courseCompletion(c).finished)?.courseId || courses[0]?.courseId || '';
     drawCourses(); drawTasks(); drawSummary(); drawRule(); lockControls();
   }
   render();
+  try { setView(localStorage.getItem('xxt-course-view')); } catch {}
   return { render, focusCourse, updateStatus() {
     const nextAccount = snapshot().status?.account?.personId || '';
     if (account !== nextAccount) { account = nextAccount; presets = []; $('deskPresetName').value = ''; loadPresets(); }

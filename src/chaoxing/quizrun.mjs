@@ -38,7 +38,7 @@ import { fillEssayAnswer } from './essay.mjs';
 import { cardsUrl, openSectionCard, waitForAttachments } from './section.mjs';
 import { readPointStatusFromPage } from './attach.mjs';
 import { skipDecision, describeSkip } from './skip.mjs';
-import { newTaskPage, releasePage } from '../browser/pages.mjs';
+import { newTaskPage, releasePage, setPageBusy } from '../browser/pages.mjs';
 import { isReviewLocked } from './review-lock.mjs';
 
 export { cardsUrl };
@@ -455,6 +455,7 @@ const keptWorkPages = new Map();
 const MAX_KEPT_PAGES = 6;
 
 export function registerKeptPage(key, page, info = {}) {
+  setPageBusy(page, false);
   keptWorkPages.set(key, { page, savedAt: Date.now(), info });
 
   // 超出上限 → 关掉最旧的（新注册的这个一定是"最近"的，不动）

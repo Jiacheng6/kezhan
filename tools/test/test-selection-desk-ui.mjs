@@ -39,6 +39,9 @@ try {
   assert.equal(await page.locator('#workspaceUtilities').getAttribute('open'),null);
   assert.equal(await page.locator('#deskRunActions [data-action=startRun]').isVisible(),true);
   const before=await selection();
+  await page.locator('#viewTree').click();assert.equal(await page.locator('#legacyCourseTree').isVisible(),true);
+  await page.locator('#viewColumns').click();assert.equal(await page.locator('#selectionDesk').isVisible(),true);
+  assert.deepEqual(await selection(),before,'视图切换不能改变选择');
   await page.screenshot({path:path.join(output,'focus-initial.png'),animations:'disabled'});
   await page.locator('#deskQuickRules > summary').click();
   await page.locator('#deskCourses [data-sd-course-id=fixture-course-1] button').click();
@@ -111,7 +114,7 @@ try {
   for(const id of ['deskQuickRules','deskPresetsPanel'])if(await page.locator('#'+id).evaluate(e=>e.open))await page.locator('#'+id+' > summary').click();
   await page.locator('#deskRunActions [data-action=startRun]').click();
   await page.locator('#deskRunState').filter({hasText:'进行中'}).waitFor();
-  assert.equal(await page.locator('#deskRunActions [data-action=startRun]').isVisible(),false);
+  assert.equal(await page.locator('#deskRunActions [data-action=startRun]').isDisabled(),true);
   assert.equal(await page.locator('#deskRunActions [data-action=stopRun]').isVisible(),true);
   assert.match(await page.locator('#deskProgress').innerText(),/完成 2\/9/);
   await page.screenshot({path:path.join(output,'focus-running.png'),animations:'disabled'});
@@ -128,7 +131,7 @@ try {
   await page.locator('[data-tab=courses]').click();assert.deepEqual(errors,[]);
   status.progress={done:0,total:0,current:null};status.runStats=null;
   await page.route('**/api/checklist',route=>route.fulfill({json:{ok:true,result:null}}));
-  await page.reload();await page.locator('#deskScan').waitFor();assert.equal(await page.locator('#deskScan').isDisabled(),true,'首次使用先完成登录');
+  await page.reload();await page.locator('[data-tab=courses]').click();await page.locator('#deskScan').waitFor();assert.equal(await page.locator('#deskScan').isDisabled(),true,'首次使用先完成登录');
   status.login.loggedIn=true;for(const ws of sockets)ws.send(JSON.stringify({type:'status',data:status}));
   await page.waitForFunction(()=>!document.getElementById('deskScan').disabled);await page.screenshot({path:path.join(output,'focus-first-use.png'),animations:'disabled'});
   await page.locator('#deskScan').click();assert.deepEqual(actions,['startRun','stopRun','startRecon']);

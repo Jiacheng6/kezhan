@@ -9,6 +9,7 @@
  *
  * 只做视频/文档两类；作业、讨论、直播一律不碰（按用户决策）。
  */
+import { applyNativeSpeed, watchWithCheckpoint } from './playback-policy.mjs';
 import { PATHS, loadSettings } from '../config.mjs';
 import { waitForRead } from '../control.mjs';
 import { log } from '../logbus.mjs';
@@ -629,6 +630,8 @@ export async function runVideoTask({ ctx, task, personId, onProgress, shouldStop
     const onQuizEvent = (r) => {
       popupLog.push(r);
       if (r.needsHuman) {
+        shared.needsHuman = true;
+        shared.quizOpen = true;
         addHandbook({
           key: task.key,
           course: task.courseName || task.courseId,
@@ -642,10 +645,8 @@ export async function runVideoTask({ ctx, task, personId, onProgress, shouldStop
       }
     };
 
-    if (qianwenPage === null) {
-      // 没给千问页（例如只跑视频不做题）就跳过监听
-      result.popupWatching = false;
-    } else {
+    {
+      // 未连接 AI 也要检测弹窗，明确转待人工，不能让播放监控一直等待。
       result.popupWatching = true;
       popupTask = watchVideoQuiz({
         page,
@@ -667,20 +668,32 @@ export async function runVideoTask({ ctx, task, personId, onProgress, shouldStop
       }
     }
 
-    // —— 4) 监控到片尾 ——
+    result.speed = await applyNativeSpeed(frame, settings.playbackSpeed, shouldStop);
+    log(`    播放速度 ${result.speed.actual}×${result.speed.fallback ? '（该课程未应用所选倍速，回到正常播放）' : ''}`, 'info');
+    // Keep popup watchers alive through both the checkpoint and continued playback.
     let watch;
+    let checkpoint;
     try {
-      watch = await watchUntilDone({
-        page,
-        settings,
-        shared,
-        shouldStop,
-        onTick: (t) => {
-          result.progress = t.progress;
-          result.resumes = t.resumes;
-          if (onProgress) onProgress({ ...t, task });
+      const policy = await watchWithCheckpoint({
+        settings, shouldStop, needsHuman: () => shared.needsHuman,
+        watch: watchSettings => watchUntilDone({
+          page, settings: watchSettings, shared, shouldStop,
+          onTick: t => {
+            result.progress = t.progress; result.resumes = t.resumes;
+            if (onProgress) onProgress({ ...t, task, phase: t.quizOpen ? 'quiz' : 'playing' });
+          },
+        }),
+        verify: () => verifyTaskCompletion({ ctx, task, personId, totalBudgetMs: 15000, intervalMs: 5000,
+          shouldStop: () => !!shared.needsHuman || !!shouldStop?.() }),
+        resume: () => play(frame),
+        onPhase: phase => {
+          const message = phase === 'checkpoint' ? '已到 90%，正在核对平台完成状态' : '平台尚未确认完成，继续播放到片尾';
+          log(`    ${message}`, 'info');
+          if (onProgress) onProgress({ task, progress: result.progress, phase: phase === 'checkpoint' ? 'verifying' : 'playing', playbackPhase: message, playbackRate: result.speed.actual });
         },
       });
+      watch = policy.watch; checkpoint = policy.checkpoint;
+      result.checkpoint = checkpoint;
     } finally {
       // 视频结束 → 停掉弹窗监听
       popupStop = true;
@@ -733,6 +746,7 @@ export async function runVideoTask({ ctx, task, personId, onProgress, shouldStop
     if (!watch.ok) throw new Error(`播放未达标：${watch.reason}（进度 ${((watch.progress ?? result.progress) * 100).toFixed(1)}%）`);
     const patientMs = settings.greenDotPatientMs ?? 360000;
     const patientStep = settings.greenDotPatientStepMs ?? 10000;
+    if (!checkpoint?.done && onProgress) onProgress({ task, progress: watch.progress, currentTime: watch.currentTime, duration: watch.duration, playbackRate: result.speed.actual, phase: 'verifying', playbackPhase: '正在核对平台完成状态' });
     log(`    播放结束，核对完成状态（最多等 ${Math.round(patientMs / 60000)} 分钟）…`, 'info');
 
     /*
@@ -747,7 +761,7 @@ export async function runVideoTask({ ctx, task, personId, onProgress, shouldStop
      * 现逻辑：以**本任务点自己的**已完成标记为主判据，小节绿点只作兜底/佐证。
      * 于是"视频已完成、小节因测验未做完而不绿"能立刻判定成功并往下走。
      */
-    const verdict = await verifyTaskCompletion({
+    const verdict = checkpoint?.done ? checkpoint : await verifyTaskCompletion({
       ctx,
       task,
       personId,

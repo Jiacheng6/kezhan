@@ -1,6 +1,14 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('desktopApp', Object.freeze({
   browser: (visible) => ipcRenderer.invoke('desktop:browser', !!visible),
+  webState: () => ipcRenderer.invoke('desktop:web-state'),
+  webCommand: (command) => ipcRenderer.invoke('desktop:web-command', command),
+  webLayout: (layout) => ipcRenderer.invoke('desktop:web-layout', layout),
+  onWebState: (callback) => {
+    const listener = (_, state) => callback(state);
+    ipcRenderer.on('desktop:web-state', listener);
+    return () => ipcRenderer.removeListener('desktop:web-state', listener);
+  },
   hide: () => ipcRenderer.invoke('desktop:hide'),
   exit: () => ipcRenderer.invoke('desktop:exit'),
   closeChoice: (id, choice) => ipcRenderer.invoke('desktop:close-choice', id, choice),

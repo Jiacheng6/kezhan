@@ -1,0 +1,36 @@
+/* A precise amber signal on the archive's dark instrument surface. */
+.task-progress{--tp-ink:var(--fg);--tp-muted:var(--fg2);--tp-line:var(--line);--tp-accent:#9b6a2b;color:var(--tp-ink);padding:21px 0 5px;border-top:1px solid var(--tp-line);margin-top:23px;min-width:0}
+.task-progress[hidden]{display:none!important}
+.tp-caption{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:10px;letter-spacing:.6px;color:var(--tp-muted)}
+.tp-state{display:inline-flex;align-items:center;gap:8px}.tp-state i{width:5px;height:5px;background:var(--tp-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--tp-accent) 12%,transparent)}
+.tp-reading{display:flex;justify-content:space-between;align-items:center;gap:20px;margin:12px 0 17px}
+.tp-reading p{font-size:13px;line-height:1.7;margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;min-width:0}
+.tp-percent{display:flex;align-items:baseline;gap:4px;flex-shrink:0;color:var(--tp-accent);font-variant-numeric:tabular-nums}
+.tp-percent strong{font:400 36px/1.1 Consolas,"SFMono-Regular",monospace;letter-spacing:-2px}.tp-percent small{font-size:11px}
+.tp-track{height:7px;position:relative;background:color-mix(in srgb,var(--tp-line) 60%,transparent);border-radius:1px;isolation:isolate;overflow:hidden}
+.tp-track:after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0,transparent calc(10% - 1px),var(--tp-line) calc(10% - 1px),var(--tp-line) 10%);opacity:.5;pointer-events:none}
+.tp-fill{height:100%;background:linear-gradient(90deg,color-mix(in srgb,var(--tp-accent) 62%,var(--tp-line)),var(--tp-accent));position:relative;transition:width 700ms cubic-bezier(.2,.7,.2,1);min-width:0}
+.tp-fill:after{content:"";position:absolute;right:0;top:0;bottom:0;width:2px;background:var(--tp-accent);box-shadow:0 0 12px var(--tp-accent)}
+.tp-foot{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-top:12px;color:var(--tp-muted);font-size:10px;line-height:1.8}
+.tp-foot>span{min-width:0;overflow-wrap:anywhere}
+.tp-view{border:0;background:transparent!important;padding:0;font-size:11px;color:var(--tp-ink);white-space:nowrap;flex-shrink:0;border-radius:0;line-height:1.8}
+.tp-view:hover:not(:disabled){color:var(--tp-accent);border-color:transparent}
+.task-sheet .task-progress{--tp-ink:#f5f3e9;--tp-muted:#c4cbbb;--tp-line:#59604e;--tp-accent:#e2bf7d}
+.task-progress[data-running=true] .tp-state i{animation:task-signal 2.8s ease-in-out infinite}
+.task-progress[data-indeterminate=true] .tp-fill{animation:task-wait 2.2s ease-in-out infinite}
+.task-progress[data-indeterminate=true] .tp-percent small{visibility:hidden}
+.task-progress[data-verifying=true] .tp-state i{background:transparent;border:1px solid var(--tp-accent)}
+@keyframes task-signal{50%{box-shadow:0 0 0 5px color-mix(in srgb,var(--tp-accent) 6%,transparent)}}
+@keyframes task-wait{0%,100%{transform:translateX(0)}50%{transform:translateX(250%)}}
+#runTaskProgress.task-progress{margin:0;border-top:0;padding-top:3px}#runTaskProgress .tp-reading{display:block;margin:10px 0 14px}#runTaskProgress .tp-reading p{font-size:12px}#runTaskProgress .tp-percent{justify-content:flex-end;margin-top:13px}
+#runTaskProgress .tp-foot{flex-wrap:wrap;gap:7px}#runTaskProgress .tp-view{font-size:11px}
+#legacySession #runTaskProgress .tp-reading{display:flex}#legacySession #runTaskProgress .tp-percent{margin-top:0}
+.task-sheet:has(#overviewTaskProgress:not([hidden])) #kCurrent{display:none}
+.runbar .runbar-main{padding-top:18px;border-top:1px solid var(--line);margin-top:18px}.runbar .runbar-track{height:3px;margin:10px 0}
+.runbar .runbar-fill{background:var(--ok)}.runbar .runlabel{font-size:10px!important}.runbar .runprog{font:12px Consolas,monospace!important}
+.session-progress{margin-top:19px}.session-progress .progress-caption{font-size:11px}
+#webTaskProgress.task-progress{padding:12px 24px 10px;margin:0;border-top:0;border-bottom:1px solid var(--line)}
+#webTaskProgress .tp-caption{font-size:10px}#webTaskProgress .tp-reading{margin:5px 0 9px}#webTaskProgress .tp-reading p{font-size:12px;-webkit-line-clamp:1}#webTaskProgress .tp-percent strong{font-size:24px;letter-spacing:-1px}#webTaskProgress .tp-foot{display:none}#webTaskProgress .tp-track{height:3px}
+@media(max-width:560px){.tp-reading{gap:10px}.tp-percent strong{font-size:29px}.tp-foot{flex-wrap:wrap}.tp-foot .tp-view{margin-left:auto}.task-progress{margin-top:18px}#webTaskProgress.task-progress{padding-inline:15px}}
+@media(prefers-reduced-motion:reduce){.task-progress *{animation:none!important;transition:none!important}}
+.reduce-motion .task-progress *{animation:none!important;transition:none!important}

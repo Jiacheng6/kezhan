@@ -33,6 +33,8 @@ if (!process.env.XXT_DATA_DIR) {
 }
 
 const suite = [
+  ['任务进度 / 网页入口定位', 'tools/test/test-task-progress.mjs'],
+  ['播放速度 / 90% 平台核对与续播', 'tools/test/test-playback-policy.mjs'],
   ['首次使用向导 / 完成持久化与老用户识别', 'tools/test/test-onboarding.mjs'],
   ['关闭确认 / 更新内容精简', 'tools/test/test-dialogs.mjs'],
   ['选课规则 / 方案保存与账号隔离', 'tools/test/test-selection-plan.mjs'],

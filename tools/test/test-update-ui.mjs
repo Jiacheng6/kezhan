@@ -78,7 +78,7 @@ try {
   assert.equal(await page.locator('#desktopUpdatePanel').isVisible(),true,'关闭确认取消后可继续查看更新');
   await page.locator('#updateLater').click();
   await page.reload();
-  await page.locator('#selectionDesk').waitFor();
+  await page.locator('#panel-overview.active').waitFor({state:'attached'});
   await page.waitForTimeout(300);
   assert.equal(await page.locator('#desktopUpdatePanel').isVisible(),false,'重载不重复打扰');
   assert.equal(checks,1);

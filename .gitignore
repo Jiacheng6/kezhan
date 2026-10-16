@@ -9,6 +9,8 @@
 
 # ── ① 登录凭据（最高敏感）────────────────────────────────────────────────
 edge-profile/
+browser-session.bin*
+Partitions/
 #   └ Default/Network/Cookies        ← 学习通 + 千问登录态（★ 等于账号钥匙）
 #     Default/Login Data / Web Data  ← 站点登录记录与表单数据
 #     Default/History                ← 浏览历史
@@ -136,6 +138,7 @@ tools/test/*
 !tools/test/test-dialogs.mjs
 !tools/test/test-onboarding.mjs
 !tools/test/test-onboarding-ui.mjs
+!tools/test/test-embedded-browser.mjs
 !tools/test/test-close-ui.mjs
 !tools/test/test-web-ai.mjs
 !tools/test/test-ai-settings-ui.mjs
@@ -146,3 +149,6 @@ tools/test/*
 !tools/test/test-library-ui.mjs
 !tools/test/privacy-public-assets.mjs
 !tools/test/test-privacy-public-assets.mjs
+
+!tools/test/test-playback-policy.mjs
+!tools/test/test-task-progress.mjs

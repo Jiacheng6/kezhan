@@ -20,6 +20,7 @@ import { listKeptPages, registerKeptPage, editKeptEssayReviewAnswer } from './ch
 import { reopenReviewWork, submitPendingReviews, withReviewLock } from './chaoxing/review-recovery.mjs';
 import { updateReviewAnswer } from './state.mjs';
 import { startServer } from './server.mjs';
+import { embedded } from './browser/embedded.mjs';
 import { getOnboarding } from './onboarding.mjs';
 import { startWindowControl, setBrowserVisible, isBrowserVisible, stopWindowControl } from './browser/window-control.mjs';
 import { ownerState, startOwnerMonitor } from './browser/owner-lifecycle.mjs';
@@ -102,7 +103,7 @@ async function boot() {
   ensureDirs();
   const settings = loadSettings();
   // account 一并带上：local.json 已配置时，控制台一打开就能看到账号 ID
-  patchStatus({ settings, phase: 'P4', bootError: null, account: accountStatus() });
+  patchStatus({ settings, phase: 'P4', bootError: null, account: accountStatus(), browserMode: embedded ? 'embedded' : 'external' });
 
   log('学习通自动刷课助手 启动中…', 'info');
   log(`工作目录: ${PATHS.root}`, 'dim');
@@ -138,15 +139,16 @@ async function boot() {
   }
 
   runtime.browser = browser;
-  const context = contextOf(browser);
+  const context = await contextOf(browser);
   runtime.context = context;
+  if (embedded) runtime.coursePage = context.pages()[0] || null;
   browser.on('disconnected', () => {
     if (shuttingDown) return;
     batchRunner.requestStop();
-    patchStatus({ ready: false, edge: { connected: false }, bootError: '专用浏览器连接已中断，请在软件中重启服务。已保存的进度仍然保留。' });
+    patchStatus({ ready: false, edge: { connected: false }, bootError: '网页连接已中断，请在软件中重启服务。已保存的进度仍然保留。' });
   });
   await startWindowControl(browser);
-  patchStatus({ browserVisible: true });
+  patchStatus({ browserVisible: !embedded });
 
   patchStatus({
     edge: {
@@ -155,7 +157,7 @@ async function boot() {
       version: edgeInfo.version?.Browser || 'unknown',
     },
   });
-  log(`已接管 Edge，当前标签页 ${context.pages().length} 个`, 'ok');
+  log(`已连接${embedded ? '内置网页' : 'Edge'}，当前标签页 ${context.pages().length} 个`, 'ok');
 
   /*
    * 等标签页"稳定"再往下走。
@@ -164,7 +166,7 @@ async function boot() {
    * 不等就会出岔子 —— 恢复还没完成时判断"有没有现成的控制台/千问页"，
    * 会得出"没有" → 再新建一个 → 恢复完成后就变成**重复标签页**（用户实测反馈）。
    */
-  const settled = await waitForPagesSettled(context, { quietMs: 1500, maxMs: 10000 });
+  const settled = embedded ? { pages: context.pages().length } : await waitForPagesSettled(context, { quietMs: 1500, maxMs: 10000 });
   if (settled.pages !== context.pages().length) {
     log(`标签页恢复到 ${context.pages().length} 个`, 'debug');
   }
@@ -214,9 +216,9 @@ async function boot() {
    * `--restore-last-session` 恢复的标签页也是异步出现的。
    * 不等就会"以为没有 → 新建一个"，于是同一个页面开两个（实测冷启动后出现两个）。
    */
-  let coursePage = await waitForPage(context, 'chaoxing.com', 7000);
+  let coursePage = embedded ? findPage(context, 'chaoxing.com') : await waitForPage(context, 'chaoxing.com', 7000);
   if (!coursePage) {
-    coursePage = await context.newPage();
+    coursePage = (embedded && context.pages().find(page => page.url() === 'about:blank')) || await context.newPage();
     await coursePage.goto(TARGETS.chaoxingHome, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
     log('新开学习通标签页', 'dim');
   }
@@ -313,7 +315,7 @@ async function boot() {
   patchStatus({ ready: true });
   log('——— P4 就绪（刷课 + 测验答题）———', 'ok');
   if (!getStatus().login.loggedIn) {
-    log('检测到尚未登录学习通 —— 请在弹出的 Edge 窗口里扫码或输密码登录。', 'warn');
+    log('尚未登录学习通，请在学习通网页中扫码或使用账号登录。', 'warn');
     log('登录完成后，点控制台里的「重新检测登录」即可。', 'warn');
   } else {
     const s = loadState();
@@ -534,11 +536,11 @@ function buildHooks() {
 
     openChaoxing: async () => {
       if (process.env.XXT_DESKTOP === '1') await setBrowserVisible(true);
-      const page = runtime.coursePage || (await runtime.context.newPage());
+      const page = runtime.coursePage && !runtime.coursePage.isClosed() ? runtime.coursePage : (await runtime.context.newPage());
       runtime.coursePage = page;
-      await page.goto(TARGETS.chaoxingHome, { waitUntil: 'domcontentloaded' }).catch(() => {});
+      if (!page.url().includes('chaoxing.com')) await page.goto(TARGETS.chaoxingHome, { waitUntil: 'domcontentloaded' }).catch(() => {});
       await bringToFront(page);
-      log('已在受控 Edge 中打开学习通首页', 'info');
+      log(`已在${embedded ? '软件内' : '受控浏览器中'}打开学习通首页`, 'info');
       return { ok: true };
     },
 
@@ -717,6 +719,14 @@ function buildHooks() {
                     : null,
                   percent: st.current?.progress ?? null,
                   resumes: st.current?.resumes ?? null,
+                  playbackRate: st.current?.playbackRate ?? null,
+                  playbackPhase: st.current?.playbackPhase ?? null,
+                  currentTime: st.current?.currentTime ?? null,
+                  duration: st.current?.duration ?? null,
+                  questionIndex: st.current?.questionIndex ?? null,
+                  questionTotal: st.current?.questionTotal ?? null,
+                  taskType: st.current?.type ?? null,
+                  phase: st.current?.phase ?? null,
                 },
                 runStats: st,
               });
@@ -817,7 +827,7 @@ function buildHooks() {
 
     info: async () => ({
       root: PATHS.root,
-      edgeProfile: PATHS.edgeProfile,
+      edgeProfile: embedded ? PATHS.browserProfile : PATHS.edgeProfile,
       debugPort: DEBUG_PORT,
       node: process.version,
       consoleUrl: getStatus().consoleUrl,
@@ -876,14 +886,14 @@ async function gracefulShutdown(signal) {
   // Windows 强杀进程不触发 SIGTERM，桌面端通过消息请求有序退出。
   stopWindowControl();
   ownerMonitor?.stop();
-  if (runtime.browser && process.env.XXT_DESKTOP === '1') {
+  if (runtime.browser && process.env.XXT_DESKTOP === '1' && !embedded) {
     try {
       const session = await runtime.browser.newBrowserCDPSession();
       await session.send('Browser.close');
     } catch { /* Browser.close 后连接断开是正常现象 */ }
   }
   // Browser.close 后留时间给 Edge 写入登录会话，避免立即强杀打断落盘。
-  if (process.env.XXT_DESKTOP === '1') await stopOwnedEdge({ graceMs: 3000 });
+  if (process.env.XXT_DESKTOP === '1' && !embedded) await stopOwnedEdge({ graceMs: 3000 });
   if (runtime.service) {
     for (const client of runtime.service.wss.clients) client.terminate();
     runtime.service.wss.close();

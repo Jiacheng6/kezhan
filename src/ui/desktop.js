@@ -13,8 +13,8 @@ if (app) {
       }
     });
   };
-  bind('desktopShowBrowser', async () => { await app.browser(true); $('desktopBrowserState').textContent = '浏览器已显示'; });
-  bind('desktopHideBrowser', async () => { await app.browser(false); $('desktopBrowserState').textContent = '浏览器已隐藏 · 任务继续运行'; });
+  bind('desktopShowBrowser', async () => { await app.browser(true); $('desktopBrowserState').textContent = '网页已在软件内打开'; });
+  bind('desktopHideBrowser', async () => { await app.browser(false); $('desktopBrowserState').textContent = '已返回工作台 · 任务继续运行'; });
   bind('desktopDataFolder', app.dataFolder);
   bind('desktopClose', app.exit);
   bind('desktopRestart', async () => { if (confirm('重启会中断当前任务并保存进度，是否继续？')) await app.restart(); });

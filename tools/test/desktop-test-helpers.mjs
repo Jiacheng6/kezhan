@@ -13,6 +13,7 @@ export async function enterTestWorkspace(page) {
 }
 export async function revealTestTools(page) {
   await dismissTestOnboarding(page);
+  await enterTestWorkspace(page);
   const tools = page.locator('#workspaceUtilities');
   if (!await tools.evaluate(e => e.open)) await tools.locator(':scope > summary').click();
 }
@@ -21,5 +22,7 @@ export async function dismissTestOnboarding(page) {
   if (await page.locator('#onboardingPanel').evaluate(e => e.open)) await page.locator('#onboardingLater').click();
 }
 export async function openTestArchive(page) {
+  await dismissTestOnboarding(page);
+  if (await page.locator('#libraryHome').isVisible()) return;
   await revealTestTools(page); await page.locator('#enterLibrary').click();
 }

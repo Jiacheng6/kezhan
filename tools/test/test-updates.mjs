@@ -104,9 +104,12 @@ const fixture = {
 };
 for (const [name, contents] of Object.entries(fixture)) fs.writeFileSync(path.join(data, name), JSON.stringify(contents));
 fs.writeFileSync(path.join(data, 'edge-profile', 'Cookies'), 'fixture-login-data');
+const encryptedSession = Buffer.from([0, 255, 128, 1, 42]);
+fs.writeFileSync(path.join(data, 'browser-session.bin'), encryptedSession);
 const backup = backupUserData(data, '0.3.0');
 for (const name of Object.keys(fixture)) assert.equal(fs.readFileSync(path.join(data, name), 'utf8'), fs.readFileSync(path.join(backup, name), 'utf8'));
 assert.equal(fs.readFileSync(path.join(data, 'edge-profile', 'Cookies'), 'utf8'), 'fixture-login-data');
+assert.deepEqual(fs.readFileSync(path.join(backup, 'browser-session.bin')), encryptedSession, '内置网页登录快照按二进制原样备份');
 fs.writeFileSync(path.join(data, 'state.json'), '{broken');
 assert.throws(() => backupUserData(data, '0.3.0'), SyntaxError, '损坏数据必须中止安装，不能当成空数据');
 assert.equal(fs.readFileSync(path.join(data, 'state.json'), 'utf8'), '{broken');

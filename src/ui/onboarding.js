@@ -10,7 +10,7 @@ dialog.innerHTML = `
   <ol class="onboarding-steps" aria-label="设置步骤"><li id="onboardingLoginStep">登录学习通</li><li id="onboardingAIStep">选择做题 AI</li></ol>
   <section id="onboardingLogin">
     <h2 id="onboardingTitle" tabindex="-1">先连接你的学习通</h2>
-    <p class="onboarding-description">在专用浏览器中扫码或使用账号登录，回来检测即可。</p>
+    <p class="onboarding-description">在软件内打开学习通，扫码或使用账号登录，再返回向导检测。</p>
     <div class="onboarding-status"><span class="onboarding-status-dot" aria-hidden="true"></span><span id="onboardingLoginStatus" role="status">正在准备浏览器…</span></div>
     <div class="onboarding-actions"><button id="onboardingOpenLogin">打开学习通登录 ↗</button><button id="onboardingCheckLogin">我已登录，检测</button></div>
   </section>
@@ -30,11 +30,11 @@ dialog.innerHTML = `
   <div class="dialog-footer"><button id="onboardingLater" class="onboarding-later">稍后设置</button><div class="onboarding-actions"><button id="onboardingBack" hidden>上一步</button><button id="onboardingNext" class="onboarding-primary">下一步</button></div></div>`;
 document.body.append(dialog);
 const $ = id => document.getElementById(id);
-let status = workspace.snapshot().status || {}, step = 1, busy = false, autoPending = false;
+let status = workspace.snapshot().status || {}, step = 1, busy = false, autoPending = false, paused = false;
 const provider = () => dialog.querySelector('input:checked').value;
 const names = { qianwen: '千问', doubao: '豆包', deepseek: 'DeepSeek' };
 const blocked = () => status.running || status.reconRunning;
-const browserReady = () => status.ready && status.edge?.connected;
+const browserReady = () => status.edge?.connected && (status.ready || status.browserMode === 'embedded');
 async function api(url, body) {
   const response = await fetch(url, body === undefined ? undefined : {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
@@ -50,7 +50,7 @@ function render() {
   $('onboardingLoginStep').setAttribute('aria-current', step === 1 ? 'step' : 'false');
   $('onboardingAIStep').setAttribute('aria-current', step === 2 ? 'step' : 'false');
   const login = !!status.login?.loggedIn;
-  $('onboardingLoginStatus').textContent = login ? '学习通已登录，可以继续' : status.bootError || (browserReady() ? '等待你在浏览器中完成登录' : '正在准备专用浏览器，请稍候…');
+  $('onboardingLoginStatus').textContent = login ? '学习通已登录，可以继续' : status.bootError || (browserReady() ? '等待你在内置网页中完成登录' : '正在准备网页引擎，请稍候…');
   $('onboardingLoginStatus').parentElement.classList.toggle('is-ready', login);
   const aiReady = status.ai?.provider === provider() && status.ai.loggedIn;
   $('onboardingAIStatus').textContent = aiReady ? `${names[provider()]}已登录` : `${names[provider()]}尚未检测到登录`;
@@ -65,12 +65,14 @@ function render() {
   else if ($('onboardingError').textContent === '请先停止任务或等待扫描完成，再进行设置。') $('onboardingError').textContent = '';
 }
 function dismiss() {
+  paused = false;
   dialog.close();
   document.documentElement.dataset.onboardingPending = 'false';
   document.dispatchEvent(new Event('onboarding-dismissed'));
 }
 function open() {
   if (dialog.open) return;
+  document.documentElement.dataset.onboardingPending = 'true';
   step = 1; $('onboardingError').textContent = '';
   const current = status.settings?.ai?.provider || 'qianwen';
   const radio = [...dialog.querySelectorAll('input')].find(input => input.value === current);
@@ -90,7 +92,7 @@ async function saveProvider() { await api('/api/settings', { patch: { 'ai.provid
 $('onboardingOpenLogin').onclick = () => run(() => action('openChaoxing'));
 $('onboardingCheckLogin').onclick = () => run(async () => {
   await action('refreshLogin');
-  if (!status.login?.loggedIn) throw new Error('还未检测到学习通登录，请在打开的浏览器中完成登录后重试。');
+  if (!status.login?.loggedIn) throw new Error('还未检测到学习通登录，请在软件内的学习通网页完成登录后重试。');
 });
 $('onboardingOpenAI').onclick = () => run(async () => { await saveProvider(); await action('openAI'); });
 $('onboardingCheckAI').onclick = () => run(async () => {
@@ -110,6 +112,15 @@ $('onboardingLater').onclick = dismiss;
 dialog.addEventListener('cancel', event => { event.preventDefault(); if (!busy) dismiss(); });
 dialog.querySelectorAll('input').forEach(input => input.addEventListener('change', () => { $('onboardingError').textContent = ''; render(); }));
 $('reopenOnboarding').addEventListener('click', open);
+document.addEventListener('embedded-browser-show', () => {
+  if (!dialog.open) return;
+  paused = true; dialog.close(); document.dispatchEvent(new Event('onboarding-paused'));
+});
+document.addEventListener('embedded-browser-hide', () => {
+  if (!paused) return;
+  paused = false; render(); dialog.showModal();
+  $(step === 1 ? 'onboardingTitle' : 'onboardingAITitle').focus();
+});
 workspace.subscribe(snapshot => { status = snapshot.status || {}; if (dialog.open) render(); });
 function maybeOpen() {
   if (!autoPending || $('desktopClosePanel')?.open || $('desktopUpdatePanel')?.open) return;

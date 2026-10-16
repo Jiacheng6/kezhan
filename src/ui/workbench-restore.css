@@ -1,0 +1,23 @@
+/* Restore the complete workspace while retaining the three-column selector. */
+.sidebar>.nav-label,.sidebar .brand-note{display:block}
+.sidebar .brand{margin-bottom:24px}.sidebar .tabs{gap:5px}
+.sidebar .tab{min-height:43px}.sidebar .tab.active{border-left:3px solid var(--acc)}
+.workspace-utilities>summary{font-size:11px}.sidebar-bottom{margin-top:auto}
+#panel-courses>.page-heading{display:flex;margin-bottom:22px}
+body[data-panel=courses] #phaseLine{display:inline}
+body[data-panel=courses] main{padding-top:30px}
+#panel-courses>.course-toolbar{flex-wrap:wrap;gap:14px;justify-content:flex-start;margin-bottom:18px}
+.course-toolbar>.inline-menu{margin-left:auto}
+.course-view-switch{display:flex;border:1px solid var(--line);padding:3px;background:var(--bg2);gap:3px}
+.course-view-switch button{border:0;background:transparent;padding:7px 13px;font-size:12px;color:var(--fg2)}
+.course-view-switch button[aria-pressed=true]{background:var(--fg);color:var(--bg2)}
+.sd-layout{height:min(850px,calc(100vh - 260px));min-height:520px}
+.sd-rules>summary,.sd-presets>summary{font-weight:600}
+.sd-run-actions>.stop-button:disabled{display:block}
+.sd-run-actions:has(.stop-button:not(:disabled))>[data-action=startRun]{display:block}
+.playback-note{padding:24px 0;border-top:1px solid var(--line)}
+.playback-note h3{font-size:15px;line-height:1.6;margin:10px 0}
+.playback-note p{font-size:12px;color:var(--fg2);line-height:1.9;margin-bottom:12px}
+.playback-note .text-button{font-size:12px}
+@media(max-width:1100px){.sd-layout{height:auto}.sd-run-actions{grid-template-columns:1fr 1fr}.overview-primary{grid-row:1}.overview-rail{grid-row:2}}
+@media(max-width:800px){.sidebar>.nav-label,.sidebar .brand-note{display:none}.sidebar .brand{margin-bottom:16px}.course-view-switch button{padding:7px 10px}#panel-courses>.page-heading{margin-bottom:16px}}

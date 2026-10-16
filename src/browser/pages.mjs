@@ -17,6 +17,7 @@
  * 原则：**绝不关掉"等你手动作答/确认提交"的页面**（白名单来自 state.keptPages）。
  */
 import { TARGETS } from '../config.mjs';
+import { embedded, embeddedRequest, targetOf } from './embedded.mjs';
 
 /** 本进程创建的页面台账 */
 const registry = new Map(); // page -> { kind, busy, createdAt }
@@ -55,18 +56,21 @@ export function isJunkUrl(url) {
 export async function newTaskPage(ctx, kind = 'task') {
   const page = await ctx.newPage();
   registry.set(page, { kind, busy: true, createdAt: Date.now() });
+  if (embedded) await targetOf(page).then(targetId => embeddedRequest('annotate', { targetId, role: kind, busy: true })).catch(() => {});
   return page;
 }
 
 /** 页面用完（已关或即将关）→ 从台账移除 */
 export function releasePage(page) {
   registry.delete(page);
+  if (embedded && !page.isClosed()) void targetOf(page).then(targetId => embeddedRequest('annotate', { targetId, busy: false })).catch(() => {});
 }
 
 /** 标记页面是否正忙（忙的页面在"一键清理"时也会被跳过） */
 export function setPageBusy(page, busy) {
   const e = registry.get(page);
   if (e) e.busy = !!busy;
+  if (embedded && !page.isClosed()) void targetOf(page).then(targetId => embeddedRequest('annotate', { targetId, busy: !!busy })).catch(() => {});
 }
 
 export function trackedPages() {

@@ -20,22 +20,7 @@ import { findVideoQuiz } from './videoquiz.mjs';
 /** 默认设置（后续由 settings 覆盖） */
 const DEFAULTS = {
   muted: true, // 默认静音（用户要求）
-  /*
-   * 播放完成阈值 —— 这里有个重要的实测教训（改了三次才对）。
-   *
-   * 学习通页面上写的是「观看时长需 ≥ 总时长的 90%」，但**实际服务端不是按 90% 判的**。
-   *
-   * 播放进度响应与页面标记可能不同步：
-   *   服务端通过状态、已播放时长与页面 aria 标记需要分别核对。
-   *   服务端返回通过后，页面标记仍可能稍后才更新。
-   *   完成阈值使用设置中的值，实际完成以服务端响应为准。
-   *
-   * 仅在临近片尾时停止，可能仍未达到服务器的完成条件；
-   * 必须让它一直播到**片尾（duration-1 秒）**才稳。
-   *
-   * 结论：宁可多播最后几秒，也不要早停 —— 早停的代价是 3 次重试全废 + 转人工。
-   * 所以默认按「距结束 1 秒」+ 99.9% 双保险，确保一定越过服务端判定线。
-   */
+  // 默认完整播放。check90 模式先查询平台，未确认则按此阈值续播。
   progressThreshold: 0.999,
   /** 距视频结束多少秒即视为播完（实测必须接近片尾） */
   finishMarginSec: 1,
@@ -199,7 +184,7 @@ export async function prepare(frame, page, settings = {}) {
         return { ok: false, error: `load failed: ${e.message}` };
       }
 
-      // 固定 1.0 倍速（明确不做倍速）
+      // 先恢复正常速度；起播后再通过课程自带控件选择倍速。
       try {
         v.playbackRate = 1;
       } catch (e) {}
@@ -370,6 +355,8 @@ export async function watchUntilDone({ page, settings = {}, onTick, shouldStop, 
   let stuckRounds = 0;
   let maxProgress = 0;
   let lastTime = null;
+  let lastSampleAt = null;
+  let lastRate = 1;
   let jumpRounds = 0;
   const events = [];
 
@@ -405,8 +392,8 @@ export async function watchUntilDone({ page, settings = {}, onTick, shouldStop, 
      */
     if (lastTime != null) {
       const delta = state.currentTime - lastTime;
-      const wallDelta = 2; // 监控间隔大致 2 秒
-      if (delta > wallDelta * 3 + 5) {
+      const wallDelta = (Date.now() - lastSampleAt) / 1000;
+      if (delta > wallDelta * Math.max(lastRate, state.playbackRate || 1) * 3 + 5) {
         jumpRounds += 1;
         events.push({ t: Date.now(), type: 'progress-jump', from: lastTime, to: state.currentTime, delta });
         if (jumpRounds >= 2) {
@@ -425,6 +412,8 @@ export async function watchUntilDone({ page, settings = {}, onTick, shouldStop, 
       }
     }
     lastTime = state.currentTime;
+    lastSampleAt = Date.now();
+    lastRate = state.playbackRate || 1;
 
     if (onTick) {
       onTick({
@@ -432,6 +421,7 @@ export async function watchUntilDone({ page, settings = {}, onTick, shouldStop, 
         duration: state.duration,
         progress: p,
         paused: state.paused,
+        playbackRate: state.playbackRate,
         resumes,
         defence: state.defence,
         hidden: state.hidden,
@@ -439,7 +429,7 @@ export async function watchUntilDone({ page, settings = {}, onTick, shouldStop, 
     }
 
     /*
-     * 达标判定：必须播到片尾。
+     * 播放阶段阈值：默认片尾；90% 检查只结束当前阶段，不代表任务完成。
      *
      * 判据取"或"里**最晚**的那个 —— 实测早停会失败：
      *   97%(307/309s) 停 → 绿点不变
@@ -451,9 +441,17 @@ export async function watchUntilDone({ page, settings = {}, onTick, shouldStop, 
         ? state.duration - state.currentTime <= (cfg.finishMarginSec ?? 1)
         : false;
 
-    if (p >= cfg.progressThreshold || nearEnd) {
+    // A checkpoint cannot interrupt a quiz, including the detector's first tick.
+    const atCheckpoint = p >= cfg.progressThreshold || nearEnd;
+    if (atCheckpoint && (shared.quizOpen || await findVideoQuiz(page).catch(() => null))) {
+      await page.waitForTimeout(500);
+      continue;
+    }
+    if (atCheckpoint) {
       // 再多给 1.5 秒，让学习通把最后一次观看时长上报出去
       await page.waitForTimeout(1500);
+      if (shouldStop?.() || shared.needsHuman) continue;
+      if (shared.quizOpen || await findVideoQuiz(page).catch(() => null)) continue;
       await pause(frame);
       return {
         ok: true,

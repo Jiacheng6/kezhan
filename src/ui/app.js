@@ -23,6 +23,7 @@ import {
 import { completionOf, completionCounts, courseCompletion, sectionCompletion, mergeTaskCompletion } from './task-status.js';
 import { changePanel, expandCourse, preserveTreeFocus } from './motion.js';
 import { createSelectionDesk } from './selection-desk.js';
+import { renderTaskProgress } from './task-progress.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
@@ -83,7 +84,7 @@ let readinessLayoutState = '';
 compactLayout.addEventListener('change', () => { if (state.status) renderReadinessLayout(state.status); });
 
 // 原生展开菜单可用键盘操作；点击外部或 Escape 时收起。
-const menuSelector = '.connection-menu[open], .inline-menu[open], .course-info[open], .selection-tools[open], .course-actions[open], .desktop-more[open]';
+const menuSelector = '.connection-menu[open], .inline-menu[open], .course-info[open], .selection-tools[open], .course-actions[open], .desktop-more[open], .workspace-utilities[open]';
 document.addEventListener('click', (event) => {
   for (const menu of $$(menuSelector)) if (!menu.contains(event.target)) menu.open = false;
 });
@@ -108,7 +109,7 @@ $$('.tab').forEach((btn) => {
     document.body.dataset.panel = name;
     $$('.panel').forEach((p) => p.classList.toggle('active', p.id === `panel-${name}`));
     changePanel(previous, document.getElementById('panel-' + name));
-    $('#pageTitle').textContent = ({ overview: '连接与概览', courses: '选课与学习', review: '待审答案', logs: '运行记录', settings: '偏好设置' })[name] || '学习空间';
+    $('#pageTitle').textContent = ({ overview: '学习工作台', courses: '选课与学习', review: '待审答案', logs: '运行记录', settings: '偏好设置' })[name] || '学习空间';
   });
 });
 
@@ -142,7 +143,7 @@ function renderStatus(s) {
 
   // 顶栏
   const edgeOk = !!s.edge?.connected;
-  setPill($('#pillEdge'), edgeOk ? '专用浏览器已连接' : '专用浏览器未连接', edgeOk ? 'ok' : 'bad');
+  setPill($('#pillEdge'), edgeOk ? '网页引擎已连接' : '网页引擎未连接', edgeOk ? 'ok' : 'bad');
   const loggedIn = !!s.login?.loggedIn;
   setPill($('#pillLogin'), loggedIn ? '已登录' : '未登录', loggedIn ? 'ok' : 'warn');
   /*
@@ -151,6 +152,8 @@ function renderStatus(s) {
    * 结果界面上永远挂着一颗"只侦察模式"，用户以为它不会动手。
    * 现在改成两颗**说真话**的灯：提交模式 + 答题通道。
    */
+  const playbackNote = $('#overviewPlayback');
+  if (playbackNote) playbackNote.textContent = `优先 ${s.settings?.playbackSpeed || 1}× · ${s.settings?.videoCompletionMode === 'check90' ? '90% 先核对，未完成继续' : '播到片尾后核对'}`;
   const submitAuto = s.settings?.submitMode === 'auto';
   setPill(
     $('#pillRecon'),
@@ -185,7 +188,7 @@ function renderStatus(s) {
   const p = s.progress || {};
   $('#kDone').textContent = p.done ?? 0;
   $('#kTotal').textContent = p.total ?? 0;
-  $('#kCurrent').textContent = p.current || '空闲';
+  $('#kCurrent').textContent = [p.current || '空闲', p.playbackRate ? `实际 ${p.playbackRate}×` : '', p.playbackPhase || ''].filter(Boolean).join(' · ');
   $('#kRunning').textContent = s.running ? '运行中' : '未运行';
   $('#overviewReviewCount').textContent = s.reviewCount ?? 0;
   $('#overviewQianwen').textContent = qOk ? '已登录，答题通道就绪' : `使用答题功能前请登录${aiLabel}`;
@@ -197,12 +200,12 @@ function renderStatus(s) {
   activity.textContent = s.reconRunning ? '正在扫描' : s.running ? '学习进行中' : !loggedIn ? '等待登录' : '已就绪';
   activity.classList.toggle('running', !!s.running || !!s.reconRunning);
   $('#overviewHeadline').textContent = s.reconRunning ? '正在整理课程清单' : s.running ? '学习任务运行中' : !loggedIn ? '先登录学习通' : '准备开始学习';
-  $('#overviewSubtitle').textContent = s.reconRunning ? '正在读取课程与章节任务，原有进度会保留。' : s.running ? '你可以隐藏浏览器，让任务继续在后台运行。' : !loggedIn ? '在专用浏览器完成登录，回来后检测登录状态。' : '选择课程与任务范围，再开始这一次学习。';
+  $('#overviewSubtitle').textContent = s.reconRunning ? '正在读取课程与章节任务，原有进度会保留。' : s.running ? '你可以返回工作台，任务会继续运行。' : !loggedIn ? '在软件内打开学习通登录，再检测登录状态。' : '选择课程与任务范围，再开始这一次学习。';
   const sessionPercent = p.total ? Math.min(100, ((p.done || 0) / p.total) * 100) : 0;
   $('#overviewProgressFill').style.width = `${sessionPercent}%`;
   $('#overviewSessionProgress').classList.toggle('hidden', !p.total && !s.running);
   $('#overviewSessionDetails').classList.toggle('hidden', !p.total && !s.running);
-  $('#overviewProgressTitle').textContent = s.running ? '本次任务进度' : '最近一次运行';
+  $('#overviewProgressTitle').textContent = s.running ? '本次已完成' : '最近一次运行';
   renderOverviewSelection();
 
   // 概览：本次运行范围（避免"以为只刷一门，其实刷了全部"）
@@ -247,6 +250,8 @@ function renderStatus(s) {
   renderSettings(s);
 
   // 执行状态条
+  renderTaskProgress($('#overviewTaskProgress'), s);
+  renderTaskProgress($('#runTaskProgress'), s);
   renderRunBar(s);
 
   // 待审队列计数
@@ -300,16 +305,18 @@ function renderRunBar(s) {
   const failed = st?.failed ?? 0;
   const cur = p.current || '';
 
-  $('#runLabel').textContent = running ? '▶ 执行中' : '已停止';
-  $('#runProg').textContent = p.percent != null ? `${(p.percent * 100).toFixed(1)}%` : '';
+  $('#runLabel').textContent = running ? '本次已完成' : '运行已停止';
+  $('#runProg').textContent = `${done} / ${total}`;
   $('#runFill').style.width = `${total ? Math.min(100, (done / total) * 100) : 0}%`;
 
   const parts = [`完成 ${done}/${total}`];
+  if (p.playbackRate) parts.push(`实际 ${p.playbackRate}×`);
+  if (p.playbackPhase) parts.push(p.playbackPhase);
   if (failed) parts.push(`失败 ${failed}`);
   if (st?.handbook) parts.push(`待人工 ${st.handbook}`);
   if (st?.resumes) parts.push(`纠偏 ${st.resumes}`);
   $('#runSub').innerHTML =
-    `${parts.join(' · ')}` + (cur ? `<br><span class="muted">当前：${escapeHtml(cur)}</span>` : '');
+    `${parts.join(' · ')}` + (cur && $('#runTaskProgress').hidden ? `<br><span class="muted">当前：${escapeHtml(cur)}</span>` : '');
 }
 
 /* ---------------- 设置（可编辑，落盘 state.json） ---------------- */

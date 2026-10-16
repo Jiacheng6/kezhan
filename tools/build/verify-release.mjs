@@ -8,12 +8,15 @@ import { loadLearningTerms, containsLearningTerms } from '../test/privacy-learni
 import { isPublicNumericAsset } from '../test/privacy-public-assets.mjs';
 const dist = path.join(ROOT, 'dist');
 const app = path.join(dist, 'win-unpacked', 'resources', 'app');
-for (const excluded of ['edge-profile', 'logs', 'data', 'local.json', 'state.json', 'recon-selection.json', '.git', 'tools', 'docs']) {
+for (const excluded of ['edge-profile', 'Partitions', 'browser-session.bin', 'logs', 'data', 'local.json', 'state.json', 'recon-selection.json', '.git', 'tools', 'docs']) {
   assert.equal(fs.existsSync(path.join(app, excluded)), false, `发布包不能包含 ${excluded}`);
 }
 assert.ok(fs.existsSync(path.join(app, 'desktop', 'native', 'BrowserWindowControl.exe')));
 assert.ok(fs.existsSync(path.join(app, 'src', 'chaoxing', 'essay.mjs')), '缺少简答填写模块');
-for (const relative of ['src/onboarding.mjs', 'src/ui/onboarding.js', 'src/ui/onboarding.css', 'src/ui/selection-desk.js', 'src/ui/selection-plan.js', 'src/ui/learning-focus.css', 'src/chaoxing/selection-presets.mjs', 'src/ui/close-dialog.js', 'src/ui/dialogs.css', 'desktop/close-confirmation.cjs']) {
+for (const relative of ['src/chaoxing/playback-policy.mjs', 'src/ui/task-progress.js', 'src/ui/task-progress.css', 'src/ui/web-pages.js', 'src/ui/workbench-restore.css']) {
+  assert.equal(fs.readFileSync(path.join(app, relative)).equals(fs.readFileSync(path.join(ROOT, relative))), true, '缺少或打包版本不一致：' + relative);
+}
+for (const relative of ['src/onboarding.mjs', 'src/ui/onboarding.js', 'src/ui/onboarding.css', 'src/ui/selection-desk.js', 'src/ui/selection-plan.js', 'src/ui/learning-focus.css', 'src/chaoxing/selection-presets.mjs', 'src/ui/close-dialog.js', 'src/ui/dialogs.css', 'desktop/close-confirmation.cjs', 'desktop/embedded-browser.cjs', 'src/browser/embedded.mjs', 'src/ui/embedded-browser.js', 'src/ui/embedded-browser.css']) {
   assert.ok(fs.existsSync(path.join(app, relative)), '缺少本次更新模块：' + relative);
   assert.equal(fs.readFileSync(path.join(app, relative)).equals(fs.readFileSync(path.join(ROOT, relative))), true, '打包源码不一致：' + relative);
 }
@@ -80,7 +83,7 @@ let scanned = 0;
 for (const full of walk(app)) {
   const relative = path.relative(app, full).replaceAll('\\', '/');
   const own = !relative.startsWith('node_modules/');
-  if (own) assert.equal(/(?:^|\/)(?:edge-profile|logs|data|\.git|\.desktop-test)(?:\/|$)|(?:^|\/)(?:local\.json(?:\..*)?|state\.json|recon-selection\.json|\.privacy-blocklist\.local\.json)$/i.test(relative), false, `发布包含个人数据路径：${relative}`);
+  if (own) assert.equal(/(?:^|\/)(?:edge-profile|Partitions|logs|data|\.git|\.desktop-test)(?:\/|$)|(?:^|\/)(?:browser-session\.bin(?:\..*)?|local\.json(?:\..*)?|state\.json|recon-selection\.json|\.privacy-blocklist\.local\.json)$/i.test(relative), false, `发布包含个人数据路径：${relative}`);
   if (!/\.(?:m?js|cjs|json|html|css|md|txt|yml|yaml|svg)$/i.test(relative)) continue;
   const content = fs.readFileSync(full, 'utf8');
   scanned++;

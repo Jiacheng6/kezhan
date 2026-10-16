@@ -16,6 +16,7 @@ import path from 'node:path';
 import { spawn, execFile } from 'node:child_process';
 import { chromium } from 'playwright-core';
 import { PATHS, DEBUG_PORT, EDGE_FLAGS, TARGETS } from '../config.mjs';
+import { embedded, embeddedContext, embeddedRequest, targetOf } from './embedded.mjs';
 
 const EDGE_CANDIDATES = [
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -98,6 +99,12 @@ async function waitForCdp(timeoutMs = 30000) {
  * @returns {{edgePath:string, launched:boolean, version:any}}
  */
 export async function ensureEdge(log = () => {}) {
+  if (embedded) {
+    const info = await cdpAlive();
+    if (!info) throw new Error('内置网页引擎尚未就绪，请重启软件');
+    log('已连接软件内置网页引擎，无需外部浏览器', 'ok');
+    return { edgePath: null, launched: false, version: info };
+  }
   const edgePath = findEdge();
   if (!edgePath) {
     throw new Error(
@@ -161,6 +168,7 @@ export async function connect() {
 }
 
 export function contextOf(browser) {
+  if (embedded) return embeddedContext(browser);
   return browser.contexts()[0];
 }
 
@@ -221,6 +229,7 @@ export async function getPage(context, urlPart, { create = true, navigate = null
 /** 把页面带到前台（失败不抛） */
 export async function bringToFront(page) {
   try {
+    if (embedded) { await embeddedRequest('activate', { targetId: await targetOf(page) }); return; }
     await page.bringToFront();
   } catch {
     /* 忽略 */

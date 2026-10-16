@@ -3,12 +3,14 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { PATHS } from '../config.mjs';
+import { embedded, embeddedRequest, embeddedVisible } from './embedded.mjs';
 
 let helper = null;
 let pending = null;
 let visible = true;
 
 export async function startWindowControl(browser) {
+  if (embedded) return;
   if (process.env.XXT_DESKTOP !== '1') return;
   const executable = path.join(PATHS.root, 'desktop', 'native', 'BrowserWindowControl.exe');
   if (!fs.existsSync(executable)) throw new Error('缺少浏览器窗口管理组件，请重新构建桌面版');
@@ -37,9 +39,10 @@ export async function startWindowControl(browser) {
   await setBrowserVisible(true);
 }
 
-export function isBrowserVisible() { return visible; }
+export function isBrowserVisible() { return embedded ? embeddedVisible() : visible; }
 
 export async function setBrowserVisible(show) {
+  if (embedded) return embeddedRequest('visible', { visible: !!show });
   if (!helper || helper.exitCode !== null) throw new Error('浏览器窗口管理尚未就绪');
   if (pending) throw new Error('正在切换浏览器窗口，请稍候');
   return new Promise((resolve, reject) => {

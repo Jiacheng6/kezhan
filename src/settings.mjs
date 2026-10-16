@@ -31,6 +31,8 @@ export const SETTING_SPEC = [
   },
   { path: 'essayAutoFill', label: '简答题自动填写草稿', kind: 'bool', help: '填写后回读验证，进入待审队列；不会自动交卷。已有答案不覆盖。' },
   { path: 'essayPrompt', label: '简答题提问词', kind: 'textarea', advanced: true },
+  { path: 'playbackSpeed', label: '优先播放速度', kind: 'select', options: [['1', '1× 正常播放'], ['1.5', '优先 1.5×'], ['2', '优先 2×']], help: '只使用课程播放器自带的倍速；不支持或设置失败时回到 1×。运行中显示实际速度。' },
+  { path: 'videoCompletionMode', label: '视频完成检查', kind: 'select', options: [['full', '播到片尾后核对'], ['check90', '90% 时先核对，未完成继续播放']], help: '以学习通实际完成状态为准。90% 检查不会拖动进度；未确认就从当前位置继续播到片尾。' },
   { path: 'muted', label: '播放时静音', kind: 'bool', help: '关掉会外放声音。' },
   { path: 'maxRetries', label: '单个任务点失败重试次数', kind: 'int', min: 1, max: 10 },
   { path: 'maxCardProbe', label: '每个小节最多探几张卡片', kind: 'int', min: 1, max: 12, advanced: true, help: '小节是分卡片的，任务点可能在第 2 张卡上。' },
@@ -91,7 +93,7 @@ export const SETTING_SPEC = [
 
 /** 只读展示（不允许界面改，避免把安全边界改掉） */
 export const READONLY_SPEC = [
-  { path: 'progressThreshold', label: '完成阈值', hint: '必须播到片尾（约 99.9%）：学习通服务端比页面写的 90% 更严。' },
+  { path: 'progressThreshold', label: '完成阈值', hint: '完整播放及 90% 检查未通过后的片尾阈值。完成条件因课程而异。' },
   { path: 'finishMarginSec', label: '距片尾多少秒算播完', hint: '默认 1 秒。' },
   { path: 'allowSeek', label: '允许拖拽进度条', hint: '永远关闭：学习通禁止拖拽，程序化 seek 会破坏这条视频。' },
   { path: 'greenDotRetries', label: '完成核对次数', hint: '与上面的"最长时间"配合。核对的是**本任务点**是否完成，不是小节绿点（小节要等所有任务点做完才绿）。' },

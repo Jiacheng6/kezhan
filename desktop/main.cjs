@@ -1,24 +1,31 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, dialog, ipcMain, shell, utilityProcess, powerSaveBlocker } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
-const net = require('node:net');
 const { pathToFileURL } = require('node:url');
 const { createUpdates, backupUserData } = require('./updates.cjs');
 const { CloseConfirmation } = require('./close-confirmation.cjs');
+const { EmbeddedBrowser } = require('./embedded-browser.cjs');
 
 const title = '学习通助手';
 const smokeTest = process.argv.includes('--smoke-test');
-const testMode = smokeTest || process.argv.includes('--test-mode');
+const embeddedTest = process.argv.includes('--embedded-test');
+const testMode = smokeTest || process.argv.includes('--test-mode') || embeddedTest;
 const dataDir = testMode && process.env.XXT_TEST_DATA_DIR
   ? path.resolve(process.env.XXT_TEST_DATA_DIR)
   : path.join(app.getPath('appData'), 'XuexitongAssistant');
 fs.mkdirSync(dataDir, { recursive: true });
 app.setPath('userData', dataDir);
 app.setAppUserModelId('com.xuexitong.assistant');
+app.commandLine.appendSwitch('remote-debugging-port', '0');
+app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+const desktopStartedAt = Date.now();
 const loadingUrl = pathToFileURL(path.join(__dirname, 'loading.html')).href;
 let mainWindow, tray, worker, serviceUrl, error = '', quitting = false, closeDialog = false, restarting = false;
 let heartbeat, startupTimer, blocker;
-let updates, rendererGone = false;
+let updates, internalBrowser, rendererGone = false;
 const closeConfirmation = new CloseConfirmation(request => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:close-request', request);
 });
@@ -30,16 +37,6 @@ function showMain() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show(); mainWindow.focus();
-}
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const port = server.address().port;
-      server.close(() => resolve(port));
-    });
-  });
 }
 function safePage(url) {
   return url === loadingUrl || (!!serviceUrl && new URL(url).origin === new URL(serviceUrl).origin);
@@ -93,6 +90,7 @@ async function exitApplication() {
   quitting = true;
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitle(`${title} — 正在保存进度并退出…`);
   await stopWorker();
+  await internalBrowser?.close();
   if (blocker !== undefined && powerSaveBlocker.isStarted(blocker)) powerSaveBlocker.stop(blocker);
   tray?.destroy();
   app.quit();
@@ -104,20 +102,37 @@ async function requestClose() {
   if (rendererGone) { rendererGone = false; await mainWindow.loadURL(loadingUrl); }
   if (closeDialog) return;
   closeDialog = true;
+  if (internalBrowser) { internalBrowser.closeSuspended = true; internalBrowser.applyBounds(); }
   try {
     // The local startup/error page and the workspace share this same prompt.
     const choice = await closeConfirmation.request();
     if (choice === 'hide') mainWindow.hide();
     if (choice === 'exit') await exitApplication();
-  } finally { closeDialog = false; }
+  } finally { closeDialog = false; if (internalBrowser) { internalBrowser.closeSuspended = false; internalBrowser.applyBounds(); } }
+}
+async function internalDebugPort() {
+  const file = path.join(dataDir, 'DevToolsActivePort');
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    try {
+      const [port, endpoint] = fs.readFileSync(file, 'utf8').trim().split(/\r?\n/);
+      if (fs.statSync(file).mtimeMs < desktopStartedAt - 1000) throw new Error('旧连接');
+      const version = await fetch(`http://127.0.0.1:${Number(port)}/json/version`, { signal: AbortSignal.timeout(1000) }).then(r => r.json());
+      if (Number(port) > 0 && new URL(version.webSocketDebuggerUrl).pathname === endpoint) return Number(port);
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error('内置网页引擎启动失败，请重启软件');
 }
 async function startWorker() {
   error = ''; serviceUrl = null;
-  const debugPort = await freePort();
+  const debugPort = await internalDebugPort();
   const child = utilityProcess.fork(path.join(__dirname, 'worker.cjs'), [], {
     cwd: app.getAppPath(), stdio: 'pipe', serviceName: title + '后台服务',
-    env: { ...process.env, XXT_DATA_DIR: dataDir, XXT_DEBUG_PORT: String(debugPort), XXT_DESKTOP: '1',
-      XXT_OWNER_PID: String(process.pid), ...(testMode ? { XXT_SMOKE_TEST: '1' } : {}) },
+    env: { ...process.env, XXT_DATA_DIR: dataDir, XXT_DEBUG_PORT: String(debugPort), XXT_DESKTOP: '1', XXT_EMBEDDED_BROWSER: '1',
+      XXT_OWNER_PID: String(process.pid), XXT_EMBEDDED_TEST: embeddedTest ? '1' : '',
+      XXT_EMBEDDED_TEST_HOME: embeddedTest ? process.env.XXT_EMBEDDED_TEST_HOME || '' : '',
+      ...(testMode && !embeddedTest ? { XXT_SMOKE_TEST: '1' } : {}) },
   });
   worker = child;
   child.on('error', (details) => showError(`后台进程异常：${details?.type || '未知错误'}`));
@@ -125,6 +140,11 @@ async function startWorker() {
   child.stderr?.on('data', (data) => log(data.toString().trimEnd()));
   child.on('message', async (message) => {
     if (worker !== child) return;
+    if (message.type === 'browser-request') {
+      try { child.postMessage({ type: 'browser-response', id: message.id, result: await internalBrowser.request(message.request) }); }
+      catch (error) { child.postMessage({ type: 'browser-response', id: message.id, error: error.message }); }
+      return;
+    }
     if (message.type === 'server-ready') {
       const url = new URL(message.url);
       if (url.hostname !== '127.0.0.1' || url.protocol !== 'http:') return showError('后台服务返回了无效地址');
@@ -191,6 +211,10 @@ else {
     mainWindow.webContents.on('did-finish-load', () => { rendererGone = false; notifyVisibility(); });
     mainWindow.webContents.on('will-navigate', (event, url) => { if (!safePage(url)) event.preventDefault(); });
     mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    internalBrowser = new EmbeddedBrowser(mainWindow, { dataDir, debugPort: await internalDebugPort(), log, onState: state => {
+      if (!mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:web-state', state);
+      worker?.postMessage({ type: 'browser-state', state });
+    } });
     mainWindow.webContents.on('render-process-gone', () => { rendererGone = true; showError('界面发生异常，请从托盘重新打开或重启服务。'); });
     updates = createUpdates({ app, dataDir, testMode,
       onStatus: (status) => { if (!mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:update-status', status); },
@@ -204,6 +228,8 @@ else {
         if (confirmation.response !== 0) return false;
         quitting = true;
         await stopWorker({ requireGraceful: true });
+        await internalBrowser.saveCookies();
+        internalBrowser.session.flushStorageData();
         backupUserData(dataDir, app.getVersion());
         log(`更新前数据备份完成，准备安装 ${status.nextVersion}`);
         if (testMode) throw new Error('测试模式已保存数据，禁止启动真实安装程序');
@@ -219,21 +245,24 @@ else {
     tray.on('double-click', showMain);
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: '打开学习通助手', click: showMain },
-      { label: '显示浏览器', click: () => serviceAction('showBrowser').catch((err) => showError(err.message)) },
-      { label: '隐藏浏览器（任务继续运行）', click: () => serviceAction('hideBrowser').catch((err) => showError(err.message)) },
+      { label: '打开内置网页', click: () => { showMain(); internalBrowser.setVisible(true); } },
+      { label: '返回工作台（任务继续运行）', click: () => internalBrowser.setVisible(false) },
       { type: 'separator' }, { label: '打开数据与日志文件夹', click: () => shell.openPath(dataDir) },
       { label: '重启后台服务', click: restartService }, { type: 'separator' },
       { label: '关闭软件…', click: () => { showMain(); requestClose(); } },
     ]));
     const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) => { assertSender(event); return fn(...args); });
-    handle('desktop:browser', (visible) => serviceAction(visible ? 'showBrowser' : 'hideBrowser'));
+    handle('desktop:browser', (visible) => internalBrowser.setVisible(visible));
+    handle('desktop:web-state', () => internalBrowser.snapshot());
+    handle('desktop:web-command', command => internalBrowser.command(command));
+    handle('desktop:web-layout', layout => internalBrowser.layout(layout));
     handle('desktop:hide', () => mainWindow.hide());
     handle('desktop:exit', requestClose);
     handle('desktop:close-state', () => closeConfirmation.snapshot());
     handle('desktop:close-choice', (id, choice) => ({ ok: closeConfirmation.choose(id, choice) }));
     handle('desktop:restart', restartService);
     handle('desktop:data-folder', () => shell.openPath(dataDir));
-    handle('desktop:info', () => ({ version: app.getVersion(), dataDir, error, serviceUrl }));
+    handle('desktop:info', () => ({ version: app.getVersion(), dataDir, error, serviceUrl, browser: 'embedded' }));
     handle('desktop:visibility', () => mainWindow.isVisible() && !mainWindow.isMinimized());
     handle('desktop:update-state', () => updates.snapshot());
     handle('desktop:update-check', () => updates.check());
@@ -242,6 +271,8 @@ else {
     handle('desktop:update-notified', () => updates.acknowledgeNotification());
     blocker = powerSaveBlocker.start('prevent-app-suspension');
     await mainWindow.loadURL(loadingUrl);
+    await internalBrowser.restoreCookies();
+    await internalBrowser.create();
     await startWorker();
   }).catch((err) => { showError(err.message); dialog.showErrorBox(title, err.message); });
 }

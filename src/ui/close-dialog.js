@@ -8,7 +8,7 @@
   panel.innerHTML = `<div class="dialog-heading"><span class="dialog-label">窗口操作</span><button id="closeCancelIcon" class="dialog-icon" aria-label="取消关闭">×</button></div>
     <h2 id="closeTitle">关闭窗口后怎么处理？</h2><p id="closeDescription">隐藏窗口，任务仍会在后台继续。</p>
     <div class="close-options"><button id="closeHide" class="close-option"><b>隐藏到托盘 <span>↘</span></b><small>任务继续运行，双击托盘图标可返回。</small></button>
-    <button id="closeExit" class="close-option"><b>停止任务并退出 <span>↗</span></b><small>保存进度，并关闭专用浏览器。</small></button></div>
+    <button id="closeExit" class="close-option"><b>停止任务并退出 <span>↗</span></b><small>保存进度与登录状态，关闭软件。</small></button></div>
     <div class="dialog-footer"><span id="closeError" role="status"></span><button id="closeCancel" autofocus>取消</button></div>`;
   document.body.append(panel);
   let requestId = null, answering = false, previousFocus;

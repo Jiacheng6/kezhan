@@ -43,6 +43,8 @@ import { log } from '../logbus.mjs';
 import { askImage } from '../ai/ai.mjs';
 import { parseAnswer, validateBeforeSubmit, buildArchive, confidenceLabel } from '../ai/parse.mjs';
 import { waitTurn, markAsked, reportSuccess, reportFailure } from '../ai/throttle.mjs';
+import { throwIfStopped } from '../control.mjs';
+import { shootQuestion } from './quiz.mjs';
 
 /** 弹窗根选择器（视频 iframe 内） */
 export const QUIZ_SELECTOR = '.ans-videoquiz';
@@ -189,9 +191,9 @@ export function quizKey(q) {
  * 截出来就是一条黑边 —— AI收到这种图会直接不回答（实测 4 分钟 0 字）。
  * 所以要往上找一个"装得下整道题"的祖先容器（≥150px 高）再截。
  */
-export async function shootVideoQuiz(frame, outDir) {
+export async function shootVideoQuiz(frame, outDir, {shouldStop,nativeCapture} = {}) {
   fs.mkdirSync(outDir, { recursive: true });
-  const file = path.join(outDir, `videoquiz-${Date.now()}.png`);
+  let file;
 
   const target = await frame
     .evaluate((sel) => {
@@ -215,7 +217,7 @@ export async function shootVideoQuiz(frame, outDir) {
     .catch(() => null);
 
   try {
-    await frame.locator('[data-xxt-shot="1"]').screenshot({ path: file, timeout: 15000 });
+    file = await shootQuestion(frame, 0, outDir, {selector:'[data-xxt-shot="1"]',shouldStop,...(nativeCapture ? {nativeCapture} : {})});
   } finally {
     await frame
       .evaluate(() => {
@@ -265,7 +267,8 @@ export async function readVideoQuizSelection(frame) {
  *   · #spanNot / #spanNotBack 可见 → 答错（可能回看）
  * 因此这里以「弹窗消失」为主判据，`#spanHas` 只是加分项。
  */
-export async function submitVideoQuiz(frame, { timeoutMs = 20000 } = {}) {
+export async function submitVideoQuiz(frame, { timeoutMs = 20000, shouldStop } = {}) {
+  throwIfStopped(shouldStop);
   try {
     await frame.locator('#videoquiz-submit').click({ timeout: 8000 });
   } catch (e) {
@@ -275,6 +278,7 @@ export async function submitVideoQuiz(frame, { timeoutMs = 20000 } = {}) {
   const t0 = Date.now();
   let last = null;
   while (Date.now() - t0 < timeoutMs) {
+    throwIfStopped(shouldStop);
     await new Promise((r) => setTimeout(r, 500));
     last = await frame
       .evaluate((sel) => {
@@ -332,7 +336,8 @@ function archiveAnswer(record) {
  *
  * @returns {Promise<object>} {ok, answered, needsHuman?, error?, ...}
  */
-export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent }) {
+export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent, shouldStop, nativeCapture }) {
+  throwIfStopped(shouldStop);
   const settings = loadSettings();
   const outDir = path.join(PATHS.answers, new Date().toISOString().slice(0, 10));
 
@@ -342,7 +347,8 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent 
   log(`    📝 视频弹窗题（${q.qtypeRaw}）：${q.stemTextRaw.slice(0, 60)}`, 'info');
   for (const o of q.options) log(`         ${o.letter || '?'} ${o.text}`, 'debug');
 
-  const imagePath = await shootVideoQuiz(frame, outDir).catch((e) => {
+  const imagePath = await shootVideoQuiz(frame, outDir, {shouldStop,nativeCapture}).catch((e) => {
+    if(e.code==='STOPPED')throw e;
     log(`    ! 弹窗截图失败: ${e.message}`, 'warn');
     return null;
   });
@@ -351,12 +357,13 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent 
     return { ok: false, needsHuman: true, error: '没有可用的AI页面，无法自动作答', question: q, imagePath };
   }
 
-  await waitTurn();
+  await waitTurn({ shouldStop });
   const ai = await askImage({
     page: qianwenPage,
     imagePath,
     prompt: settings.quizPrompt,
     freshChat: settings.ai?.freshChatPerQuestion ?? false,
+    shouldStop,
   });
   markAsked();
   if (ai.ok) reportSuccess();
@@ -406,6 +413,7 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent 
   // 点选（按解析出的选项字母 → domIndex）
   const picked = [];
   for (const letter of parsed.letters) {
+    throwIfStopped(shouldStop);
     const opt = q.options.find(
       (o) => String(o.letter).toUpperCase() === String(letter).toUpperCase() || o.letter === letter,
     );
@@ -416,13 +424,15 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent 
   }
   const readBack = await readVideoQuizSelection(frame);
 
-  if (!picked.length || picked.every((p) => !p.ok)) {
+  const expected = parsed.letters.map(letter => q.options.find(option => String(option.letter).toUpperCase() === String(letter).toUpperCase())?.domIndex).sort((a,b) => a-b);
+  const actual = readBack.filter(option => option.checked).map(option => option.i).sort((a,b) => a-b);
+  if (!picked.length || picked.some((p) => !p.ok) || JSON.stringify(expected) !== JSON.stringify(actual)) {
     archiveAnswer({ ...base, action: 'select-failed', picked, readBack });
-    return { ok: false, needsHuman: true, error: '选项点选失败，请手动作答', question: q, imagePath };
+    return { ok: false, needsHuman: true, error: '选项回读与预期不一致，已停止提交，请手动核对', question: q, imagePath };
   }
 
   // 提交
-  const sub = await submitVideoQuiz(frame, { timeoutMs: settings.quizSubmitTimeoutMs ?? 20000 });
+  const sub = await submitVideoQuiz(frame, { timeoutMs: settings.quizSubmitTimeoutMs ?? 20000, shouldStop });
   const archiveFile = archiveAnswer({
     ...base,
     action: sub.ok ? 'submitted' : 'submit-failed',
@@ -441,6 +451,7 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent 
 
   // 兜底点「继续」
   await new Promise((r) => setTimeout(r, 500));
+  throwIfStopped(shouldStop);
   const cont = await continueVideoQuiz(frame);
   if (cont.clicked) log('        已点「继续」恢复播放', 'debug');
 
@@ -469,37 +480,43 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent 
  * @param {object} opts
  * @param {object} opts.shared 共享状态对象（含 quizOpen）
  */
-export async function watchVideoQuiz({ page, qianwenPage, shared = {}, shouldStop, onEvent, intervalMs = 2000, task }) {
+export async function watchVideoQuiz({ page, qianwenPage, shared = {}, shouldStop, onEvent, intervalMs = 2000, task, nativeCapture }) {
   const handled = [];
   let rounds = 0;
   let lastHandled = null;
   let consecFail = 0;
+  let unreadableSince = null;
 
   for (;;) {
     if (shouldStop && shouldStop()) break;
     await page.waitForTimeout(intervalMs);
+    if (shouldStop?.()) break;
     rounds += 1;
 
     const hit = await findVideoQuiz(page);
     if (!hit) {
       // 弹窗消失 → 放开播放监控
       if (shared.quizOpen) shared.quizOpen = false;
+      unreadableSince = null;
       continue;
     }
+    shared.quizOpen = true;
 
     const q = await extractVideoQuiz(hit.frame).catch((e) => {
       log(`      [quiz] 提取弹窗题失败: ${e.message}`, 'warn');
       return null;
     });
-    if (!q) {
-      // 元素在但读不出结构：这属于 bug 级异常，别静默空转
-      if (rounds % 10 === 1) log('      [quiz] 看得到弹窗却读不出题目结构（走查 videoquiz.mjs）', 'warn');
+    if (!q || !q.options?.length) {
+      unreadableSince ??= Date.now();
+      if (Date.now() - unreadableSince >= 8000) {
+        const result = { ok: false, needsHuman: true, error: '视频弹窗题结构无法识别，已保留页面，请人工处理' };
+        shared.needsHuman = true;
+        if (onEvent) onEvent(result);
+        break;
+      }
       continue;
     }
-    if (!q.options?.length) {
-      if (rounds % 10 === 1) log(`      [quiz] 弹窗里没有选项（${q.qtypeRaw}），跳过`, 'warn');
-      continue;
-    }
+    unreadableSince = null;
     const key = quizKey(q);
 
     // 同一个弹窗：已成功处理过就别再动（防抖/防循环）
@@ -519,11 +536,14 @@ export async function watchVideoQuiz({ page, qianwenPage, shared = {}, shouldSto
     }
 
     log(`    发现视频弹窗题 → 处理中…（第 ${handled.length + 1} 次）`, 'info');
-    const r = await handleVideoQuiz({ page, frame: hit.frame, qianwenPage, task, onEvent: onEvent ? (x) => onEvent(x) : undefined }).catch((e) => ({
+    const r = await handleVideoQuiz({ page, frame: hit.frame, qianwenPage, task, shouldStop, nativeCapture }).catch((e) => {
+      if (e.code === 'STOPPED') throw e;
+      return {
       ok: false,
       needsHuman: true,
       error: e.message,
-    }));
+    }; });
+    if (onEvent) onEvent(r);
     handled.push({ key, at: Date.now(), ok: !!r.ok, error: r.error || null });
     lastHandled = { key, at: Date.now(), ok: !!r.ok };
 
@@ -540,7 +560,8 @@ export async function watchVideoQuiz({ page, qianwenPage, shared = {}, shouldSto
       consecFail += 1;
       if (consecFail >= 3) {
         log('    ⛔ 弹窗题连续处理失败 3 次，停止自动作答', 'error');
-        shared.quizOpen = false;
+        shared.needsHuman = true;
+        if (onEvent) onEvent({ok:false,needsHuman:true,error:'视频弹窗题连续处理失败，已保留页面，请人工处理'});
         break;
       }
     } else {

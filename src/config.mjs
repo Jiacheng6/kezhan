@@ -19,6 +19,7 @@ export const PATHS = {
   selection: path.join(DATA_ROOT, 'recon-selection.json'),
   /** 专用 Edge 配置目录（含你的学习通登录态，勿删） */
   edgeProfile: path.join(DATA_ROOT, 'edge-profile'),
+  browserProfile: path.join(DATA_ROOT, 'Partitions', 'learning-web'),
   state: path.join(DATA_ROOT, 'state.json'),
   logs: path.join(DATA_ROOT, 'logs'),
   answers: path.join(DATA_ROOT, 'logs', 'answers'),
@@ -107,6 +108,13 @@ export const TARGETS = {
   /** 千问网页版 */
   qianwen: 'https://www.tongyi.com/',
 };
+// Full desktop integration tests can use a local synthetic website. A packaged
+// normal launch never sets this flag; arbitrary remote overrides are rejected.
+if (process.env.XXT_EMBEDDED_TEST === '1' && process.env.XXT_EMBEDDED_TEST_HOME) {
+  const testHome = new URL(process.env.XXT_EMBEDDED_TEST_HOME);
+  if (testHome.protocol !== 'http:' || testHome.hostname !== '127.0.0.1') throw new Error('内置网页测试仅允许本机地址');
+  TARGETS.chaoxingHome = testHome.href;
+}
 
 /**
  * 拉起 Edge 时必须带的参数。
@@ -218,7 +226,7 @@ export const DEFAULT_SETTINGS = {
   /**
    * 播放完成阈值。
    *
-   * ⚠️ 实测修正（改了三次才对）：学习通页面写 90%，但服务端实际要求接近片尾。
+   * 课程完成条件不同；默认播到片尾，90% 模式会查询平台，未通过则继续。
    *   309 秒视频：playingTime=239 → isPassed:false
    *               playingTime=299 → isPassed:true
    *               currentTime 307s(99.4%) 时 aria 才变「已完成」
@@ -226,6 +234,9 @@ export const DEFAULT_SETTINGS = {
    *
    * 现在默认 99.9% + 距结束 1 秒双保险，宁可多播几秒也不早停。
    */
+  // Courses differ: the optional 90% check still requires a platform verdict.
+  playbackSpeed: '1',
+  videoCompletionMode: 'full',
   progressThreshold: 0.999,
   /** 距视频结束多少秒即视为播完 */
   finishMarginSec: 1,

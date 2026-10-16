@@ -177,6 +177,8 @@ export class BatchRunner {
               duration: p.duration,
               resumes: p.resumes,
               paused: p.paused,
+              playbackRate: p.playbackRate,
+              playbackPhase: p.playbackPhase,
               questionIndex: p.index,
               questionTotal: p.total,
               phase: p.phase,

@@ -47,7 +47,7 @@ export async function checkLogin(page) {
   if(provider&&provider.id!=='qianwen')return webChatState(page,provider);
   return page.evaluate(() => {
     const btn = Array.from(document.querySelectorAll('button')).find((x) =>
-      /^(登录|立即登录)$/.test((x.textContent || '').trim()),
+      /^(登录|立即登录)$/.test((x.textContent || '').trim()) && x.checkVisibility(),
     );
     return { loggedIn: !btn, hasLoginButton: !!btn };
   });
@@ -428,9 +428,11 @@ export const DEFAULT_PROMPT =
 export async function detectVerification(page) {
   return page
     .evaluate(() => {
-      const mask = document.querySelector('.baxia-dialog-mask, .baxia-dialog, [class*="baxia-dialog"]');
+      // 验证完成后千问会保留隐藏的弹层和 iframe，不能仅凭节点存在阻断。
+      const visible = element => element.checkVisibility() && element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0;
+      const mask = Array.from(document.querySelectorAll('.baxia-dialog-mask, .baxia-dialog, [class*="baxia-dialog"]')).find(visible);
       const iframes = Array.from(document.querySelectorAll('iframe'));
-      const punish = iframes.find((f) => /_____tmd_____|punish|x5secdata/.test(f.getAttribute('src') || ''));
+      const punish = iframes.find((f) => /_____tmd_____|punish|x5secdata/.test(f.getAttribute('src') || '') && visible(f));
       return {
         required: !!mask || !!punish,
         hasMask: !!mask,
@@ -478,7 +480,7 @@ export async function askImage({ page, imagePath, prompt = DEFAULT_PROMPT, fresh
     throwIfStopped(shouldStop);
     const login = await checkLogin(page);
     if (!login.loggedIn) {
-      return { ok: false, errorCode: 'not-logged-in', error: '千问未登录，请先在受控 Edge 里登录' };
+      return { ok: false, errorCode: 'not-logged-in', error: '千问未登录，请先打开千问网页并登录' };
     }
 
     /*

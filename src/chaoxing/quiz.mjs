@@ -25,6 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { waitForRead, throwIfStopped, interruptibleSleep } from '../control.mjs';
+import { embedded, captureEmbeddedPage } from '../browser/embedded.mjs';
 
 /** 题型归一化（判定逻辑内联在 extractQuestions 里，这里只留映射表供参考） */
 const QTYPE_PATTERNS = [
@@ -171,7 +172,7 @@ export async function getWorkMeta(workFrame) {
  * 截取单道题的图片（精确裁剪）。
  * @returns {Promise<string>} 图片文件路径
  */
-export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, readTimeoutMs = 8000, onRecovery } = {}) {
+export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, readTimeoutMs = 8000, onRecovery, selector = '.TiMu, [class*="TiMu"]', nativeCapture = embedded ? captureEmbeddedPage : null } = {}) {
   throwIfStopped(shouldStop);
   fs.mkdirSync(outDir, { recursive: true });
   const read = async (stage, operation) => {
@@ -183,7 +184,7 @@ export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, r
       throw error;
     }
   };
-  const els = await read('定位题目', () => workFrame.$$('.TiMu, [class*="TiMu"]'));
+  const els = await read('定位题目', () => workFrame.$$(selector));
   const el = els[domIndex];
   if (!el) throw new Error(`找不到第 ${domIndex + 1} 题的元素`);
 
@@ -233,6 +234,18 @@ export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, r
   if (box.width > 16000 || box.height > 16000) throw new Error('题目截图区域过大，请人工处理');
   const page = workFrame.page();
   const file = path.join(outDir, `q${String(domIndex + 1).padStart(2, '0')}-${Date.now()}.png`);
+  if (nativeCapture) {
+    try {
+      const rect = { x: Math.max(0, Math.floor(box.x)), y: Math.max(0, Math.floor(box.y)), width: Math.ceil(box.width), height: Math.ceil(box.height) };
+      const result = await read('软件内成像', () => nativeCapture(page, rect));
+      const image = Buffer.from(result.data, 'base64');
+      if (image.length < 24 || image.readUInt32BE(0) !== 0x89504e47 || image.readUInt32BE(16) !== rect.width || image.readUInt32BE(20) !== rect.height) throw new Error('软件内题目截图尺寸不完整');
+      throwIfStopped(shouldStop); fs.writeFileSync(file, image); return file;
+    } catch (error) {
+      if (error.code === 'STOPPED') throw error;
+      onRecovery?.('正在尝试另一种题目成像方式');
+    }
+  }
   // A fresh session per attempt avoids reusing a timed-out capture connection.
   // Focus emulation wakes the target renderer without showing the native window
   // or switching the user's selected tab.

@@ -48,7 +48,7 @@ try{
   const actions=[];
   await page.route('**/api/action/*',async route=>{
     const action=new URL(route.request().url()).pathname.split('/').pop();actions.push(action);
-    if(action==='startRun'){status.running=true;status.progress={done:2,total:8,current:'设计入门 · 1.2 从物品到设计'};status.runStats={done:2,total:8};}
+    if(action==='startRun'){status.running=true;status.progress={done:2,total:8,current:'设计入门 · 1.2 从物品到设计',playbackRate:2,taskType:'video',percent:.642,currentTime:385,duration:600};status.runStats={done:2,total:8};}
     if(action==='stopRun')status.running=false;
     if(action==='startRecon')status.reconRunning=true;
     await route.fulfill({json:{ok:true,result:{started:true}}});sendStatus();
@@ -105,6 +105,9 @@ try{
   await page.locator('#panel-courses [data-action=startRun]').click();
   await page.locator('#runBar').waitFor({state:'visible'});
   assert.equal(await page.locator('#panel-courses [data-action=stopRun]').isEnabled(),true);
+  assert.match(await page.locator('#runSub').innerText(),/实际 2×/);
+  assert.equal(await page.locator('#runTaskProgress [role=progressbar]').getAttribute('aria-valuenow'),'64.2');
+  assert.equal(await page.locator('#runProg').innerText(),'2 / 8');
   await capture('running');
   await page.locator('#panel-courses [data-action=stopRun]').click();
   assert.equal(status.running,false);
@@ -117,14 +120,24 @@ try{
   await capture('settings');
   assert.equal(await page.locator('#settingsAdvanced').isVisible(),false);
   await page.locator('[data-setting=muted]').uncheck();
+  await page.locator('[data-setting=playbackSpeed]').selectOption('2');
+  await page.locator('[data-setting=videoCompletionMode]').selectOption('check90');
   const saved=page.waitForResponse(r=>r.url().endsWith('/api/settings')&&r.request().method()==='POST');
   await page.locator('#saveSettings').click();await saved;
   await page.locator('#settingsDirty').filter({hasText:'已改'}).waitFor();
-  assert.equal(JSON.parse(fs.readFileSync(path.join(data,'state.json'),'utf8')).settings.muted,false);
+  const savedSettings=JSON.parse(fs.readFileSync(path.join(data,'state.json'),'utf8')).settings;
+  assert.equal(savedSettings.muted,false);assert.equal(savedSettings.playbackSpeed,'2');assert.equal(savedSettings.videoCompletionMode,'check90');
   await revealTestTools(page);await page.locator('.tab[data-tab=overview]').click();
-  status.running=true;status.progress={done:2,total:8,current:'设计入门 · 1.2 从物品到设计'};sendStatus();
+  status.running=true;status.progress={done:2,total:8,current:'设计入门 · 1.2 从物品到设计',playbackRate:2,taskType:'video',percent:.642,currentTime:385,duration:600};sendStatus();
   await page.locator('#overviewActivity').filter({hasText:'学习进行中'}).waitFor();
+  assert.match(await page.locator('#kCurrent').innerText(),/实际 2×/);
+  assert.equal(await page.locator('#overviewTaskProgress [role=progressbar]').getAttribute('aria-valuenow'),'64.2');
   await capture('overview-running');
+  status.progress.phase='verifying';status.progress.percent=.9;sendStatus();
+  await page.locator('#overviewTaskProgress [data-tp=label]').filter({hasText:'核对平台状态'}).waitFor();await capture('overview-verifying');
+  status.progress={...status.progress,taskType:'work',questionIndex:1,questionTotal:4,phase:'asking',percent:null,currentTime:null,duration:null};sendStatus();
+  await page.locator('#overviewTaskProgress [data-tp=percent]').filter({hasText:'25.0'}).waitFor();await capture('overview-quiz');
+  status.progress={...status.progress,taskType:'video',questionIndex:null,questionTotal:null,phase:'playing',percent:.642,currentTime:385,duration:600};sendStatus();
   status.running=false;sendStatus();
   await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(960,660));
   await capture('compact');
@@ -143,6 +156,7 @@ try{
   await revealTestTools(page);await page.locator('.tab[data-tab=overview]').click();
   await page.emulateMedia({reducedMotion:'reduce'});
   assert.equal(await page.locator('#overviewProgressFill').evaluate(e=>getComputedStyle(e).transitionDuration),'0s');
+  assert.equal(await page.locator('#overviewTaskProgress .tp-fill').evaluate(e=>getComputedStyle(e).transitionDuration),'0s');
   await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows()[0];win.setMinimumSize(960,660);win.setContentSize(1240,800);});
   await page.emulateMedia({reducedMotion:'no-preference'});
   // 首次使用：无清单时主按钮扫描，扫描结束自动加载清单。

@@ -1,0 +1,40 @@
+.web-shortcuts{display:flex;gap:8px;padding:12px 0;border-top:1px solid var(--line,#d5d2c7);margin-top:14px}
+.web-shortcuts button{font:inherit;font-size:12px;flex:1;border:0;background:transparent;text-align:left;padding:7px 5px;color:var(--fg2,#55594e);cursor:pointer}
+.web-shortcuts button span{float:right;color:var(--fg3)}.web-shortcuts button:hover:not(:disabled){background:var(--bg3,#e8e5dc)}.web-shortcuts button:disabled{opacity:.45;cursor:default}
+.embedded-pane{position:fixed;top:70px;right:0;bottom:0;left:210px;z-index:25;background:var(--bg,#f7f6f1);display:flex;flex-direction:column;color:var(--fg,#252821)}
+.embedded-pane[hidden]{display:none!important}
+.embedded-heading{display:flex;align-items:center;justify-content:space-between;padding:15px 24px 12px;gap:16px}
+.embedded-heading>div{display:flex;gap:16px;align-items:baseline;min-width:0}.embedded-caption{font-size:13px;font-weight:500;white-space:nowrap}#webDomain{font-size:11px;color:var(--fg3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.embedded-pane button{font:inherit;cursor:pointer;color:inherit;background:transparent;border:1px solid var(--line,#d5d2c7);border-radius:3px;padding:6px 12px}
+.embedded-pane button:hover:not(:disabled){background:var(--bg3,#e8e5dc)}.embedded-pane button:disabled{opacity:.4;cursor:default}
+#webReturn{font-size:12px;white-space:nowrap}
+.embedded-toolbar{display:flex;gap:12px;justify-content:space-between;border-bottom:1px solid var(--line,#d5d2c7);padding:0 24px}
+.embedded-tabs{display:flex;overflow-x:auto;gap:4px;scrollbar-width:thin;align-items:flex-end;min-width:0}
+.embedded-tabs button{border:0;border-radius:0;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;font-size:12px;padding:11px 14px;border-bottom:2px solid transparent}
+.embedded-tabs button[aria-selected=true]{border-bottom-color:var(--acc,#8a622d);background:var(--bg2,#faf8f2);color:var(--fg)}
+.embedded-navigation{display:flex;gap:5px;align-items:center;flex-shrink:0}.embedded-navigation button{padding:3px 9px;border:0;font-size:16px}
+.embedded-viewport{flex:1;min-height:0;background:#fff}
+#webError{font-size:12px;color:var(--err,#9a4236);margin:0;padding:9px 24px;border-bottom:1px solid var(--line)}
+@media(max-width:1100px){.web-shortcuts{flex-direction:column;gap:0}.web-shortcuts button{font-size:10px;text-align:center;padding:7px 0}.web-shortcuts button span{display:none}.embedded-heading{padding:12px 15px}.embedded-toolbar{padding:0 15px}}
+.web-pages-entry{display:inline-flex;align-items:center;gap:8px;padding:7px 11px;background:var(--bg2);font-size:12px;white-space:nowrap}
+.web-pages-entry[hidden]{display:none!important}.web-pages-entry svg{width:16px;height:16px}.web-pages-entry small{font:11px Consolas,monospace;color:var(--fg2);border-left:1px solid var(--line);padding-left:8px}
+.web-pages-entry.has-task:before{content:"";width:5px;height:5px;background:var(--ok);flex-shrink:0}
+.web-pages-dialog{padding:28px 30px;width:min(590px,calc(100vw - 36px));max-height:calc(100vh - 60px);overflow:auto;background:var(--bg2);color:var(--fg);border:1px solid var(--line);border-radius:3px;box-shadow:0 28px 100px #1c241e38}
+.web-pages-dialog::backdrop{background:#1e241e66}
+.wp-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}.wp-eyebrow{font:10px Consolas,"Microsoft YaHei UI",sans-serif;letter-spacing:1.2px;color:var(--fg3)}
+.wp-heading h2{margin:12px 0 16px;font-size:29px;font-weight:500;line-height:1.4}.wp-heading h2 span{color:var(--acc)}
+#webPagesClose{font-size:21px;line-height:1;border:0;background:transparent;padding:5px 0 5px 10px}
+#webPagesDescription{font-size:12px;line-height:1.9;color:var(--fg2);margin:0 0 23px}
+.wp-task{display:flex;align-items:center;justify-content:space-between;width:100%;padding:15px 18px;background:#30362b;border-color:#30362b;color:#f6f4ea;text-align:left;gap:18px;margin:0 0 23px}
+.wp-task[hidden]{display:none!important}.wp-task:hover:not(:disabled){background:#414937;color:#fff;border-color:#414937}
+.wp-task>span:first-child{min-width:0}.wp-task small{font-size:10px;color:#dbbd82;display:block;margin-bottom:6px}.wp-task b{font-size:13px;font-weight:500;display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.wp-list-heading{display:flex;align-items:center;justify-content:space-between;color:var(--fg2);font-size:11px;margin-bottom:8px}.wp-list-heading b{font-weight:500}.wp-list-heading>span{font-family:Consolas,monospace}
+.wp-list{max-height:330px;overflow:auto;scrollbar-width:thin;border-top:1px solid var(--line)}
+.wp-page{display:flex;align-items:center;gap:13px;width:100%;border:0;border-bottom:1px solid var(--line);background:transparent;padding:15px 2px;text-align:left;border-radius:0}
+.wp-page:hover:not(:disabled){background:var(--bg3)}.wp-page:focus-visible{outline-offset:-2px}.wp-page-icon{width:31px;height:33px;border:1px solid var(--line);display:grid;place-items:center;flex-shrink:0;font:11px Consolas,monospace;color:var(--fg2)}
+.wp-page-active .wp-page-icon{border-color:var(--acc);color:var(--acc)}.wp-page-copy{flex:1;min-width:0}.wp-page-copy b{display:block;font-size:13px;font-weight:500;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}.wp-page-copy small{display:block;font-size:10px;line-height:1.8;color:var(--fg3);margin-top:5px;overflow-wrap:anywhere}.wp-page-arrow{font-size:15px;margin-right:3px}
+#webPagesMessage{font-size:12px;line-height:1.8;color:var(--fg2);margin:15px 0}#webPagesMessage:empty{display:none}.wp-actions{display:flex;gap:9px;margin-top:22px}.wp-actions button{font-size:12px;flex:1}
+.header-right{gap:16px}
+.connection-menu>summary{white-space:nowrap}
+@media(max-width:1100px){.header-right #phaseLine{display:none}}
+@media(max-width:560px){.web-pages-entry{gap:5px;padding:6px;font-size:11px}.web-pages-entry small,.web-pages-entry.has-task:before{display:none}.web-pages-entry svg{width:14px;height:14px}.header-right{gap:9px}.web-pages-dialog{padding:22px 20px}.wp-heading h2{font-size:26px}.wp-task{padding:13px}.wp-list{max-height:45vh}.embedded-heading>div{gap:8px}}

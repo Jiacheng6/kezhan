@@ -355,13 +355,13 @@ export async function readSectionTasks(
 async function clickChapterTab(page) {
   const li = page.locator('li[dataname="zj"]').first();
   if (await li.count()) {
-    await li.click({ timeout: 8000 }).catch(() => {});
+    await li.evaluate(element => element.click()).catch(() => {});
     return true;
   }
   // 兜底：按文字找
   const fallback = page.locator('span.nav_content', { hasText: '章节' }).first();
   if (await fallback.count()) {
-    await fallback.click({ timeout: 8000 }).catch(() => {});
+    await fallback.evaluate(element => element.click()).catch(() => {});
     return true;
   }
   return false;
@@ -587,11 +587,12 @@ export async function listCourses(mainPage) {
 
   if (!frame) {
     log('课程列表未加载，点击「全部课程」标签', 'debug');
-    await mainPage
-      .locator('.label-item', { hasText: '全部课程' })
-      .first()
-      .click({ timeout: 15000 })
-      .catch(() => {});
+    const oldTab = mainPage.locator('.label-item', { hasText: '全部课程' }).first();
+    if (await oldTab.count()) await oldTab.evaluate(element => element.click()).catch(() => {});
+    else await mainPage.evaluate(() => {
+      const entry = [...document.querySelectorAll('.menu-list-ul li')].find(element => element.textContent.trim() === '全部课程');
+      (entry?.querySelector('h3') || entry)?.click();
+    }).catch(() => {});
     frame = await tryFind(20000);
   }
   if (!frame) throw new Error('找不到课程列表（可能登录态失效或页面改版）');
