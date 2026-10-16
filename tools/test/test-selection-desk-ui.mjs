@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { _electron as electron } from 'playwright-core';
+import { enterTestWorkspace } from './desktop-test-helpers.mjs';
 const root=process.cwd(), output=path.join(root,'.desktop-test/selection-desk');fs.mkdirSync(output,{recursive:true});
 const data=fs.mkdtempSync(path.join(root,'.desktop-test/selection-ui-'));
 fs.mkdirSync(path.join(data,'data/probe-out'),{recursive:true});
@@ -18,7 +19,7 @@ const report={at:'2026-01-01T00:00:00Z',courses};
 const reportFile=path.join(data,'data/probe-out/task-report.json');fs.writeFileSync(reportFile,JSON.stringify(report));
 const packagedExe=process.env.XXT_SELECTION_TEST_EXE;
 const application=await electron.launch({executablePath:packagedExe||path.join(root,'node_modules/electron/dist/electron.exe'),args:[...(packagedExe?[]:[root]),'--test-mode'],env:{...process.env,XXT_TEST_DATA_DIR:data}});
-const errors=[],actions=[];let holding=false;
+const errors=[],actions=[],runRequests=[];let holding=false;
 try {
   const page=await application.firstWindow();page.on('pageerror',error=>errors.push(error.message));
   await page.waitForURL('http://127.0.0.1:*/');
@@ -28,9 +29,9 @@ try {
   const sockets=new Set();
   await page.route('**/api/status',route=>route.fulfill({json:status}));
   await page.routeWebSocket('**/ws',ws=>{sockets.add(ws);ws.send(JSON.stringify({type:'status',data:status}));ws.onClose(()=>sockets.delete(ws));});
-  await page.route('**/api/action/*',async route=>{const action=new URL(route.request().url()).pathname.split('/').pop();actions.push(action);if(action==='startRun'){status.running=true;status.progress={done:2,total:9,current:'示例课程 · 正在处理任务',percent:2/9};status.runStats={done:2,total:9};}if(action==='stopRun')status.running=false;await route.fulfill({json:{ok:true}});for(const ws of sockets)ws.send(JSON.stringify({type:'status',data:status}));});
+  await page.route('**/api/action/*',async route=>{const action=new URL(route.request().url()).pathname.split('/').pop();actions.push(action);if(action==='startRun'){runRequests.push(route.request().postDataJSON());status.running=true;status.progress={done:2,total:9,current:'示例课程 · 正在处理任务',percent:2/9};status.runStats={done:2,total:9};}if(action==='stopRun')status.running=false;await route.fulfill({json:{ok:true}});for(const ws of sockets)ws.send(JSON.stringify({type:'status',data:status}));});
   await application.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];w.setContentSize(1360,940);w.showInactive();});
-  await page.reload();await page.locator('[data-tab=courses]').click();
+  await page.reload();await enterTestWorkspace(page);await page.locator('[data-tab=courses]').click();
   await page.locator('#deskCourseTitle').filter({hasText:names[0]}).waitFor();
   await page.waitForFunction(()=>!document.getElementById('deskCreatePreset').disabled);
   const selection=()=>page.evaluate(()=>window.__console.tree.data.courses.map(c=>({id:c.courseId,enabled:c.enabled,tasks:c.tasks.filter(t=>t.willHandle).map(t=>t.key)})));
@@ -71,7 +72,7 @@ try {
   report.courses[0].taskPoints[4].name='示例发生变化的视频';
   report.courses[1].taskPoints.push({knowledgeId:'fixture-1-2',secNo:'1.3',sectionName:sections[2],name:'示例新增视频',type:'video',finished:false});
   fs.writeFileSync(reportFile,JSON.stringify(report));
-  await page.reload();await page.locator('[data-tab=courses]').click();await page.waitForFunction(()=>!document.getElementById('deskPreset').disabled);
+  await page.reload();await enterTestWorkspace(page);await page.locator('[data-tab=courses]').click();await page.waitForFunction(()=>!document.getElementById('deskPreset').disabled);
   await page.locator('#deskPresetsPanel > summary').click();await page.locator('#deskPreset').selectOption(presetId);await page.locator('#deskLoadPreset').click();
   assert.match(await page.locator('#deskFeedback').innerText(),/缺失或变化/);assert.match(await page.locator('#deskFeedback').innerText(),/未自动勾选/);
   assert.equal(await page.locator('#deskTotal').innerText(),'9');
@@ -112,6 +113,19 @@ try {
   assert.deepEqual(errors,[]);assert.deepEqual(actions,[],'选课与方案操作不得触发任务执行');
   // Exercise the actual moved start/stop controls against mocked task actions.
   for(const id of ['deskQuickRules','deskPresetsPanel'])if(await page.locator('#'+id).evaluate(e=>e.open))await page.locator('#'+id+' > summary').click();
+  await page.locator('#deskClearSelection').click();
+  assert.equal(await page.locator('#deskTotal').innerText(),'0');
+  assert.ok((await selection()).every(c=>!c.enabled&&c.tasks.length===0));
+  await page.locator('#deskCourses [data-sd-course-id=fixture-course-0] input').check();
+  assert.equal(await page.locator('#deskTotal').innerText(),'6','取消全选后勾选课程应选整门课');
+  await page.locator('#deskCourses [data-sd-course-id=fixture-course-1] input').check();
+  assert.equal(await page.locator('#deskTotal').innerText(),'13','可跨课程选择两门，包含示例新增任务');
+  await page.locator('#deskClearSelection').click();
+  await page.getByRole('button',{name:'仅选择任务 示例发生变化的视频',exact:true}).click();
+  assert.equal(await page.locator('#deskTotal').innerText(),'1');
+  assert.equal(await page.locator('#deskCourses [data-sd-course-id=fixture-course-0] input').evaluate(e=>e.indeterminate),true);
+  assert.match(await page.locator('#deskRunActions [data-action=startRun]').innerText(),/1 项/);
+  await page.screenshot({path:path.join(output,'single-task.png'),animations:'disabled'});
   await page.locator('#deskRunActions [data-action=startRun]').click();
   await page.locator('#deskRunState').filter({hasText:'进行中'}).waitFor();
   assert.equal(await page.locator('#deskRunActions [data-action=startRun]').isDisabled(),true);
@@ -120,24 +134,37 @@ try {
   await page.screenshot({path:path.join(output,'focus-running.png'),animations:'disabled'});
   await page.locator('#deskRunActions [data-action=stopRun]').click();await page.locator('#deskRunState').filter({hasText:'已停止'}).waitFor();
   assert.deepEqual(actions,['startRun','stopRun']);
+  assert.equal(runRequests[0].taskKeys.length,1,'开始请求只能携带明确选择的一项');
+  assert.equal(JSON.parse(runRequests[0].selection).length,1);
   await page.locator('#deskTasks input[type=checkbox]').last().click();
   await page.route('**/api/selection',route=>route.fulfill({json:{ok:false,error:'示例选择保存失败'}}));
   await page.locator('#deskRunActions [data-action=startRun]').click();
   await page.locator('#deskFeedback').filter({hasText:'示例选择保存失败'}).waitFor();
   assert.deepEqual(actions,['startRun','stopRun'],'保存失败不得开始任务');await page.unroute('**/api/selection');
+  let pendingSave;
+  await page.route('**/api/selection',route=>{pendingSave=route;});
+  await page.locator('#deskRunActions [data-action=startRun]').click();
+  await page.waitForFunction(()=>document.getElementById('deskRunState').textContent==='已停止');
+  for(let i=0;i<50&&!pendingSave;i++)await new Promise(r=>setTimeout(r,20));
+  assert.ok(pendingSave);
+  await page.getByRole('button',{name:'仅选择任务 示例发生变化的视频',exact:true}).click();
+  await pendingSave.fulfill({json:{ok:true}});
+  await page.locator('#deskFeedback').filter({hasText:'选课范围发生变化'}).waitFor();
+  assert.deepEqual(actions,['startRun','stopRun'],'保存途中修改范围，不得启动旧范围');
+  await page.unroute('**/api/selection');
   status.login.loggedIn=false;for(const ws of sockets)ws.send(JSON.stringify({type:'status',data:status}));
   await page.waitForFunction(()=>document.querySelector('#deskRunActions [data-action=startRun]').disabled);
   await page.locator('#deskConnect').click();assert.equal(await page.locator('#panel-overview').isVisible(),true);
   await page.locator('[data-tab=courses]').click();assert.deepEqual(errors,[]);
   status.progress={done:0,total:0,current:null};status.runStats=null;
   await page.route('**/api/checklist',route=>route.fulfill({json:{ok:true,result:null}}));
-  await page.reload();await page.locator('[data-tab=courses]').click();await page.locator('#deskScan').waitFor();assert.equal(await page.locator('#deskScan').isDisabled(),true,'首次使用先完成登录');
+  await page.reload();await enterTestWorkspace(page);await page.locator('[data-tab=courses]').click();await page.locator('#deskScan').waitFor();assert.equal(await page.locator('#deskScan').isDisabled(),true,'首次使用先完成登录');
   status.login.loggedIn=true;for(const ws of sockets)ws.send(JSON.stringify({type:'status',data:status}));
   await page.waitForFunction(()=>!document.getElementById('deskScan').disabled);await page.screenshot({path:path.join(output,'focus-first-use.png'),animations:'disabled'});
   await page.locator('#deskScan').click();assert.deepEqual(actions,['startRun','stopRun','startRecon']);
   fs.writeFileSync(path.join(output,'checks.json'),JSON.stringify({switchPreservesSelection:true,previewBeforeApply:true,undo:true,saveAndReload:true,missingTaskProtection:true,completedAndUnknownVisible:true,rangeValidation:true,runningGuard:true,persistenceFailure:true,legacyView:true,selectionNeverStarts:true,startStopMocked:true,saveFailureBlocksStart:true,loginHelp:true,responsive:true,pageErrors:errors,data},null,2));
   console.log('✓ 实际桌面：三栏选课、规则预览与应用、撤销、方案保存/改名/重载、变化任务保护、运行锁定、错误提示及窄屏验证通过；未执行任何课程任务。截图：'+output);
-  if(process.argv.includes('--hold')){holding=true;await page.reload();await page.locator('[data-tab=courses]').click();await application.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];w.setTitle('学习通助手 · 三栏选课预览（隔离演示数据）');w.show();});await new Promise(resolve=>application.process().once('exit',resolve));}
+  if(process.argv.includes('--hold')){holding=true;await page.reload();await enterTestWorkspace(page);await page.locator('[data-tab=courses]').click();await application.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];w.setTitle('学习通助手 · 三栏选课预览（隔离演示数据）');w.show();});await new Promise(resolve=>application.process().once('exit',resolve));}
 } finally {
   if(!holding){const exited=new Promise(resolve=>application.process().once('exit',resolve));await requestTestExit(application).catch(()=>{});let timer;await Promise.race([exited,new Promise(resolve=>{timer=setTimeout(resolve,15000)})]);clearTimeout(timer);await application.close().catch(()=>{});}
 }

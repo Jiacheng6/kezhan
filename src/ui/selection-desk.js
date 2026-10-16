@@ -1,6 +1,7 @@
 import { capturePlan, applyPlan, QUICK_RULES, planRule, applyRule } from './selection-plan.js';
 import { recalc, willSummary, matchesQuery, courseVisible } from './selection.js';
 import { completionOf, courseCompletion, sectionCompletion } from './task-status.js';
+import { selectOnlyTask, clearRunSelection, selectCourseTasks } from './run-scope.js';
 
 const node = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const types = { video: '视频', work: '测验', doc: '文档', read: '阅读' };
@@ -12,7 +13,8 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
         <div class="sd-column-title"><b><span>课程</span></b><span id="deskCourseCount"></span></div>
         <input id="deskCourseSearch" type="search" placeholder="搜索课程…" aria-label="筛选课程" />
         <button id="deskScan" class="text-button" hidden>扫描课程 →</button>
-        <p class="sd-micro">勾选课程，查看并调整任务。</p>
+        <p class="sd-micro">课程名用于浏览；勾选框决定学习范围。</p>
+        <button id="deskClearSelection" class="text-button sd-clear-selection">取消全选</button>
         <div id="deskCourses" class="sd-course-list"></div>
         <button id="deskLegacy" class="text-button sd-legacy-link">树状视图 ↗</button>
       </aside>
@@ -27,6 +29,7 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
           <div class="sd-rule-preview"><p id="deskRulePreview" role="status"></p><button id="deskApplyRule">应用规则</button></div>
         </details>
         <div class="sd-task-filter"><input id="deskTaskSearch" type="search" placeholder="查找章节或任务…" aria-label="筛选章节与任务" /><select id="deskTaskStatus" aria-label="任务完成状态"><option value="pending">待完成</option><option value="all">全部状态</option><option value="done">已完成</option></select></div>
+        <p class="sd-micro">筛选只影响显示，不会取消其他勾选。只学一个任务请点「仅选此项」。</p>
         <div id="deskTasks" class="sd-task-list"></div>
       </section>
       <aside class="sd-selection" aria-label="本次已选范围与方案">
@@ -76,6 +79,7 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
     try { action(); previous = before; change(); if (message) feedback(message); }
     catch (error) { feedback(error.message, true); }
   }
+  $('deskClearSelection').onclick = () => edit(() => clearRunSelection(data()), '已取消所有课程和任务的勾选；可重新勾选需要的课程，或逐项选任务。');
   function button(text, action, cls = '') {
     const b = node('button', cls, text); b.type = 'button'; b.onclick = action; return b;
   }
@@ -110,7 +114,11 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
         for (const c of group) {
           const row = node('div', 'sd-course' + (active === c.courseId ? ' active' : ''));
           row.dataset.sdCourseId = c.courseId;
-          row.append(checkbox(`纳入课程 ${c.name}`, c.enabled !== false, checked => edit(() => { c.enabled = checked; recalc(c); }), 'course:' + c.courseId, c.empty));
+          const eligible=c.tasks.filter(t=>t.policyHandle!==false),selected=eligible.filter(t=>c.enabled!==false&&!t.excluded).length;
+          const courseToggle=checkbox(`纳入课程 ${c.name}`, eligible.length>0&&selected===eligible.length,
+            checked=>edit(()=>selectCourseTasks(c,checked)), 'course:' + c.courseId, c.empty||!eligible.length);
+          courseToggle.indeterminate=selected>0&&selected<eligible.length;
+          row.append(courseToggle);
           const title = button('', () => focusCourse(c.courseId), 'sd-course-name');
           title.dataset.sdFocus = 'focus:' + c.courseId; title.setAttribute('aria-pressed', String(active === c.courseId));
           const completion = courseCompletion(c), finished = c.tasks.filter(t => completionOf(t).finished).length;
@@ -147,12 +155,18 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
         block.append(head);
         if (!tasks.length) block.append(node('p', 'sd-coverage', progress.finished ? '平台已标记完成，未重复读取任务详情。' : progress.label));
         for (const t of tasks) {
-          const row = node('label', 'sd-task' + (t.willHandle ? ' selected' : '')); row.dataset.taskKey = t.key;
+          const row = node('div', 'sd-task' + (t.willHandle ? ' selected' : '')); row.dataset.taskKey = t.key;
+          const choice = node('label', 'sd-task-choice');
           const completion = completionOf(t);
-          row.append(checkbox(`选择任务 ${t.name || t.sectionName}`, c.enabled !== false && !t.excluded && t.policyHandle !== false,
+          choice.append(checkbox(`选择任务 ${t.name || t.sectionName}`, c.enabled !== false && !t.excluded && t.policyHandle !== false,
             checked => edit(() => { if (checked) c.enabled = true; t.excluded = !checked; recalc(c); }), 'task:' + t.key, t.policyHandle === false),
             node('span', 'sd-task-type', types[t.type] || t.typeName || '其他'), node('span', 'sd-task-name', t.name || t.sectionName || '未命名任务'),
             node('span', 'sd-task-status' + (completion.finished ? ' done' : ''), t.policyHandle === false ? '需人工处理' : completion.label));
+          row.append(choice);
+          if (t.policyHandle !== false) {
+            const only = button('仅选此项', () => edit(() => selectOnlyTask(data(),t.key), '已仅选择这一项，其他任务已取消勾选；点击开始后才会运行。'), 'sd-only-task');
+            only.disabled=busy();only.setAttribute('aria-label',`仅选择任务 ${t.name || t.sectionName}`);row.append(only);
+          }
           block.append(row);
         }
         list.append(block);
@@ -176,10 +190,11 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
     $('deskDirty').textContent = snapshot().dirty ? '范围已修改，开始时会自动保存' : '开始时会使用当前选课范围';
     $('deskDirty').classList.toggle('dirty', !!snapshot().dirty);
     $('deskUndo').disabled = !previous || busy(); $('deskSave').disabled = busy() || !snapshot().checklist;
+    $('deskClearSelection').disabled=busy()||!summary.tasks;
   }
   function drawSession() {
     const status = snapshot().status || {};
-    $('deskRunState').textContent = status.reconRunning ? '正在扫描' : status.running ? '进行中' : status.runStats ? '已停止' : '尚未开始';
+    $('deskRunState').textContent = status.runStats?.paused ? '已暂停 · 待处理' : status.reconRunning ? '正在扫描' : status.running ? '进行中' : status.runStats ? '已停止' : '尚未开始';
     const connected = status.ready && status.edge?.connected && status.login?.loggedIn;
     $('deskConnection').hidden = !!connected || !!status.running || !!status.reconRunning;
     $('deskConnectionMessage').textContent = !status.ready ? '正在准备服务…' : !status.edge?.connected ? '浏览器尚未连接' : '开始前请先登录学习通';

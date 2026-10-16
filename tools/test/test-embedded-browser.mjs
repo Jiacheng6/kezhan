@@ -156,6 +156,29 @@ try {
   }
   await page.screenshot({ path: path.join(output, '02-setup.png') });
   await page.locator('#onboardingNext').click(); await page.locator('#onboardingPanel').waitFor({ state: 'hidden' });
+  // Native notification click must select the existing AI view, preserving its
+  // captcha/conversation; no new AI page or reload is allowed.
+  await fixtureQAI.evaluate(() => window.fixtureKeepAI = true);
+  await app.evaluate(() => {
+    const require = process.getBuiltinModule('module').createRequire(process.cwd() + '/package.json');
+    require('./desktop/main.cjs').notificationCenter.push({kind:'ai-verification',key:'fixture-ai-notice'});
+  });
+  await page.locator('#notificationPrompt[open]').waitFor();
+  await page.locator('#notificationPrompt [data-handle]').click();
+  await poll(() => page.evaluate(() => window.desktopApp.webState()), s => s.visible && s.tabs.find(t => t.id === s.active)?.url.includes('qianwen.com'));
+  assert.equal(await fixtureQAI.evaluate(() => window.fixtureKeepAI),true,'通知打开 AI 不得重载验证页面');
+  await page.locator('#webReturn').click();
+  // Exercise a real worker -> main process -> renderer notice, with only the
+  // synthetic site's login cookie changed.
+  await learning.evaluate(() => {document.cookie='fixture_session=; Max-Age=0; path=/';});
+  await call('refreshLogin');
+  await page.locator('#notificationPrompt[open]').waitFor();
+  assert.match(await page.locator('#notificationPromptTitle').innerText(),/登录学习通/);
+  const loginNotice = await page.evaluate(async () => (await window.desktopApp.notifications()).items.find(n => n.kind === 'login-required'));
+  assert.ok(loginNotice); await page.evaluate(id => window.desktopApp.readNotification(id),loginNotice.id);
+  await page.locator('#notificationPrompt [data-later]').click();
+  await learning.locator('#fixtureLogin').click(); await call('refreshLogin');
+  console.log('✓ 真实 worker 通知到桌面、登录失效提醒、点击直达原 AI 页面且不重载通过');
   await learning.evaluate(() => window.fixtureKeepDocument = true);
   await call('openChaoxing'); await page.locator('#embeddedBrowser').waitFor();
   assert.equal(await learning.evaluate(() => window.fixtureKeepDocument), true, '打开已有学习通网页不应重载当前页面');

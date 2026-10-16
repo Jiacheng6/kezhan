@@ -41,7 +41,7 @@ export async function webChatState(page,provider) {
   },{ui:WEB_UI[provider.id],id:provider.id});
 }
 function webBlock(state,provider) {
-  if(state.verification)return {ok:false,errorCode:'verification-required',error:`${provider.label}要求人工验证，请在浏览器完成后继续`};
+  if(state.verification)return {ok:false,errorCode:'verification-required',error:`${provider.label}要求人工验证，请在软件内的 AI 网页完成后重新开始`};
   if(state.limited)return {ok:false,errorCode:'rate-limited',error:`${provider.label}提示使用频繁或额度限制，请按网页提示稍后再试`};
   if(!state.loggedIn)return {ok:false,errorCode:'not-logged-in',error:`${provider.label}未登录或页面未就绪，请打开答题网页并登录`};
   return null;

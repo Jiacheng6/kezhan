@@ -705,6 +705,7 @@ export async function runVideoTask({ ctx, task, personId, onProgress, shouldStop
     result.popupEvents = popupLog;
     if (popupLog.some((p) => p.needsHuman)) {
       result.needsHuman = popupLog.find((p) => p.needsHuman).error;
+      result.aiErrorCode = popupLog.find((p) => p.needsHuman).aiErrorCode;
     }
 
     /*

@@ -29,7 +29,9 @@ t('ok=true', classifyTaskResult({ ok: true, phase: 'done' }), 'done');
 t('播放达标 phase=done', classifyTaskResult({ ok: true, phase: 'done', progress: 1 }), 'done');
 t('非任务点', classifyTaskResult({ ok: false, phase: 'no-tracking' }), 'done');
 t('学习通已标记完成', classifyTaskResult({ ok: true, phase: 'already-finished' }), 'done');
-t('测验已作答待人工提交', classifyTaskResult({ ok: true, phase: 'awaiting-review' }), 'done');
+t('测验已作答待人工提交不等于完成', classifyTaskResult({ ok: true, phase: 'awaiting-review' }), 'review');
+t('验证码阻塞优先于残留 ok=true', classifyTaskResult({ ok: true, phase: 'blocked-verification',needsHuman:'验证' }), 'blocked');
+t('待审不能覆盖硬障碍', classifyTaskResult({ ok: true, phase: 'awaiting-review',needsHuman:'验证' }), 'blocked');
 
 console.log('\n=== 用户中止（本次修复的重点）===');
 t('视频被用户中止', classifyTaskResult({ ok: false, phase: 'stopped', error: '被用户中止' }), 'stopped');

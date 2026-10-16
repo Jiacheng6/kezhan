@@ -19,7 +19,7 @@ if (app) {
   bind('desktopClose', app.exit);
   bind('desktopRestart', async () => { if (confirm('重启会中断当前任务并保存进度，是否继续？')) await app.restart(); });
   function openUpdate() {
-    if ($('desktopClosePanel')?.open || $('onboardingPanel')?.open || document.documentElement.dataset.onboardingPending === 'true') return false;
+    if ($('desktopClosePanel')?.open || $('onboardingPanel')?.open || $('notificationPrompt')?.open || $('notificationCenter')?.open || document.documentElement.dataset.onboardingPending === 'true') return false;
     const panel=$('desktopUpdatePanel');
     if(!panel.open)panel.showModal();
     return true;
@@ -62,6 +62,7 @@ if (app) {
   app.updateState().then(renderUpdate).catch(()=>{});
   document.addEventListener('desktop-close-dismissed', () => app.updateState().then(renderUpdate).catch(()=>{}));
   document.addEventListener('onboarding-dismissed', () => app.updateState().then(renderUpdate).catch(()=>{}));
+  document.addEventListener('assistant-notice-dismissed', () => app.updateState().then(renderUpdate).catch(()=>{}));
   bind('desktopUpdate', async () => {
     openUpdate();
     renderUpdate(await app.updateState());

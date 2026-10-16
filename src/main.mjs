@@ -7,7 +7,7 @@
 import { spawn } from 'node:child_process';
 import { ensureDirs, loadSettings, PATHS, TARGETS, DEBUG_PORT, DEFAULT_SETTINGS, PERSON_ID } from './config.mjs';
 import { describeSettings, normalizeSettings, diffFromDefault, getByPath, toSparseSettings, READONLY_SPEC } from './settings.mjs';
-import { log, patchStatus, getStatus } from './logbus.mjs';
+import { log, patchStatus, getStatus, notifyUser } from './logbus.mjs';
 import { ensureEdge, connect, contextOf, getPage, bringToFront, findPage, waitForPage, waitForAnyPage, stopOwnedEdge } from './browser/launch.mjs';
 import { waitForPagesSettled, cleanupPages, closeTrackedPages, isSamePageUrl } from './browser/pages.mjs';
 import { gotoChaoxingHome } from './browser/login.mjs';
@@ -15,6 +15,7 @@ import { listCourses, reconAll, saveReconReport, writeTaskReport } from './chaox
 import { autoConfigurePersonId } from './chaoxing/identity.mjs';
 import { buildChecklist, loadSelection, invalidateReconCache } from './chaoxing/checklist.mjs';
 import { batchRunner, buildRunTasks } from './batch.mjs';
+import { assertRunScope } from './ui/run-scope.js';
 import { loadState, resetState, statePath, setTaskStatus, listReviewItems, markReviewItem, healStaleRunning, reconcile, mutateState } from './state.mjs';
 import { listKeptPages, registerKeptPage, editKeptEssayReviewAnswer } from './chaoxing/quizrun.mjs';
 import { reopenReviewWork, submitPendingReviews, withReviewLock } from './chaoxing/review-recovery.mjs';
@@ -326,6 +327,7 @@ async function boot() {
 }
 
 async function refreshLogin() {
+  const previouslyLoggedIn = !!getStatus().login?.loggedIn;
   const page = runtime.coursePage;
   if (!page) return { loggedIn: false, reason: '学习通页面不存在' };
   try {
@@ -346,6 +348,7 @@ async function refreshLogin() {
       }
     } else {
       log(`登录态异常：${result.reason}`, 'warn');
+      if (previouslyLoggedIn || batchRunner.running || recon.running) notifyUser('login-required');
     }
     return result;
   } catch (err) {
@@ -596,8 +599,10 @@ function buildHooks() {
           const wr = writeTaskReport(results);
           invalidateReconCache();
           log(`执行清单已同步（${wr.courses} 门课 · ${wr.total} 个任务点），到「课程树」点「读取清单」即可`, 'ok');
+          notifyUser('scan-complete', {key:`scan:${Date.now()}`});
         } catch (err) {
           log(err.code === 'STOPPED' ? '已停止读取课程，原有清单保留' : `侦察失败: ${err.message}`, err.code === 'STOPPED' ? 'info' : 'error');
+          notifyUser(err.code === 'STOPPED' ? 'scan-stopped' : 'scan-failed', {key:`scan:${Date.now()}`,detail:err.code === 'STOPPED' ? '' : err.message});
         } finally {
           recon.running = false;
           patchStatus({ reconRunning: false, reconProgress: null });
@@ -635,7 +640,7 @@ function buildHooks() {
     },
 
     // —— 执行（P2 / P3） ——
-    startRun: async () => {
+    startRun: async (req) => {
       if (recon.running) throw new Error('正在读取课程清单，请等待完成或先停止');
       if (!runtime.context || !getStatus().ready) throw new Error('浏览器尚未就绪');
       if (batchRunner.running) {
@@ -647,6 +652,7 @@ function buildHooks() {
         log('没有任务点清单，请先侦察', 'error');
         return { ok: false, error: 'no-checklist' };
       }
+      const tasks = assertRunScope(cl.courses, await readJson(req, 2 * 1024 * 1024));
 
       /*
        * 开跑前确保有账号 ID：正常情况启动/登录时就自动识别过；
@@ -657,12 +663,12 @@ function buildHooks() {
         const got = await autoConfigurePersonId({ context: ctx(), page: runtime.coursePage }).catch(() => ({ ok: false }));
         patchStatus({ account: accountStatus(got.ok ? got.from : null) });
         if (!got.ok) {
+          notifyUser('login-required');
           log('识别不到账号 ID，无法执行任务点', 'error');
           log('  原因通常是：还没有登录学习通。登录后点「重新检测登录」，程序会自动识别并写入 local.json', 'warn');
           return { ok: false, error: 'no-person-id' };
         }
       }
-      const tasks = buildRunTasks(cl);
       const runnable = tasks.filter((t) => t.willHandle);
       if (!runnable.length) {
         log('没有可执行的任务点（可能全部已完成或被排除）', 'warn');
@@ -734,6 +740,7 @@ function buildHooks() {
           });
         } catch (err) {
           log(`执行异常: ${err.message}`, 'error');
+          notifyUser('batch-error', {key:`batch-error:${Date.now()}`,detail:err.message});
         } finally {
           patchStatus({ running: false });
           const s = loadState();
@@ -819,8 +826,12 @@ function buildHooks() {
       if(batchRunner.running||recon.running)throw new Error('请先停止当前任务，再提交待审作业');
       // 先做一次"重新认领"，确保重启后仍能提交（保持打开的页面还在 Edge 里）
       await readoptKeptPages();
-      const result=await submitPendingReviews(ctx(),opts,{personId:PERSON_ID});
+      let result;
+      try { result=await submitPendingReviews(ctx(),opts,{personId:PERSON_ID}); }
+      catch(error) { notifyUser('submit-failed',{key:`submit-failed:${Date.now()}`,detail:error.message}); throw error; }
       for(const item of result.details||[])log(item.ok?'待审作业已确认提交':`待审提交未完成：${item.error}`,item.ok?'ok':'error');
+      if(result.submitted)notifyUser('submit-success',{key:`submit:${Date.now()}`});
+      if(result.failed)notifyUser('submit-failed',{key:`submit-failed:${Date.now()}`});
       patchStatus({ reviewCount: listReviewItems().length });
       return result;
     },

@@ -23,7 +23,7 @@ export function taskProgressModel(status = {}) {
   } else if (finite(currentTime) && duration > 0) detail = `${clock(currentTime)} / ${clock(duration)}`;
   if (scanning) { fraction = null; kind = '课程扫描'; }
   const verifying = phase === 'verifying';
-  const label = scanning ? '正在读取课程' : !running ? '已停止' : verifying ? '核对平台状态' : phase === 'quiz' ? '处理视频弹题' : phase === 'asking' ? '正在读取 AI 回答' : fraction === null ? '正在准备任务' : '任务进行中';
+  const label = stats.paused ? '已暂停 · 需要处理' : scanning ? '正在读取课程' : !running ? '已停止' : verifying ? '核对平台状态' : phase === 'quiz' ? '处理视频弹题' : phase === 'asking' ? '正在读取 AI 回答' : fraction === null ? '正在准备任务' : '任务进行中';
   const rate = p.playbackRate ?? current.playbackRate;
   const hint = p.playbackPhase || current.playbackPhase || (verifying ? '以平台确认结果为准' : !running ? '保留当前进度，可继续学习' : fraction === null ? '页面就绪后显示实际进度' : '');
   return { visible: running || scanning || !!p.current || !!stats.current, running: running || scanning, verifying, fraction,

@@ -28,6 +28,8 @@ import { renderTaskProgress } from './task-progress.js';
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
+import { runScopeRequest } from './run-scope.js';
+
 const state = {
   status: null,
   logs: [],
@@ -197,10 +199,12 @@ function renderStatus(s) {
   }
   renderReadinessLayout(s);
   const activity = $('#overviewActivity');
-  activity.textContent = s.reconRunning ? '正在扫描' : s.running ? '学习进行中' : !loggedIn ? '等待登录' : '已就绪';
+  const paused = !s.running && s.runStats?.paused;
+  activity.textContent = paused ? '已暂停 · 待处理' : s.reconRunning ? '正在扫描' : s.running ? '学习进行中' : !loggedIn ? '等待登录' : '已就绪';
   activity.classList.toggle('running', !!s.running || !!s.reconRunning);
-  $('#overviewHeadline').textContent = s.reconRunning ? '正在整理课程清单' : s.running ? '学习任务运行中' : !loggedIn ? '先登录学习通' : '准备开始学习';
+  $('#overviewHeadline').textContent = paused ? '任务尚未完成，需要你处理' : s.reconRunning ? '正在整理课程清单' : s.running ? '学习任务运行中' : !loggedIn ? '先登录学习通' : '准备开始学习';
   $('#overviewSubtitle').textContent = s.reconRunning ? '正在读取课程与章节任务，原有进度会保留。' : s.running ? '你可以返回工作台，任务会继续运行。' : !loggedIn ? '在软件内打开学习通登录，再检测登录状态。' : '选择课程与任务范围，再开始这一次学习。';
+  if (paused) $('#overviewSubtitle').textContent = s.runStats.pauseReason || '请查看通知与待审答案，处理后重新开始。';
   const sessionPercent = p.total ? Math.min(100, ((p.done || 0) / p.total) * 100) : 0;
   $('#overviewProgressFill').style.width = `${sessionPercent}%`;
   $('#overviewSessionProgress').classList.toggle('hidden', !p.total && !s.running);
@@ -288,7 +292,8 @@ function renderRunBar(s) {
    */
   $$('[data-action="startRun"]').forEach((runBtn) => {
     runBtn.disabled = running || !s.ready || !s.edge?.connected || !s.login?.loggedIn || !hasSelectedTasks;
-    runBtn.textContent = s.reconRunning ? '正在扫描课程…' : running ? '学习进行中…' : '开始学习 ↗';
+    const count = tree.data ? runScopeRequest(tree.data.courses).taskKeys.length : 0;
+    runBtn.textContent = s.reconRunning ? '正在扫描课程…' : running ? '学习进行中…' : `开始学习（${count} 项）↗`;
   });
   $$('[data-action="stopRun"]').forEach((stopBtn) => { stopBtn.disabled = !running; });
   $$('[data-action="startRecon"]').forEach((btn) => { btn.disabled = running || !s.ready || !s.edge?.connected || !s.login?.loggedIn; });
@@ -296,7 +301,7 @@ function renderRunBar(s) {
   if (!bar) return;
 
   // 有进度或有统计才显示状态条
-  const show = running || (st && (st.done || st.failed));
+  const show = running || (st && (st.done || st.failed || st.review || st.handbook || st.paused));
   bar.classList.toggle('hidden', !show);
   if (!show) return;
 
@@ -305,7 +310,7 @@ function renderRunBar(s) {
   const failed = st?.failed ?? 0;
   const cur = p.current || '';
 
-  $('#runLabel').textContent = running ? '本次已完成' : '运行已停止';
+  $('#runLabel').textContent = st?.paused ? '已暂停，待处理' : running ? '本次已完成' : '运行已停止';
   $('#runProg').textContent = `${done} / ${total}`;
   $('#runFill').style.width = `${total ? Math.min(100, (done / total) * 100) : 0}%`;
 
@@ -313,6 +318,7 @@ function renderRunBar(s) {
   if (p.playbackRate) parts.push(`实际 ${p.playbackRate}×`);
   if (p.playbackPhase) parts.push(p.playbackPhase);
   if (failed) parts.push(`失败 ${failed}`);
+  if (st?.review) parts.push(`待审 ${st.review}`);
   if (st?.handbook) parts.push(`待人工 ${st.handbook}`);
   if (st?.resumes) parts.push(`纠偏 ${st.resumes}`);
   $('#runSub').innerHTML =
@@ -567,6 +573,7 @@ $('#clearLogs').addEventListener('click', () => {
 /* ---------------- 动作 ---------------- */
 async function runAction(name, btn) {
   const label = btn ? btn.textContent : name;
+  let runRequest = null;
 
   /*
    * 「开始执行」前强制对齐选择。
@@ -576,11 +583,17 @@ async function runAction(name, btn) {
    * 看起来就是"我选的课它不刷，只刷另一门"。
    * 这里不再靠用户记性：只要有未保存改动，先自动保存再开始。
    */
-  if (name === 'startRun' && tree.data && tree.dirty) {
+  if (name === 'startRun') {
+    if (!tree.data) return {ok:false,error:'请先读取清单并选择任务'};
+    runRequest = runScopeRequest(tree.data.courses);
+    if (!runRequest.taskKeys.length) return {ok:false,error:'请先选择至少一个任务'};
     try {
       const r = await saveSelection();
       if (r && r.ok) {
-        appendLog({ t: Date.now(), level: 'ok', message: '开始前已自动保存课程选择（界面有未保存的改动）' });
+        if (tree.dirty || runScopeRequest(tree.data.courses).selection !== runRequest.selection) {
+          throw Error('保存期间选课范围发生变化，已取消开始，请核对任务数量后重试');
+        }
+        appendLog({ t: Date.now(), level: 'ok', message: `本次明确选择 ${runRequest.taskKeys.length} 项任务，已保存并核对范围` });
       } else {
         appendLog({
           t: Date.now(),
@@ -601,7 +614,9 @@ async function runAction(name, btn) {
     btn.textContent = '执行中…';
   }
   try {
-    const res = await fetch(`/api/action/${name}`, { method: 'POST' });
+    const res = await fetch(`/api/action/${name}`, { method: 'POST', ...(runRequest ? {
+      headers:{'content-type':'application/json'},body:JSON.stringify(runRequest),
+    } : {}) });
     const body = await res.json().catch(() => ({}));
     if (!body.ok) {
       appendLog({ t: Date.now(), level: 'error', message: `动作 ${name} 失败：${body.error || res.status}` });
@@ -765,7 +780,7 @@ function renderOverviewSelection() {
   if (!hasCourses) primary.textContent = s.reconRunning ? '正在扫描课程…' : '扫描课程 ↗';
   $('#overviewSelectedNames').textContent = names.join(' / ');
   $('#overviewSelectedNames').title = names.join('、');
-  if (s.login?.loggedIn && !s.running && !s.reconRunning) {
+  if (s.login?.loggedIn && !s.running && !s.reconRunning && !s.runStats?.paused) {
     $('#overviewSubtitle').textContent = selection.tasks
       ? `已选 ${selection.courses} 门课 · ${selection.tasks} 个任务，已完成的内容会自动跳过。`
       : hasCourses ? '课程清单已保留，可在课程树中查看待完成与已完成内容。' : '先扫描课程，再选择这次要学习的范围。';
@@ -908,6 +923,7 @@ function scopeOf() {
 /** 常驻汇总条：本次到底会刷什么（用户最想要的"看得见"） */
 function renderWillSummary() {
   renderOverviewSelection();
+  if (state.status) renderRunBar(state.status);
   const box = $('#treeWillSummary');
   if (!box || !tree.data) return;
   const s = willSummary(tree.data.courses);
@@ -1355,8 +1371,7 @@ function moveTask(course, tasks, index, delta) {
   renderTree();
 }
 
-async function saveSelection() {
-  if (!tree.data) return { ok: false, error: '没有可保存的清单' };
+function selectionPayload() {
   const courses = {};
   const taskOrder = {};
   const excluded = [];
@@ -1373,17 +1388,23 @@ async function saveSelection() {
       if (t.excluded) excluded.push(t.key);
     }
   }
+  return { courseOrder, courses, taskOrder, excluded };
+}
+async function saveSelection() {
+  if (!tree.data) return { ok: false, error: '没有可保存的清单' };
+  const payload = selectionPayload();
+  const {courseOrder,taskOrder,excluded}=payload;
   const res = await fetch('/api/selection', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ courseOrder, courses, taskOrder, excluded }),
+    body: JSON.stringify(payload),
   });
   // 调试辅助：记录实际发出的多元素条目（便于排查"界面顺序没保存上"）
   const multi = Object.entries(taskOrder).filter(([, v]) => v.length >= 2).length;
   console.debug(`[saveSelection] 发送: 课程 ${courseOrder.length} · 小节 ${Object.keys(taskOrder).length} · 多任务点小节 ${multi} · 排除 ${excluded.length}`);
   const body = await res.json();
   if (body.ok) {
-    tree.dirty = false;
+    tree.dirty = JSON.stringify(selectionPayload()) !== JSON.stringify(payload);
     renderWillSummary();
     appendLog({ t: Date.now(), level: 'ok', message: `已保存选择：排除 ${excluded.length} 个任务点` });
   }

@@ -1,5 +1,16 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('desktopApp', Object.freeze({
+  notifications: () => ipcRenderer.invoke('desktop:notifications'),
+  readNotification: id => ipcRenderer.invoke('desktop:notification-read', id),
+  openNotification: id => ipcRenderer.invoke('desktop:notification-open', id),
+  onNotifications: callback => {
+    const listener = (_, state) => callback(state); ipcRenderer.on('desktop:notifications', listener);
+    return () => ipcRenderer.removeListener('desktop:notifications', listener);
+  },
+  onNoticeOpen: callback => {
+    const listener = (_, item) => callback(item); ipcRenderer.on('desktop:notice-open', listener);
+    return () => ipcRenderer.removeListener('desktop:notice-open', listener);
+  },
   browser: (visible) => ipcRenderer.invoke('desktop:browser', !!visible),
   webState: () => ipcRenderer.invoke('desktop:web-state'),
   webCommand: (command) => ipcRenderer.invoke('desktop:web-command', command),

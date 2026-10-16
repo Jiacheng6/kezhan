@@ -7,9 +7,10 @@
  *   连续 N 个失败或登录失效则全局暂停告警。
  */
 import { loadSettings } from './config.mjs';
-import { log } from './logbus.mjs';
+import { log, notifyUser } from './logbus.mjs';
 import { runVideoTask, runDocTask, HANDLED_TYPES } from './chaoxing/runner.mjs';
 import { runQuizTask, recordQuizResult } from './chaoxing/quizrun.mjs';
+import { selectedRunTasks } from './ui/run-scope.js';
 import {
   loadState,
   setTaskStatus,
@@ -29,8 +30,9 @@ const CONSECUTIVE_FAIL_LIMIT = 3;
  * 一次执行结果该怎么记账（**纯函数**，便于离线测试）。
  *
  * 返回：
- *   'done'        正常完成 / 本来就没事（已完成、非任务点、待审）
- *   'needs-human' 需要人（如视频弹窗题判不准）—— 不重试，整批继续
+ *   'done'        正常完成 / 已完成 / 非任务点
+ *   'review'      尚未提交，待人工核对 —— 不计已完成
+ *   'needs-human' 需要人（如视频弹窗题判不准）—— 不重试，整批暂停
  *   'stopped'     用户主动中止 —— **不是失败**，保留 pending 下次续跑
  *   'blocked'     触发风控等硬障碍 —— 立刻停整批
  *   'failed'      真失败 —— 重试
@@ -40,17 +42,19 @@ const CONSECUTIVE_FAIL_LIMIT = 3;
  */
 export function classifyTaskResult(r) {
   if (!r) return 'failed';
-  if (r.ok || r.phase === 'no-tracking' || r.phase === 'already-finished' || r.phase === 'awaiting-review') {
+  if (r.phase === 'stopped') return 'stopped';
+  if (r.phase === 'needs-human') return 'needs-human';
+  if (r.needsHuman || r.phase?.startsWith('blocked-')) return 'blocked';
+  if (r.phase === 'awaiting-review') return 'review';
+  if (r.ok || r.phase === 'no-tracking' || r.phase === 'already-finished') {
     return 'done';
   }
-  if (r.phase === 'needs-human') return 'needs-human';
-  if (r.phase === 'stopped') return 'stopped';
-  if (r.needsHuman || r.phase === 'blocked-verification' || r.phase === 'blocked-throttled') return 'blocked';
   return 'failed';
 }
 
 export class BatchRunner {
-  constructor() {
+  constructor({ runQuiz = runQuizTask, runVideo = runVideoTask, runDoc = runDocTask } = {}) {
+    this.executors = { runQuiz, runVideo, runDoc };
     this.running = false;
     this.stopRequested = false;
     this.stats = {
@@ -97,6 +101,10 @@ export class BatchRunner {
     this.stats.done = 0;
     this.stats.failed = 0;
     this.stats.skipped = 0;
+    this.stats.handbook = 0;
+    this.stats.review = 0;
+    this.stats.paused = false;
+    this.stats.pauseReason = null;
     this.stats.consecutiveFail = 0;
     this.stats.skipReasons = {};
 
@@ -129,7 +137,7 @@ export class BatchRunner {
     try {
       for (const task of runnable) {
         if (this.stopRequested) {
-          log('已按请求停止', 'warn');
+          log(this.stats.paused ? '本批已暂停，等待人工处理' : '已按请求停止', 'warn');
           break;
         }
         if (isTaskDone(task.key)) {
@@ -188,7 +196,7 @@ export class BatchRunner {
           const stopFn = () => this.stopRequested;
 
           if (task.type === 'work') {
-            r = await runQuizTask({
+            r = await this.executors.runQuiz({
               ctx,
               qianwenPage: this.qianwenPage,
               task,
@@ -198,7 +206,7 @@ export class BatchRunner {
             });
             recordQuizResult(r);
           } else if (task.type === 'video') {
-            r = await runVideoTask({
+            r = await this.executors.runVideo({
               ctx,
               task,
               personId: command.personId,
@@ -207,7 +215,7 @@ export class BatchRunner {
               qianwenPage: this.qianwenPage,
             });
           } else {
-            r = await runDocTask({ ctx, task, personId: command.personId, onProgress: onProg, shouldStop: stopFn });
+            r = await this.executors.runDoc({ ctx, task, personId: command.personId, onProgress: onProg, shouldStop: stopFn });
           }
 
           /*
@@ -216,7 +224,7 @@ export class BatchRunner {
            * 重试只会把同一条视频再播一遍。
            */
           const kind = classifyTaskResult(r);
-          if (kind === 'done' || kind === 'stopped' || kind === 'needs-human') break;
+          if (kind === 'done' || kind === 'review' || kind === 'stopped' || kind === 'needs-human') break;
 
           if (kind === 'blocked') {
             /*
@@ -238,6 +246,7 @@ export class BatchRunner {
           }
         }
 
+        if (!r && this.stopRequested) r = {ok:false,phase:'stopped'};
         const kind = classifyTaskResult(r);
         if (kind === 'done') {
           this.stats.done += 1;
@@ -254,14 +263,25 @@ export class BatchRunner {
               this.stats.skipReasons[src] = (this.stats.skipReasons[src] || 0) + 1;
             }
           }
-        } else if (kind === 'needs-human') {
+        } else if (kind === 'review') {
+          this.stats.review += 1;
+          this.stats.consecutiveFail = 0;
+          notifyUser('review-ready', {key:`review:${this.stats.startedAt}`});
+        } else if (kind === 'needs-human' || kind === 'blocked') {
+          if (task.type === 'work' && r.items?.length) this.stats.review += 1;
           /*
-           * 弹窗题等人：runner 已把任务点写成 manual 并登记「待人工」，
-           * 这里只计数，**不计入连续失败**（否则一道难题就能把整批拖停）。
+           * 保留任务并暂停整批，明确通知用户；不把人工处理记成失败或完成。
            */
-          this.stats.skipped += 1;
           this.stats.handbook += 1;
           this.stats.consecutiveFail = 0;
+          this.stats.paused = true;
+          this.stats.pauseReason = String(r.needsHuman || r.error || '任务需要人工处理');
+          this.stopRequested = true;
+          setTaskStatus(task.key, {status:'manual',lastError:this.stats.pauseReason,note:'未完成，等待人工处理',progress:r.progress});
+          addHandbook({key:task.key,course:task.courseName||task.courseId,secNo:task.secNo,sectionName:task.sectionName,type:task.type,name:task.name,reason:this.stats.pauseReason});
+          const noticeKind = ({'verification-required':'ai-verification','not-logged-in':'ai-login','rate-limited':'ai-limited',
+            'draft-not-empty':'ai-draft','draft-attachment':'ai-draft','already-generating':'ai-busy'})[r.aiErrorCode] || 'task-attention';
+          notifyUser(noticeKind, {key:`attention:${this.stats.startedAt}:${task.key}`,detail:this.stats.pauseReason,provider:loadSettings().ai?.provider});
         } else if (kind === 'stopped') {
           /*
            * 用户主动停止：**不是失败**。
@@ -299,6 +319,7 @@ export class BatchRunner {
           // 用**实际**尝试次数，别写死 maxRetries（用户中止时只试了 1 次，
           // 日志却写"已重试 3 次"，排查时会带偏）
           log(`    ✗ 已尝试 ${lastTry || 1} 次仍未成功，转「待人工」：${reason}`, 'error');
+          notifyUser('task-failed', {key:`failed:${this.stats.startedAt}:${task.key}`,detail:reason});
         }
 
         this.stats.processed += 1;
@@ -310,9 +331,14 @@ export class BatchRunner {
           log(`连续 ${this.stats.consecutiveFail} 个任务点失败，已全局暂停。请检查后手动继续。`, 'error');
           this.stats.paused = true;
           this.stats.pauseReason = `连续 ${this.stats.consecutiveFail} 个失败`;
+          notifyUser('batch-paused', {key:`batch-paused:${this.stats.startedAt}`});
           break;
         }
       }
+    } catch (error) {
+      this.stats.paused = true;
+      this.stats.pauseReason = error.message || '执行异常';
+      throw error;
     } finally {
       this.running = false;
       this.stats.current = null;
@@ -321,9 +347,10 @@ export class BatchRunner {
       this.push();
       log(
         `批量执行结束：完成 ${this.stats.done} · 失败 ${this.stats.failed} · 跳过 ${this.stats.skipped}` +
-          ` · 待人工 ${this.stats.handbook}`,
-        'ok',
+          ` · 待审 ${this.stats.review} · 待人工 ${this.stats.handbook}` + (this.stats.paused ? ' · 已暂停，任务尚未完成' : ''),
+        this.stats.paused || this.stats.failed || this.stats.review || this.stats.handbook ? 'warn' : 'ok',
       );
+      if (!this.stats.paused) notifyUser(this.stopRequested ? 'batch-stopped' : this.stats.review || this.stats.handbook || this.stats.failed ? 'batch-review' : 'batch-complete', {key:`batch:${this.stats.startedAt}`});
       /*
        * 跳过原因单独汇总 —— 用户最关心的是"有没有重复劳动"：
        * "跳过"里既有"学习通上早就完成了"（好事），也有"被你的勾选排除"（另一回事）。
@@ -368,12 +395,7 @@ export const batchRunner = new BatchRunner();
  * 从清单构造执行任务列表（保持用户排序）。
  */
 export function buildRunTasks(checklist) {
-  const out = [];
-  for (const c of checklist.courses) {
-    if (c.empty || c.enabled === false) continue;
-    for (const t of c.tasks) out.push({ ...t, courseName: c.name });
-  }
-  return out;
+  return selectedRunTasks(checklist.courses);
 }
 
 export { nextPending, loadState };

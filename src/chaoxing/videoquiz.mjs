@@ -354,7 +354,7 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent,
   });
 
   if (!qianwenPage) {
-    return { ok: false, needsHuman: true, error: '没有可用的AI页面，无法自动作答', question: q, imagePath };
+    return { ok: false, needsHuman: true, aiErrorCode:'not-logged-in', error: '没有可用的AI页面，无法自动作答', question: q, imagePath };
   }
 
   await waitTurn({ shouldStop });
@@ -391,7 +391,7 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent,
 
   if (['verification-required','rate-limited','not-logged-in','draft-not-empty','draft-attachment','already-generating','wrong-ai-page'].includes(ai.errorCode)) {
     archiveAnswer({ ...base, action: 'halt', note: 'AI触发风控验证' });
-    return { ok: false, needsHuman: true, error: ai.error, question: q, imagePath };
+    return { ok: false, needsHuman: true, aiErrorCode:ai.errorCode, error: ai.error, question: q, imagePath };
   }
 
   /*

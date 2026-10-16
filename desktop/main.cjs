@@ -1,10 +1,11 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, dialog, ipcMain, shell, utilityProcess, powerSaveBlocker } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, dialog, ipcMain, shell, utilityProcess, powerSaveBlocker, Notification } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { createUpdates, backupUserData } = require('./updates.cjs');
 const { CloseConfirmation } = require('./close-confirmation.cjs');
 const { EmbeddedBrowser } = require('./embedded-browser.cjs');
+const { NotificationCenter } = require('./notifications.cjs');
 
 const title = '学习通助手';
 const smokeTest = process.argv.includes('--smoke-test');
@@ -26,6 +27,7 @@ const loadingUrl = pathToFileURL(path.join(__dirname, 'loading.html')).href;
 let mainWindow, tray, worker, serviceUrl, error = '', quitting = false, closeDialog = false, restarting = false;
 let heartbeat, startupTimer, blocker;
 let updates, internalBrowser, rendererGone = false;
+let notifications, previousUpdatePhase = null;
 const closeConfirmation = new CloseConfirmation(request => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:close-request', request);
 });
@@ -57,6 +59,7 @@ function showError(message) {
   error = String(message); log(`ERROR ${error}`);
   if (mainWindow && !mainWindow.isDestroyed() && !serviceUrl) mainWindow.loadURL(loadingUrl);
   if (tray) tray.setToolTip(`${title}：服务异常，请打开软件查看`);
+  notifications?.push({kind:'service-error',key:'service-error',detail:error});
 }
 async function stopWorker({ requireGraceful = false } = {}) {
   clearInterval(heartbeat); clearTimeout(startupTimer);
@@ -140,6 +143,7 @@ async function startWorker() {
   child.stderr?.on('data', (data) => log(data.toString().trimEnd()));
   child.on('message', async (message) => {
     if (worker !== child) return;
+    if (message.type === 'user-notice') { notifications?.push(message.notice); return; }
     if (message.type === 'browser-request') {
       try { child.postMessage({ type: 'browser-response', id: message.id, result: await internalBrowser.request(message.request) }); }
       catch (error) { child.postMessage({ type: 'browser-response', id: message.id, error: error.message }); }
@@ -154,6 +158,7 @@ async function startWorker() {
       await mainWindow.loadURL(serviceUrl);
       void updates.checkAtStartup();
       if (tray) tray.setToolTip(title + '：服务运行中');
+      notifications?.publish();
       if (smokeTest) {
         setTimeout(async () => {
           try {
@@ -204,6 +209,18 @@ else {
         contextIsolation: true, sandbox: true, backgroundThrottling: false },
     });
     mainWindow.on('close', (event) => { if (!quitting) { event.preventDefault(); requestClose(); } });
+    notifications = new NotificationCenter({ dataDir, Notification, icon, log,
+      nativeEnabled: !testMode || process.env.XXT_TEST_NATIVE_NOTIFICATIONS === '1',
+      onState: state => {
+        if (!mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:notifications', state);
+        tray?.setToolTip(state.unread ? `${title}：${state.unread} 条未读提醒` : title);
+        mainWindow.setOverlayIcon(state.unread ? nativeImage.createFromPath(icon) : null, state.unread ? '有未读提醒' : '');
+      },
+      onAttention: item => { if (item.urgent && !mainWindow.isFocused()) mainWindow.flashFrame(true); },
+      onOpen: item => { showMain(); mainWindow.webContents.send('desktop:notice-open', item); },
+    });
+    mainWindow.on('focus', () => mainWindow.flashFrame(false));
+    if (testMode) module.exports.notificationCenter = notifications;
     const notifyVisibility = () => {
       if (!mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:visibility', mainWindow.isVisible() && !mainWindow.isMinimized());
     };
@@ -217,7 +234,14 @@ else {
     } });
     mainWindow.webContents.on('render-process-gone', () => { rendererGone = true; showError('界面发生异常，请从托盘重新打开或重启服务。'); });
     updates = createUpdates({ app, dataDir, testMode,
-      onStatus: (status) => { if (!mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:update-status', status); },
+      onStatus: (status) => {
+        if (!mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:update-status', status);
+        if (status.phase !== previousUpdatePhase) {
+          previousUpdatePhase = status.phase;
+          const kind = ({available:'update-available',ready:'update-ready',error:'update-error'})[status.phase];
+          if (kind) notifications.push({kind,key:`${kind}:${status.nextVersion||''}`});
+        }
+      },
       prepareInstall: async () => {
         const status = updates.snapshot();
         const confirmation = await dialog.showMessageBox(mainWindow, { type: 'question', title: '安装更新',
@@ -242,9 +266,11 @@ else {
     });
     tray = new Tray(nativeImage.createFromPath(icon).resize({ width: 24, height: 24 }));
     tray.setToolTip(title + '：正在启动');
+    notifications.publish();
     tray.on('double-click', showMain);
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: '打开学习通助手', click: showMain },
+      { label: '通知与待处理', click: () => { showMain(); mainWindow.webContents.send('desktop:notice-open', {action:'notices'}); } },
       { label: '打开内置网页', click: () => { showMain(); internalBrowser.setVisible(true); } },
       { label: '返回工作台（任务继续运行）', click: () => internalBrowser.setVisible(false) },
       { type: 'separator' }, { label: '打开数据与日志文件夹', click: () => shell.openPath(dataDir) },
@@ -264,6 +290,9 @@ else {
     handle('desktop:data-folder', () => shell.openPath(dataDir));
     handle('desktop:info', () => ({ version: app.getVersion(), dataDir, error, serviceUrl, browser: 'embedded' }));
     handle('desktop:visibility', () => mainWindow.isVisible() && !mainWindow.isMinimized());
+    handle('desktop:notifications', () => notifications.snapshot());
+    handle('desktop:notification-read', id => notifications.read(id));
+    handle('desktop:notification-open', id => notifications.activate(id));
     handle('desktop:update-state', () => updates.snapshot());
     handle('desktop:update-check', () => updates.check());
     handle('desktop:update-download', () => updates.download());

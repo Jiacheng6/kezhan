@@ -57,6 +57,15 @@ export function getRecentLogs() {
   return recent.slice();
 }
 
+// Structured domain events: desktop delivery never depends on a log regex or
+// on the workspace remaining visible/connected.
+export function notifyUser(kind, { key = kind, detail = '', provider = null } = {}) {
+  const notice = { kind, key: String(key).slice(0, 240), detail: String(detail).slice(0, 600), provider };
+  try { bus.emit('notice', notice); } catch { /* Notification listeners must not interrupt task bookkeeping. */ }
+  try { process.parentPort?.postMessage({ type: 'user-notice', notice }); } catch { /* Closing desktop: progress still needs to be saved. */ }
+  return notice;
+}
+
 /* ---------------- 运行状态（推给 UI 的单一真相源） ---------------- */
 
 const status = {

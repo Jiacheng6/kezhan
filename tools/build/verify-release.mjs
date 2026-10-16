@@ -8,7 +8,7 @@ import { loadLearningTerms, containsLearningTerms } from '../test/privacy-learni
 import { isPublicNumericAsset } from '../test/privacy-public-assets.mjs';
 const dist = path.join(ROOT, 'dist');
 const app = path.join(dist, 'win-unpacked', 'resources', 'app');
-for (const excluded of ['edge-profile', 'Partitions', 'browser-session.bin', 'logs', 'data', 'local.json', 'state.json', 'recon-selection.json', '.git', 'tools', 'docs']) {
+for (const excluded of ['edge-profile', 'Partitions', 'browser-session.bin', 'notifications.json', 'logs', 'data', 'local.json', 'state.json', 'recon-selection.json', '.git', 'tools', 'docs']) {
   assert.equal(fs.existsSync(path.join(app, excluded)), false, `发布包不能包含 ${excluded}`);
 }
 assert.ok(fs.existsSync(path.join(app, 'desktop', 'native', 'BrowserWindowControl.exe')));
@@ -16,7 +16,7 @@ assert.ok(fs.existsSync(path.join(app, 'src', 'chaoxing', 'essay.mjs')), '缺少
 for (const relative of ['src/chaoxing/playback-policy.mjs', 'src/ui/task-progress.js', 'src/ui/task-progress.css', 'src/ui/web-pages.js', 'src/ui/workbench-restore.css']) {
   assert.equal(fs.readFileSync(path.join(app, relative)).equals(fs.readFileSync(path.join(ROOT, relative))), true, '缺少或打包版本不一致：' + relative);
 }
-for (const relative of ['src/ai/ai.mjs', 'src/onboarding.mjs', 'src/ui/onboarding.js', 'src/ui/onboarding.css', 'src/ui/selection-desk.js', 'src/ui/selection-plan.js', 'src/ui/learning-focus.css', 'src/chaoxing/selection-presets.mjs', 'src/ui/close-dialog.js', 'src/ui/dialogs.css', 'desktop/close-confirmation.cjs', 'desktop/embedded-browser.cjs', 'src/browser/embedded.mjs', 'src/ui/embedded-browser.js', 'src/ui/embedded-browser.css']) {
+for (const relative of ['src/ui/run-scope.js', 'src/batch.mjs', 'src/chaoxing/quizrun.mjs', 'src/ui/app.js', 'src/main.mjs', 'desktop/notifications.cjs', 'src/ui/notifications.js', 'src/ui/notifications.css', 'src/chaoxing/quiz-outcome.mjs', 'src/ai/ai.mjs', 'src/onboarding.mjs', 'src/ui/onboarding.js', 'src/ui/onboarding.css', 'src/ui/selection-desk.js', 'src/ui/selection-plan.js', 'src/ui/learning-focus.css', 'src/chaoxing/selection-presets.mjs', 'src/ui/close-dialog.js', 'src/ui/dialogs.css', 'desktop/close-confirmation.cjs', 'desktop/embedded-browser.cjs', 'src/browser/embedded.mjs', 'src/ui/embedded-browser.js', 'src/ui/embedded-browser.css']) {
   assert.ok(fs.existsSync(path.join(app, relative)), '缺少本次更新模块：' + relative);
   assert.equal(fs.readFileSync(path.join(app, relative)).equals(fs.readFileSync(path.join(ROOT, relative))), true, '打包源码不一致：' + relative);
 }

@@ -33,6 +33,8 @@ if (!process.env.XXT_DATA_DIR) {
 }
 
 const suite = [
+  ['执行范围核对 / 仅选一项', 'tools/test/test-run-scope.mjs'],
+  ['系统通知 / 阻塞停批 / 待审记账', 'tools/test/test-notifications.mjs'],
   ['任务进度 / 网页入口定位', 'tools/test/test-task-progress.mjs'],
   ['播放速度 / 90% 平台核对与续播', 'tools/test/test-playback-policy.mjs'],
   ['首次使用向导 / 完成持久化与老用户识别', 'tools/test/test-onboarding.mjs'],

@@ -135,14 +135,21 @@ export function invalidateReconCache() {
 export function loadSelection() {
   try {
     const raw = JSON.parse(fs.readFileSync(SELECTION_FILE, 'utf8'));
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)
+      || raw.excluded !== undefined && (!Array.isArray(raw.excluded) || raw.excluded.some(key => typeof key !== 'string'))
+      || raw.courseOrder !== undefined && !Array.isArray(raw.courseOrder)
+      || ['courses','taskOrder'].some(field => raw[field] !== undefined && (!raw[field] || typeof raw[field] !== 'object' || Array.isArray(raw[field])))) {
+      throw Error('选课范围格式无效');
+    }
     return {
       courseOrder: raw.courseOrder || [],
       courses: raw.courses || {},
       taskOrder: raw.taskOrder || {},
       excluded: raw.excluded || [],
     };
-  } catch {
-    return { courseOrder: [], courses: {}, taskOrder: {}, excluded: [] };
+  } catch (error) {
+    if (error.code === 'ENOENT') return { courseOrder: [], courses: {}, taskOrder: {}, excluded: [] };
+    throw new Error('无法读取选课范围，已停止加载，避免意外全选；请检查选课文件后重试', {cause:error});
   }
 }
 

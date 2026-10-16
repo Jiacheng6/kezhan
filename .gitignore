@@ -82,6 +82,8 @@ Desktop.ini
 dist/
 .build-cache/
 .desktop-test/
+notifications.json
+notifications.json.tmp
 .desktop-test*.log
 desktop/native/*.exe
 desktop/native/*.pdb
@@ -152,3 +154,7 @@ tools/test/*
 
 !tools/test/test-playback-policy.mjs
 !tools/test/test-task-progress.mjs
+!tools/test/test-notifications.mjs
+!tools/test/test-notifications-ui.mjs
+!tools/test/test-quiz-blocked.mjs
+!tools/test/test-run-scope.mjs

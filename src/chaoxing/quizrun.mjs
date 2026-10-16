@@ -40,6 +40,7 @@ import { readPointStatusFromPage } from './attach.mjs';
 import { skipDecision, describeSkip } from './skip.mjs';
 import { newTaskPage, releasePage, setPageBusy } from '../browser/pages.mjs';
 import { isReviewLocked } from './review-lock.mjs';
+import { AI_BLOCK_CODES, queueUnanswered } from './quiz-outcome.mjs';
 
 export { cardsUrl };
 
@@ -89,7 +90,7 @@ async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, sh
   if (ai.ok) reportSuccess();
   else reportFailure({ errorCode: ai.errorCode, error: ai.error });
 
-  const parsed = parseAnswer(ai.ok ? ai.answer : `（AI调用失败：${ai.error}）`, question);
+  const parsed = parseAnswer(ai.ok ? ai.answer : '', question);
   const validation = validateBeforeSubmit(parsed, question);
 
   return {
@@ -140,6 +141,19 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
 
   const page = await newTaskPage(ctx, 'quiz');
   page.on('dialog', (d) => d.accept().catch(() => {}));
+  let workFrame = null, questions = [];
+  const keepForReview = () => {
+    result.keepPageOpen = true; result.workPage = page;
+    result.workFrameUrl = workFrame.url();
+    registerKeptPage(task.key, page, {
+      task: {courseId:task.courseId,clazzId:task.clazzId,knowledgeId:task.knowledgeId,name:task.name,type:task.type,jobid:task.jobid,cardNum:result.cardNum},
+      workIdentity: workIdentity(workFrame.url()), personId: String(personId),
+      submissionPending: !!result.submissionPending,
+      course: task.courseName || task.courseId, secNo: task.secNo, name: task.name,
+      totalQuestions: result.totalQuestions, answered: result.answered, queued: result.queued,
+      items: result.items.map(i => ({questionIndex:i.questionIndex,qtype:i.qtype,letters:i.letters,textAnswer:i.textAnswer,requiresReview:i.requiresReview,confidence:i.confidence,autoFilled:i.autoFilled})),
+    });
+  };
 
   try {
     // —— 0) 已完成则跳过（本地记录 / 上次侦察快照）——
@@ -199,7 +213,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
 
     // —— 2) 等作业 frame 渲染出题目 ——
     result.phase = 'wait-work-frame';
-    const workFrame = await waitWorkFrame(page, 35000);
+    workFrame = await waitWorkFrame(page, 35000);
     if (!workFrame) throw new Error('作业 frame 未出现或题目未渲染');
 
     const meta = await getWorkMeta(workFrame);
@@ -209,13 +223,17 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
     if (!meta.questionTotal) throw new Error('未读到任何题目');
     if (!meta.submitBtn) log('    ! 未找到提交按钮，将只填不交', 'warn');
 
+    questions = await extractQuestions(workFrame);
     // —— 3) AI登录检查 ——
     const login = await checkLogin(qianwenPage);
-    if (!login.loggedIn) throw new Error('AI未登录 —— 请在受控 Edge 里登录AI后重试');
+    if (!login.loggedIn) {
+      result.phase = 'blocked-verification'; result.aiErrorCode = 'not-logged-in';
+      result.error = result.needsHuman = 'AI 未登录或页面尚未就绪，请在软件内完成登录后重新开始';
+      queueUnanswered(result, task, questions, result.error); keepForReview();
+      return result;
+    }
 
     // —— 4) 逐题处理 ——
-    const questions = await extractQuestions(workFrame);
-    const items = [];
 
     for (let i = 0; i < questions.length; i += 1) {
       if (shouldStop && shouldStop()) {
@@ -244,18 +262,24 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
       });
 
       const tag = confidenceLabel(solved.parsed.confidence);
+      if (!solved.aiError) {
       log(
         `        AI：${q.qtype === 'essay' ? `简答正文 ${solved.parsed.textAnswer?.length || 0} 字符` : solved.parsed.letters.join('') || '(无)'}  ${tag}  ${solved.parsed.reason}`,
         solved.parsed.confidence === 'high' ? 'ok' : 'warn',
       );
+      }
 
       // 风控验证：立刻停止整批，不继续无意义地等待
-      if (['verification-required','rate-limited','not-logged-in','draft-not-empty','draft-attachment','already-generating','wrong-ai-page'].includes(solved.aiErrorCode)) {
+      if (AI_BLOCK_CODES.has(solved.aiErrorCode)) {
         result.phase = 'blocked-verification';
         result.error = solved.aiError;
         result.needsHuman = solved.aiError || '请检查 AI 网页';
+        result.aiErrorCode = solved.aiErrorCode;
         log(`    ⛔ ${solved.aiError}`, 'error');
-        log(`    ⛔ 已停止本批次 —— 请在AI标签页完成验证后重新开始`, 'error');
+        log('    ⛔ 当前作业已挂起，将暂停本批次；请查看软件内 AI 网页', 'error');
+        queueUnanswered(result, task, questions, result.error);
+        const current = result.items.find(item => item.questionIndex === q.index);
+        Object.assign(current, {imagePath:solved.imagePath,aiErrorCode:solved.aiErrorCode,aiError:solved.aiError});
         break;
       }
 
@@ -267,15 +291,17 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
           result.phase = 'blocked-throttled';
           result.error = `AI连续 ${st.consecutiveFail} 次未正常返回（疑似限流），已停止`;
           result.needsHuman = `等待约 ${Math.round(st.cooldownLeftMs / 60000)} 分钟后重试，或减少每批题量`;
+          result.aiErrorCode = 'rate-limited';
           log(`    ⛔ ${result.error}`, 'error');
+          queueUnanswered(result, task, questions, result.error);
           break;
         }
       }
 
       // 是否允许自动填
       const isEssay = q.qtype === 'essay';
-      const mayFill = isEssay ? settings.essayAutoFill && solved.parsed.canFill
-        : solved.parsed.confidence === 'high' && solved.validation.safe;
+      const mayFill = !solved.aiError && (isEssay ? settings.essayAutoFill && solved.parsed.canFill
+        : solved.parsed.confidence === 'high' && solved.validation.safe);
       let filled = null;
       let autoFilled = false;
       let fillError = null;
@@ -349,7 +375,6 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
         archive,
         status: autoFilled ? 'filled' : 'pending-review',
       };
-      items.push(item);
       result.items.push(item);
 
       if (autoFilled) result.answered += 1;
@@ -361,6 +386,10 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
 
     if (result.stopped) return result;
     throwIfStopped(shouldStop);
+    if (result.needsHuman) {
+      // Preserve the blocker. Never overwrite it with awaiting-review / ok=true.
+      keepForReview(); return result;
+    }
     result.phase = 'decide-submit';
 
     // —— 5) 提交决策 ——
@@ -389,30 +418,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
        * 那"人工确认"就变成了空话。现在保留页面，并把 page 句柄交给上层存起来。
        */
       result.phase = 'awaiting-review';
-      result.keepPageOpen = true;
-      result.workPage = page;
-      result.workFrameUrl = workFrame.url();
-      registerKeptPage(task.key, page, {
-        task: {courseId:task.courseId,clazzId:task.clazzId,knowledgeId:task.knowledgeId,name:task.name,type:task.type,jobid:task.jobid,cardNum:result.cardNum},
-        workIdentity: workIdentity(workFrame.url()),
-        personId: String(personId),
-        submissionPending: !!result.submissionPending,
-        course: task.courseName || task.courseId,
-        secNo: task.secNo,
-        name: task.name,
-        totalQuestions: result.totalQuestions,
-        answered: result.answered,
-        queued: result.queued,
-        items: result.items.map((i) => ({
-          questionIndex: i.questionIndex,
-          qtype: i.qtype,
-          letters: i.letters,
-          textAnswer: i.textAnswer,
-          requiresReview: i.requiresReview,
-          confidence: i.confidence,
-          autoFilled: i.autoFilled,
-        })),
-      });
+      keepForReview();
       log(
         `    未自动提交（模式=${subm}${result.queued ? `，待人工 ${result.queued} 题` : '，需你确认'}）`,
         'info',
@@ -428,6 +434,11 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
       return result;
     }
     result.error = err.message;
+    if (workFrame && questions.length) {
+      queueUnanswered(result, task, questions, err.message);
+      result.phase = 'needs-human'; result.needsHuman = err.message;
+      keepForReview();
+    }
     if (err.captureStage) result.captureStage = err.captureStage;
     log(`    ✗ 失败：${err.message}`, 'error');
     return result;
@@ -719,6 +730,8 @@ export function recordQuizResult(result) {
       queued: result.queued,
       submitted: result.submitted,
       error: result.error,
+      aiErrorCode: result.aiErrorCode || null,
+      needsHuman: result.needsHuman || null,
     };
 
     /*
@@ -752,6 +765,9 @@ export function recordQuizResult(result) {
           note: `测验已作答 ${result.answered} 题待人工确认提交（页面已保留）`,
           updatedAt: new Date().toISOString(),
         };
+      } else if (result.needsHuman || result.phase === 'needs-human' || result.phase?.startsWith('blocked-')) {
+        state.taskPoints[result.key] = {...prev, status:'manual', name:result.name, secNo:result.secNo, lastError:result.error,
+          note:'任务未完成，已暂停并保存待处理题目', updatedAt:new Date().toISOString()};
       } else if (!result.ok) {
         state.taskPoints[result.key] = {
           ...prev,
