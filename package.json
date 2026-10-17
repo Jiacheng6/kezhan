@@ -30,7 +30,7 @@
   },
   "build": {
     "releaseInfo": {
-      "releaseNotesFile": "docs/releases/0.5.7.md"
+      "releaseNotesFile": "docs/releases/0.5.8.md"
     },
     "publish": [
       {

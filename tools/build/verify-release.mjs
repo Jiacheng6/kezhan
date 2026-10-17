@@ -58,6 +58,7 @@ assert.ok(feed.includes(`sha512: ${expectedSha512}`), '在线更新 SHA-512 校�
 assert.ok(feed.includes(`size: ${fs.statSync(path.join(dist, installerName)).size}`), '在线更新大小不一致');
 assert.ok(feed.includes('releaseNotes:'), '在线更新清单必须包含更新内容');
 const sourcePackage = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+assert.equal(sourcePackage.build.releaseInfo.releaseNotesFile, `docs/releases/${pkg.version}.md`, '更新说明文件必须与当前发布版本一致');
 const releaseNotes = fs.readFileSync(path.join(ROOT, sourcePackage.build.releaseInfo.releaseNotesFile), 'utf8');
 for (const line of releaseNotes.split(/\r?\n/).filter(line => line.startsWith('- '))) {
   assert.ok(feed.includes(line), '更新清单应完整包含本次更新说明');
