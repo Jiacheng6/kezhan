@@ -28,7 +28,7 @@ try {
   const page = await application.firstWindow(); page.on('pageerror', error => errors.push(error.message));
   await page.waitForURL('http://127.0.0.1:*/');
   await openTestArchive(page);await page.locator('#libraryHome #appearance').click(); await page.locator('#libraryHome #showOnStartup').uncheck(); await enterTestWorkspace(page);
-  await application.evaluate(({ BrowserWindow }) => { const win = BrowserWindow.getAllWindows()[0]; win.setContentSize(1240, 800); win.showInactive(); });
+  await application.evaluate(({ BrowserWindow }) => { const win = BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0); win.setContentSize(1240, 800); win.showInactive(); });
   await page.locator('.tab[data-tab=courses]').click();await page.locator('#deskLegacy').click();
   const panelMotion = await page.locator('#panel-courses').evaluate(el => ({ animations: el.getAnimations().length, transform: getComputedStyle(el).transform }));
   assert.ok(panelMotion.animations > 0); assert.notEqual(panelMotion.transform, 'none'); checks.realPanelTransition = true;

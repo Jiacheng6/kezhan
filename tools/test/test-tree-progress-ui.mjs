@@ -32,7 +32,7 @@ const application = await electron.launch({ executablePath,
   args: [...(process.env.XXT_TREE_TEST_EXE ? [] : [root]), '--test-mode'],
   env: { ...process.env, XXT_TEST_DATA_DIR: data } });
 try {
-  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].showInactive());
+  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).showInactive());
   const page = await application.firstWindow();
   await page.waitForURL('http://127.0.0.1:*/');
   await openTestArchive(page);await page.locator('#libraryHome #appearance').click();

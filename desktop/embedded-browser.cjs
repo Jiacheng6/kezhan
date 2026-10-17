@@ -1,4 +1,4 @@
-const { WebContentsView, session, safeStorage, webContents } = require('electron');
+const { BrowserWindow, WebContentsView, session, safeStorage, webContents } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -32,6 +32,7 @@ class EmbeddedBrowser {
     this.session = session.fromPartition('persist:learning-web');
     this.cookieFile = path.join(dataDir, 'browser-session.bin');
     this.views = new Map(); this.active = null; this.visible = false;
+    this.captureWindow = null; this.captureReady = Promise.resolve();
     this.bounds = null; this.suspended = true; this.closeSuspended = false;
     this.disposed = false; this.timer = null;
     this.session.setUserAgent(this.session.getUserAgent().replace(/\sElectron\/\S+/g, '').replace(/\sxuexitong-auto\/\S+/g, ''));
@@ -40,6 +41,26 @@ class EmbeddedBrowser {
     this.cookieChanged = () => { clearTimeout(this.timer); this.timer = setTimeout(() => this.saveCookies().catch(() => this.log('内置网页登录保存失败，下次可能需要重新登录')), 700); };
     this.session.cookies.on('changed', this.cookieChanged);
     for (const event of ['resize', 'show', 'restore']) window.on(event, () => this.applyBounds());
+  }
+  ensureCaptureWindow() {
+    if (this.captureWindow && !this.captureWindow.isDestroyed()) return;
+    // An invisible child view has no reliable compositor surface on Windows.
+    // Give inactive pages a child in a transparent, noninteractive native host.
+    // This host never navigates to a remote site or exposes desktop privileges.
+    this.captureWindow = new BrowserWindow({ show: false, width: 1100, height: 760,
+      skipTaskbar: true, focusable: false, webPreferences: { nodeIntegration: false,
+        contextIsolation: true, sandbox: true, backgroundThrottling: false } });
+    this.captureWindow.setMenu(null);
+    this.captureWindow.setOpacity(0);
+    this.captureWindow.setIgnoreMouseEvents(true);
+    this.captureReady = this.captureWindow.loadURL('about:blank').then(async () => {
+      // Windows needs one native presentation to allocate the child surfaces.
+      // Zero opacity, no taskbar and no focus keep this bootstrap invisible.
+      if (this.captureWindow.isDestroyed()) return;
+      this.captureWindow.showInactive();
+      await new Promise(resolve => setTimeout(resolve, 200));
+      // The transparent, nonfocusable host keeps its native surface alive.
+    }).catch(error => { this.captureBootstrapError = error; });
   }
   async restoreCookies() {
     if (!fs.existsSync(this.cookieFile) || !safeStorage.isEncryptionAvailable()) return;
@@ -89,10 +110,11 @@ class EmbeddedBrowser {
     return { id: view.webContents.id, targetId: record.targetId };
   }
   async register(view) {
+    this.ensureCaptureWindow();
     const c = view.webContents;
     const id = c.id;
-    const record = { view, targetId: null, error: '', viewportReady: false }; this.views.set(c.id, record);
-    this.window.contentView.addChildView(view); view.setVisible(false);
+    const record = { view, host: this.captureWindow, targetId: null, error: '', viewportReady: false }; this.views.set(c.id, record);
+    this.captureWindow.contentView.addChildView(view); view.setVisible(false);
     setViewBounds(record, { x: 0, y: 0, width: 1100, height: 760 });
     c.on('dom-ready', () => { record.viewportReady = true; record.viewportKey = null; this.applyBounds(); });
     c.on('will-navigate', (event, url) => { if (!webURL(url)) event.preventDefault(); });
@@ -118,7 +140,7 @@ class EmbeddedBrowser {
     c.on('render-process-gone', () => { record.error = '此网页发生异常，请点击刷新重新打开。'; this.publish(); });
     c.on('destroyed', () => {
       this.views.delete(id);
-      try { if (!this.window.isDestroyed()) this.window.contentView.removeChildView(view); } catch {}
+      try { if (record.host && !record.host.isDestroyed()) record.host.contentView.removeChildView(view); } catch {}
       if (this.active === id) this.active = [...this.views.keys()].at(-1) ?? null;
       this.applyBounds(); this.publish();
     });
@@ -145,18 +167,31 @@ class EmbeddedBrowser {
     this.suspended = !!suspended; this.applyBounds();
   }
   applyBounds() {
-    if (this.disposed || this.window.isDestroyed()) return;
+    if (this.disposed || this.window.isDestroyed() || !this.captureWindow) return;
     const [w, h] = this.window.getContentSize();
     // Windows 最小化时可能临时返回 0×0，不能据此把后台网页缩成 1×1。
     if (w < 1 || h < 1) return;
     const b = this.bounds || { x: 210, y: 174, width: w - 210, height: h - 174 };
     const x = Math.min(w - 1, Math.max(0, Math.round(b.x))), y = Math.min(h - 1, Math.max(0, Math.round(b.y)));
     const bounds = { x, y, width: Math.max(1, Math.min(w - x, Math.round(b.width))), height: Math.max(1, Math.min(h - y, Math.round(b.height))) };
+    const captureSize = `${bounds.width}x${bounds.height}`;
+    if (this.captureSize !== captureSize) {
+      this.captureWindow.setContentSize(bounds.width, bounds.height);
+      this.captureSize = captureSize;
+    }
     for (const [id, r] of this.views) {
       if (r.view.webContents.isDestroyed()) continue;
       // Keep inactive/hidden pages alive for tasks; only their presentation changes.
-      setViewBounds(r, bounds);
-      r.view.setVisible(this.visible && !this.suspended && !this.closeSuspended && id === this.active);
+      const shown = this.visible && !this.suspended && !this.closeSuspended && id === this.active;
+      const host = shown ? this.window : this.captureWindow;
+      const previousHost = r.host;
+      if (previousHost !== host) {
+        previousHost?.contentView.removeChildView(r.view);
+        host.contentView.addChildView(r.view);
+        r.host = host;
+      }
+      setViewBounds(r, shown ? bounds : { x: 0, y: 0, width: bounds.width, height: bounds.height });
+      r.view.setVisible(true);
     }
   }
   command({ action, id } = {}) {
@@ -188,10 +223,36 @@ class EmbeddedBrowser {
       if (!record || record.view.webContents.isDestroyed()) throw new Error('截图网页已关闭');
       const rect = params.rect, bounds = record.view.getBounds();
       if (!rect || !['x','y','width','height'].every(key => Number.isInteger(rect[key])) || rect.x < 0 || rect.y < 0 || rect.width < 1 || rect.height < 1 || rect.x + rect.width > bounds.width || rect.y + rect.height > bounds.height) throw new Error('题目超出原生截图区域');
-      const image = await record.view.webContents.capturePage(rect, { stayHidden: true, stayAwake: true });
-      const size = image.getSize();
-      if (image.isEmpty() || size.width !== rect.width || size.height !== rect.height) throw new Error('原生题目截图不完整');
-      return { data: image.toPNG({ scaleFactor: 1 }).toString('base64') };
+      const capture = async () => {
+        await this.captureReady;
+        if (this.captureBootstrapError) throw new Error('内部绘制初始化失败，请重启软件后重试');
+        const c = record.view.webContents;
+        if (c.isDestroyed() || this.disposed) throw new Error('截图网页已关闭');
+        let timer;
+        try {
+          c.invalidate();
+          // Allow the newly exposed native child surface to submit its first
+          // compositor frame before requesting a copy (otherwise Viz rejects).
+          await new Promise(resolve => setTimeout(resolve, 100));
+          // A nonempty capture rect changes Chromium's preferred capture size.
+          // Capture the existing viewport first, then crop the NativeImage.
+          const image = await Promise.race([
+            c.capturePage({ x: 0, y: 0, width: 0, height: 0 }, { stayHidden: true, stayAwake: true }),
+            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('软件内完整画面截图超时')), 6000); }),
+          ]);
+          const size = image.getSize();
+          if (image.isEmpty() || size.width < rect.x + rect.width || size.height < rect.y + rect.height) throw new Error('原生题目截图不完整');
+          const cropped = image.crop(rect);
+          if (cropped.isEmpty()) throw new Error('原生题目截图为空');
+          return { data: cropped.toPNG({ scaleFactor: 1 }).toString('base64') };
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+      // Serialize native copies so concurrent requests keep distinct results.
+      const pending = (record.captureTail || Promise.resolve()).catch(() => {}).then(capture);
+      record.captureTail = pending;
+      return pending;
     }
     if (method === 'post') {
       if (!webURL(params.url) || params.url === 'about:blank') throw new Error('无效的网页请求');
@@ -214,6 +275,7 @@ class EmbeddedBrowser {
     this.session.flushStorageData(); this.disposed = true;
     for (const r of this.views.values()) if (!r.view.webContents.isDestroyed()) r.view.webContents.close({ waitForBeforeUnload: false });
     this.views.clear();
+    if (this.captureWindow && !this.captureWindow.isDestroyed()) this.captureWindow.destroy();
   }
 }
 module.exports = { EmbeddedBrowser, webURL, setViewBounds };

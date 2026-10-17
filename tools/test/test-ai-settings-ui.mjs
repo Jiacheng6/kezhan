@@ -5,7 +5,7 @@ fs.writeFileSync(path.join(data,'state.json'),JSON.stringify({version:3,taskPoin
 const app=await electron.launch({executablePath:path.join(root,'node_modules/electron/dist/electron.exe'),args:[root,'--test-mode'],env:{...process.env,XXT_TEST_DATA_DIR:data}});
 try{
  const page=await app.firstWindow();page.setDefaultTimeout(15000);const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.waitForURL('http://127.0.0.1:*/');
- await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];w.setContentSize(1320,900);w.showInactive();});
+ await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);w.setContentSize(1320,900);w.showInactive();});
  if(await page.locator('#libraryHome #enterWorkspace').count())await enterTestWorkspace(page);
  await revealTestTools(page);await page.locator('[data-tab="settings"]').click();const selector=page.getByLabel('AI 网页版答题通道',{exact:true});await selector.waitFor();
  assert.deepEqual(await selector.locator('option').allTextContents(),['千问网页版','豆包网页版','DeepSeek 网页版']);

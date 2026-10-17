@@ -16,7 +16,7 @@ const application = await electron.launch({ args: [ROOT, '--test-mode'],
 try {
   const window = await application.firstWindow();
   await window.waitForURL('http://127.0.0.1:*/');
-  await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].showInactive());
+  await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).showInactive());
   await window.evaluate(()=>localStorage.setItem('xxt-library-startup','skip'));
   await window.reload();
   await revealTestTools(window);
@@ -32,24 +32,24 @@ try {
   await window.locator('#webReturn').click();
   await window.locator('#embeddedBrowser').waitFor({state:'hidden'});
   await application.evaluate(({ BrowserWindow }) => {
-    BrowserWindow.getAllWindows()[0].showInactive();
-    BrowserWindow.getAllWindows()[0].close();
+    BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).showInactive();
+    BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).close();
   });
   await window.locator('#closeHide').click();
   await new Promise((resolve) => setTimeout(resolve, 150));
-  assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), false);
+  assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).isVisible()), false);
   assert.equal(await window.locator('h1').innerText(), '学习通助手', '隐藏后页面和后台仍可用');
   await application.evaluate(({ BrowserWindow }) => {
-    BrowserWindow.getAllWindows()[0].show();
-    BrowserWindow.getAllWindows()[0].close();
+    BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).show();
+    BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).close();
   });
   await window.locator('#closeCancel').click();
   await new Promise((resolve) => setTimeout(resolve, 150));
-  assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), true);
+  assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).isVisible()), true);
   console.log('✓ 独立窗口、未登录任务入口禁用、关闭选择隐藏、取消退出通过');
   const exited = new Promise(resolve => application.process().once('exit',resolve));
   await application.evaluate(({ BrowserWindow }) => {
-    BrowserWindow.getAllWindows()[0].close();
+    BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).close();
   });
   await window.locator('#closeExit').click();
   await exited;

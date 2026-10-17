@@ -2,7 +2,7 @@
 export async function requestTestExit(application) {
   if (application.process()?.exitCode != null) return;
   const page = await application.firstWindow();
-  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].showInactive());
+  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).showInactive());
   await application.evaluate(({ app }) => { app.quit(); }).catch(() => {});
   await page.locator('#desktopClosePanel[open]').waitFor({ timeout: 10000 });
   await page.locator('#closeExit').click();

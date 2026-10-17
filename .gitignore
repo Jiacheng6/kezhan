@@ -162,3 +162,4 @@ tools/test/*
 !tools/test/test-embedded-viewport.mjs
 
 !tools/test/test-question-prompt.mjs
+!tools/test/test-embedded-capture.cjs

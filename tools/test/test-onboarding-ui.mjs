@@ -45,7 +45,7 @@ try {
     await route.fulfill({ status: result.status, contentType: 'application/json', body: await result.text() });
   });
   await page.routeWebSocket('**/ws', ws => { sockets.add(ws); ws.onClose(() => sockets.delete(ws)); });
-  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setContentSize(1320, 900); w.showInactive(); });
+  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0); w.setContentSize(1320, 900); w.showInactive(); });
   await page.reload(); await page.locator('#onboardingPanel[open]').waitFor();
   assert.equal(await page.locator('#onboardingNext').isDisabled(), true);
   await page.screenshot({ path: path.join(output, '01-login.png') });
@@ -68,7 +68,7 @@ try {
   patchStatus({ running: true }); await page.waitForFunction(() => document.getElementById('onboardingNext').disabled);
   assert.equal(await page.locator('input[value=doubao]').isDisabled(), true);
   patchStatus({ running: false }); await page.waitForFunction(() => !document.getElementById('onboardingNext').disabled);
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).close());
   await page.locator('#desktopClosePanel[open]').waitFor(); await page.locator('#closeCancel').click();
   assert.equal(await page.locator('#onboardingPanel').evaluate(e => e.open), true);
   await page.locator('#onboardingNext').click(); await page.locator('#onboardingPanel').waitFor({ state: 'hidden' });
@@ -78,7 +78,7 @@ try {
   assert.equal(await page.locator('#onboardingPanel').evaluate(e => e.open), false);
   await revealTestTools(page); await page.locator('[data-tab=settings]').click(); await page.locator('#reopenOnboarding').click();
   await page.locator('#onboardingNext').click(); assert.equal(await page.locator('input[value=deepseek]').isChecked(), true);
-  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setMinimumSize(500, 500); w.setContentSize(600, 760); });
+  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0); w.setMinimumSize(500, 500); w.setContentSize(600, 760); });
   await page.screenshot({ path: path.join(output, '03-narrow.png') });
   assert.equal(await page.locator('#onboardingPanel').evaluate(e => e.scrollWidth <= e.clientWidth), true);
   await page.keyboard.press('Escape'); assert.equal(await page.locator('#onboardingPanel').evaluate(e => e.open), false);

@@ -15,7 +15,7 @@ try{
  app=await electron.launch({executablePath:packagedExe||path.join(root,'node_modules/electron/dist/electron.exe'),args:[...(packagedExe?[]:[root]),'--test-mode'],env:{...process.env,XXT_TEST_DATA_DIR:data}});
  const page=await app.firstWindow();page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));
  await page.waitForURL('http://127.0.0.1:*/');
- await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].showInactive());
+ await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).showInactive());
  await enterTestWorkspace(page);
  const n=await push({kind:'ai-verification',key:'fixture-first',detail:'豆包要求人工验证，任务未完成'});
  await page.locator('#notificationPrompt[open]').waitFor();
@@ -34,8 +34,8 @@ try{
  await page.evaluate(id=>window.desktopApp.readNotification(id),n.id);
  await page.evaluate(()=>window.desktopApp.hide());
  const hidden=await push({kind:'task-failed',key:'fixture-hidden'});
- assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible()),false,'后台提醒不强行抢焦点');
- await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].showInactive());
+ assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).isVisible()),false,'后台提醒不强行抢焦点');
+ await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).showInactive());
  await page.locator('#notificationPrompt[open]').waitFor();
  await page.locator('#notificationPrompt [data-handle]').click();
  await page.locator('#panel-logs.active').waitFor({state:'attached'});

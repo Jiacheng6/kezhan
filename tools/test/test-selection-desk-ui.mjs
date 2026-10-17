@@ -30,7 +30,7 @@ try {
   await page.route('**/api/status',route=>route.fulfill({json:status}));
   await page.routeWebSocket('**/ws',ws=>{sockets.add(ws);ws.send(JSON.stringify({type:'status',data:status}));ws.onClose(()=>sockets.delete(ws));});
   await page.route('**/api/action/*',async route=>{const action=new URL(route.request().url()).pathname.split('/').pop();actions.push(action);if(action==='startRun'){runRequests.push(route.request().postDataJSON());status.running=true;status.progress={done:2,total:9,current:'示例课程 · 正在处理任务',percent:2/9};status.runStats={done:2,total:9};}if(action==='stopRun')status.running=false;await route.fulfill({json:{ok:true}});for(const ws of sockets)ws.send(JSON.stringify({type:'status',data:status}));});
-  await application.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];w.setContentSize(1360,940);w.showInactive();});
+  await application.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);w.setContentSize(1360,940);w.showInactive();});
   await page.reload();await enterTestWorkspace(page);await page.locator('[data-tab=courses]').click();
   await page.locator('#deskCourseTitle').filter({hasText:names[0]}).waitFor();
   await page.waitForFunction(()=>!document.getElementById('deskCreatePreset').disabled);
@@ -100,14 +100,14 @@ try {
   await page.locator('#deskPresetName').fill('示例保存失败');await page.locator('#deskCreatePreset').click();
   await page.locator('#deskFeedback').filter({hasText:'示例磁盘写入失败'}).waitFor();assert.equal(await page.locator('#deskPresetName').inputValue(),'示例保存失败');
   await page.unroute('**/api/selection/presets');
-  await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setMinimumSize(600,500));
+  await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).setMinimumSize(600,500));
   for(const width of [1240,1000,760]){
-    await application.evaluate(({BrowserWindow},width)=>BrowserWindow.getAllWindows()[0].setContentSize(width,940),width);
+    await application.evaluate(({BrowserWindow},width)=>BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).setContentSize(width,940),width);
     await page.waitForTimeout(120);
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'horizontal overflow '+width);
     await page.screenshot({path:path.join(output,'width-'+width+'.png'),fullPage:true,animations:'disabled'});
   }
-  await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(1360,940));
+  await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).setContentSize(1360,940));
   await page.emulateMedia({reducedMotion:'reduce'});
   await page.locator('#deskCourses input[type=checkbox]').first().focus();assert.ok(parseFloat(await page.locator('#deskCourses input[type=checkbox]').first().evaluate(e=>getComputedStyle(e).outlineWidth))>=2);
   assert.deepEqual(errors,[]);assert.deepEqual(actions,[],'选课与方案操作不得触发任务执行');
@@ -164,7 +164,7 @@ try {
   await page.locator('#deskScan').click();assert.deepEqual(actions,['startRun','stopRun','startRecon']);
   fs.writeFileSync(path.join(output,'checks.json'),JSON.stringify({switchPreservesSelection:true,previewBeforeApply:true,undo:true,saveAndReload:true,missingTaskProtection:true,completedAndUnknownVisible:true,rangeValidation:true,runningGuard:true,persistenceFailure:true,legacyView:true,selectionNeverStarts:true,startStopMocked:true,saveFailureBlocksStart:true,loginHelp:true,responsive:true,pageErrors:errors,data},null,2));
   console.log('✓ 实际桌面：三栏选课、规则预览与应用、撤销、方案保存/改名/重载、变化任务保护、运行锁定、错误提示及窄屏验证通过；未执行任何课程任务。截图：'+output);
-  if(process.argv.includes('--hold')){holding=true;await page.reload();await enterTestWorkspace(page);await page.locator('[data-tab=courses]').click();await application.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows()[0];w.setTitle('学习通助手 · 三栏选课预览（隔离演示数据）');w.show();});await new Promise(resolve=>application.process().once('exit',resolve));}
+  if(process.argv.includes('--hold')){holding=true;await page.reload();await enterTestWorkspace(page);await page.locator('[data-tab=courses]').click();await application.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);w.setTitle('学习通助手 · 三栏选课预览（隔离演示数据）');w.show();});await new Promise(resolve=>application.process().once('exit',resolve));}
 } finally {
   if(!holding){const exited=new Promise(resolve=>application.process().once('exit',resolve));await requestTestExit(application).catch(()=>{});let timer;await Promise.race([exited,new Promise(resolve=>{timer=setTimeout(resolve,15000)})]);clearTimeout(timer);await application.close().catch(()=>{});}
 }

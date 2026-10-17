@@ -56,7 +56,7 @@ async function launch(testData) {
   const packagedExe=process.env.XXT_UPDATE_TEST_EXE;
   const instance = await electron.launch({ executablePath: packagedExe||path.join(root, 'node_modules/electron/dist/electron.exe'), args: [...(packagedExe?[]:[root]), '--test-mode'],
     env: { ...process.env, LOCALAPPDATA: path.join(testData, 'cache-local'), XXT_TEST_DATA_DIR: testData, XXT_TEST_UPDATE_FEED: feed } });
-  await instance.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].showInactive());
+  await instance.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).showInactive());
   return instance;
 }
 try {

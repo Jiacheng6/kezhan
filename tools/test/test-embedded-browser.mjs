@@ -35,7 +35,7 @@ const nativeCapture = async (page, rect) => {
     const require=process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json');
     const {EmbeddedBrowser}=require('./desktop/embedded-browser.cjs');
     const contents=webContents.fromDevToolsTargetId(targetId);
-    const view=BrowserWindow.getAllWindows()[0].contentView.children.find(view=>view.webContents===contents);
+    const view=BrowserWindow.getAllWindows().flatMap(window=>window.contentView.children).find(view=>view.webContents===contents);
     return EmbeddedBrowser.prototype.request.call({views:new Map([[contents.id,{targetId,view}]])},{method:'capture',targetId,rect});
   },{targetId,rect});
 };
@@ -53,7 +53,7 @@ async function launch() {
     env: { ...process.env, XXT_TEST_DATA_DIR: data, XXT_EMBEDDED_TEST_HOME: home }, timeout: 30000 });
   const page = await app.firstWindow(); page.setDefaultTimeout(15000); page.on('pageerror', e => errors.push(e.message));
   await page.waitForURL('http://127.0.0.1:*/');
-  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setContentSize(1320, 900); w.setTitle('学习通助手 · 自动回归（无需登录）'); w.showInactive(); });
+  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0); w.setContentSize(1320, 900); w.setTitle('学习通助手 · 自动回归（无需登录）'); w.showInactive(); });
   await poll(() => page.evaluate(() => fetch('/api/status').then(r => r.json())), s => s.ready);
   const port = fs.readFileSync(path.join(data, 'DevToolsActivePort'), 'utf8').split('\n')[0];
   browser = await chromium.connectOverCDP('http://127.0.0.1:' + port);
@@ -66,7 +66,7 @@ async function exit() {
 async function capture(file) {
   await app.evaluate(async ({ BrowserWindow }, file) => {
     await new Promise(resolve => setTimeout(resolve, 120));
-    const win = BrowserWindow.getAllWindows()[0];
+    const win = BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);
     const { desktopCapturer } = process.getBuiltinModule('module').createRequire(process.cwd() + '/package.json')('electron');
     const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 1320, height: 940 } });
     const source = sources.find(s => s.id === win.getMediaSourceId());
@@ -106,7 +106,7 @@ try {
 
   assert.equal(status.browserMode, 'embedded'); assert.equal(status.edge.launched, false); assert.equal(status.login.loggedIn, false);
   assert.equal((await page.evaluate(() => window.desktopApp.webState())).tabs.some(tab => tab.url === 'about:blank'), false, '启动复用初始页，不留下多余空白标签');
-  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1);
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(window=>window.getOpacity()>0).length), 1);
   await page.locator('#onboardingPanel[open]').waitFor(); await page.locator('#onboardingOpenLogin').click();
   await page.locator('#embeddedBrowser').waitFor({ state: 'visible' }); await page.locator('#onboardingPanel').waitFor({ state: 'hidden' });
   let learning = await poll(() => browser.contexts().flatMap(c => c.pages()).find(p => p.url().startsWith(home)), p => !!p);
@@ -154,7 +154,7 @@ try {
     assert.equal(result.ok, true, JSON.stringify(result)); assert.equal(result.answer, '红色');
     console.log(`✓ ${id} 内置网页：真实上传/粘贴、发送与新回答读取通过（合成页面）`);
   }
-  await page.screenshot({ path: path.join(output, '02-setup.png') });
+  await capture('02-setup.png');
   await page.locator('#onboardingNext').click(); await page.locator('#onboardingPanel').waitFor({ state: 'hidden' });
   // Native notification click must select the existing AI view, preserving its
   // captcha/conversation; no new AI page or reload is allowed.
@@ -184,7 +184,7 @@ try {
   assert.equal(await learning.evaluate(() => window.fixtureKeepDocument), true, '打开已有学习通网页不应重载当前页面');
   await learning.locator('#popup').click();
   await poll(() => page.evaluate(() => window.desktopApp.webState()), s => s.tabs.some(t => t.url.endsWith('/detail')));
-  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1, '新页面仍留在软件内');
+  assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(window=>window.getOpacity()>0).length), 1, '新页面仍留在软件内');
   await page.locator('#viewWebPages').click();await page.locator('#webPagesDialog[open]').waitFor();
   assert.ok(await page.locator('#webPagesList .wp-page').count() >= 4);
   const initialPages=await page.evaluate(()=>window.desktopApp.webState());
@@ -218,11 +218,11 @@ try {
   assert.ok(tabs.tabs.every(t => !t.url.includes('/loading.html') && t.url !== page.url()));
   await page.locator(`#webTabs [data-web-id="${tabs.tabs.find(t => t.url.startsWith(home)).id}"]`).click();
   await capture('03-learning.png');
-  await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].minimize());
+  await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).minimize());
   await new Promise(resolve=>setTimeout(resolve,300));
-  const remoteBounds = await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].contentView.children.map(view=>view.getBounds()));
+  const remoteBounds = await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).contentView.children.map(view=>view.getBounds()));
   assert.ok(remoteBounds.every(bounds=>bounds.width>100&&bounds.height>100),'最小化不能把后台网页缩成1×1');
-  await app.evaluate(({BrowserWindow})=>{const window=BrowserWindow.getAllWindows()[0];window.restore();window.showInactive();});
+  await app.evaluate(({BrowserWindow})=>{const window=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);window.restore();window.showInactive();});
   await learning.evaluate(async () => {
     const canvas = document.createElement('canvas'); canvas.width = 160; canvas.height = 90;
     const context = canvas.getContext('2d'), stream = canvas.captureStream(20), chunks = [];
@@ -311,8 +311,8 @@ try {
   // Cleanup only sees remote views, never the trusted workspace itself.
   await call('cleanupPages'); assert.equal(await page.locator('#panel-courses').isVisible(), true);
   await page.evaluate(() => window.desktopApp.browser(true));
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close()); await page.locator('#desktopClosePanel[open]').waitFor();
-  await page.screenshot({ path: path.join(output, '04-close.png') }); await page.locator('#closeCancel').click();
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).close()); await page.locator('#desktopClosePanel[open]').waitFor();
+  await capture('04-close.png'); await page.locator('#closeCancel').click();
   await page.evaluate(() => window.desktopApp.browser(false));
   assert.deepEqual(errors, []); await exit();
   assert.ok(fs.statSync(path.join(data, 'browser-session.bin')).size > 0);

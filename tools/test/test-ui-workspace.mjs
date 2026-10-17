@@ -53,7 +53,7 @@ try{
     if(action==='startRecon')status.reconRunning=true;
     await route.fulfill({json:{ok:true,result:{started:true}}});sendStatus();
   });
-  await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows()[0];win.setContentSize(1240,800);win.setTitle('学习通助手 · 本地界面预览（演示数据）');win.showInactive();});
+  await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);win.setContentSize(1240,800);win.setTitle('学习通助手 · 本地界面预览（演示数据）');win.showInactive();});
   await page.reload();await revealTestTools(page);await page.locator('[data-tab=overview]').click();
   await revealTestTools(page);await page.locator('[data-tab=overview]').click();
   await page.locator('#overviewTaskCount').filter({hasText:'18'}).waitFor();
@@ -139,10 +139,10 @@ try{
   await page.locator('#overviewTaskProgress [data-tp=percent]').filter({hasText:'25.0'}).waitFor();await capture('overview-quiz');
   status.progress={...status.progress,taskType:'video',questionIndex:null,questionTotal:null,phase:'playing',percent:.642,currentTime:385,duration:600};sendStatus();
   status.running=false;sendStatus();
-  await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(960,660));
+  await application.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).setContentSize(960,660));
   await capture('compact');
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'960px 不应横向溢出');
-  await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows()[0];win.setMinimumSize(360,540);win.setContentSize(390,760);});
+  await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);win.setMinimumSize(360,540);win.setContentSize(390,760);});
   await capture('narrow');
   const narrow=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,overflow:[...document.querySelectorAll('body *')].filter(e=>e.getBoundingClientRect().right>innerWidth+2&&getComputedStyle(e).display!=='none').map(e=>e.className).slice(0,12)}));
   assert.equal(narrow.scroll<=narrow.width,true,JSON.stringify(narrow));
@@ -157,7 +157,7 @@ try{
   await page.emulateMedia({reducedMotion:'reduce'});
   assert.equal(await page.locator('#overviewProgressFill').evaluate(e=>getComputedStyle(e).transitionDuration),'0s');
   assert.equal(await page.locator('#overviewTaskProgress .tp-fill').evaluate(e=>getComputedStyle(e).transitionDuration),'0s');
-  await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows()[0];win.setMinimumSize(960,660);win.setContentSize(1240,800);});
+  await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);win.setMinimumSize(960,660);win.setContentSize(1240,800);});
   await page.emulateMedia({reducedMotion:'no-preference'});
   // 首次使用：无清单时主按钮扫描，扫描结束自动加载清单。
   status.progress={done:0,total:0,current:null};status.runStats=null;
@@ -176,7 +176,7 @@ try{
   fs.writeFileSync(path.join(data,'recon-selection.json'),JSON.stringify({courseOrder:[],courses:{},taskOrder:{},excluded:[]}));
   await page.reload();await revealTestTools(page);await page.locator('[data-tab=overview]').click();await page.locator('#overviewTaskCount').filter({hasText:'18'}).waitFor();
   const workspaceUrl=page.url();
-  await application.evaluate(async({app,BrowserWindow})=>{const path=process.getBuiltinModule('path');await BrowserWindow.getAllWindows()[0].loadFile(path.join(app.getAppPath(),'desktop','loading.html'));});
+  await application.evaluate(async({app,BrowserWindow})=>{const path=process.getBuiltinModule('path');await BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).loadFile(path.join(app.getAppPath(),'desktop','loading.html'));});
   await page.locator('#message').waitFor();await capture('loading');
   await page.goto(workspaceUrl);await revealTestTools(page);await page.locator('[data-tab=overview]').click();await page.locator('#overviewTaskCount').filter({hasText:'18'}).waitFor();
   assert.deepEqual(errors,[]);
@@ -185,7 +185,7 @@ try{
   console.log('UI 验证通过；截图目录：'+output);
   if(process.argv.includes('--hold')){
     keepOpen=true;
-    await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows()[0];win.setTitle('学习通助手 · 本地界面预览（演示数据）');win.show();});
+    await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);win.setTitle('学习通助手 · 本地界面预览（演示数据）');win.show();});
     console.log('演示窗口已打开，使用隔离数据。');
     await new Promise(resolve=>application.process().once('exit',resolve));
   }
