@@ -33,6 +33,7 @@ if (!process.env.XXT_DATA_DIR) {
 }
 
 const suite = [
+  ['豆包本次网页回执 / 完整回答身份', 'tools/test/test-doubao-receipt.mjs'],
   ['重复答案 / 当前消息归属与历史保护', 'tools/test/test-web-answer-identity.mjs'],
   ['无字母选项 / 图片顺序与答案格式', 'tools/test/test-question-prompt.mjs'],
   ['后台内置网页尺寸初始化 / 随窗口同步', 'tools/test/test-embedded-viewport.mjs'],

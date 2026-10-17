@@ -18,6 +18,11 @@ assert.equal(isCurrentWebAnswer(recycled,baseline,markedPrompt),true,'recycled n
 assert.equal(isCurrentWebAnswer({...recycled,replyUserKey:'older-user'},baseline,markedPrompt),false,'old answer preceding current tagged user is not current');
 assert.equal(isCurrentWebAnswer({...recycled,userText:'OLDER TAG'},baseline,markedPrompt),false,'remounted historical tagged prompt is not current');
 assert.equal(isCurrentWebAnswer({...recycled,hasUserTurns:false},{...baseline,hasUserTurns:false},markedPrompt),false,'missing turn markup cannot fall back to historical text or count');
+const unmounted={...baseline,hasUserTurns:false,userKey:'',userText:'',replyUserKey:'',trackedMarker:marker,turnConfirmed:true,turnInvalidated:false};
+assert.equal(isCurrentWebAnswer(unmounted,baseline,markedPrompt),true,'a previously verified reply remains current after the virtual list removes its question');
+assert.equal(isCurrentWebAnswer({...unmounted,turnConfirmed:false},baseline,markedPrompt),false,'an unbound reply must not be accepted merely because the request was observed');
+assert.equal(isCurrentWebAnswer({...unmounted,trackedMarker:'older'},baseline,markedPrompt),false,'a different tracker cannot claim this request');
+assert.equal(isCurrentWebAnswer({...unmounted,turnInvalidated:true},baseline,markedPrompt),false,'another user prompt invalidates this request');
 assert.equal(AI_BLOCK_CODES.has('answer-not-confirmed'),true,'unconfirmed answer must pause immediately and remain recoverable');
 resetThrottle();reportFailure({errorCode:'answer-not-confirmed'});
 assert.equal(throttleState().cooldownLeftMs,0,'message matching failure must not impose a rate-limit cooldown');

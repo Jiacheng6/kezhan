@@ -5,6 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {interruptibleSleep,throwIfStopped,waitForRead} from '../control.mjs';
 import {loadSettings} from '../config.mjs';
 import {log} from '../logbus.mjs';
+import {beginWebTurn,endWebTurn,webRequestMarker} from './web-turn.mjs';
 export const WEB_UI = {
   doubao: {
     composer: '[data-testid="chat_input"]',
@@ -36,7 +37,8 @@ export async function webChatState(page,provider) {
     const cards=[...document.querySelectorAll(ui.answer)].filter(visible);
     // Discard nested duplicates when the site exposes both wrapper and content selectors.
     const answers=cards.filter(e=>!cards.some(other=>other!==e&&e.contains(other)));
-    const last=answers.at(-1);
+    const turn=id==='doubao'?globalThis[Symbol.for('xxt.web-chat-turn')]?.read():null;
+    const last=turn?.answer&&visible(turn.answer)?turn.answer:answers.at(-1);
     // Virtualized chat history removes older bubbles. A new answer can have
     // both the same text and the same visible count as the previous answer.
     const identitySymbol=Symbol.for('xxt.web-chat-dom-identities');
@@ -51,7 +53,8 @@ export async function webChatState(page,provider) {
     const generating=last?.getAttribute('data-streaming')==='true'||!![...document.querySelectorAll(ui.stop)].find(visible)||buttons.some(e=>/^(停止生成|停止回答|Stop generating)$/i.test((e.innerText||e.getAttribute('aria-label')||'').trim()))
       ||(id==='deepseek'&&!!document.querySelector('.ds-button--primary.ds-button--circle svg rect'));
     return {loggedIn:!!editor&&!signedOut,verification,limited,editor:!!editor,editorText:(editor?.value??editor?.innerText??'').trim(),count:answers.length,text:last?.innerText?.trim()||'',generating,
-      answerKey:key(answerRoot),hasUserTurns:users.length>0,userKey:key(root(user)),userText:(user?.innerText||'').trim(),imageKey:key(root(imageUser)),replyUserKey:key(root(beforeAnswer))};
+      answerKey:key(answerRoot),hasUserTurns:users.length>0,userKey:key(root(user)),userText:(user?.textContent||'').trim(),imageKey:key(root(imageUser)),replyUserKey:key(root(beforeAnswer)),
+      trackedMarker:turn?.marker||'',turnObserved:!!turn?.observed,turnConfirmed:!!turn?.answer&&last===turn.answer,turnInvalidated:!!turn?.invalidated};
   },{ui:WEB_UI[provider.id],id:provider.id});
 }
 function webBlock(state,provider) {
@@ -66,7 +69,8 @@ export function isCurrentWebAnswer(state,baseline,prompt) {
   const newNode=!!state.answerKey&&state.answerKey!==baseline.answerKey;
   // Doubao recycles nodes and decorates prompts with spacing and timestamps.
   // The unique request tag and reply order survive those display changes.
-  const marker=/本次提问标记：([0-9a-f-]{36})。标记仅用于区分本次提问，答案中不要重复标记。$/.exec(prompt)?.[1];
+  const marker=webRequestMarker(prompt);
+  if(marker&&state.trackedMarker)return state.trackedMarker===marker&&state.turnConfirmed&&!state.turnInvalidated;
   if(marker)return !!state.hasUserTurns&&!!state.userKey&&state.replyUserKey===state.userKey&&state.userText.includes(marker);
   if(state.hasUserTurns||baseline.hasUserTurns) {
     return newNode&&!!state.userKey&&state.userKey!==baseline.userKey
@@ -145,7 +149,7 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
   if(provider.id==='doubao')prompt+=`\n\n本次提问标记：${randomUUID()}。标记仅用于区分本次提问，答案中不要重复标记。`;
   const started=Date.now(),ui=WEB_UI[provider.id],settings=loadSettings().ai||{};
   const read=operation=>waitForRead(operation,{shouldStop,timeoutMs:10000,message:`${provider.label}页面读取超时`});
-  let stage='page',sent=false;
+  let stage='page',sent=false,turnMarker='';
   try{
     throwIfStopped(shouldStop);
     let state=await read(()=>webChatState(page,provider)),blocked=webBlock(state,provider);if(blocked)return blocked;
@@ -201,6 +205,7 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
     }
     if(!ready)return {ok:false,errorCode:'upload-not-ready',error:`${provider.label}未确认图片上传完成，已停止发送，避免发出无图题目`};
     const baseline=await read(()=>webChatState(page,provider));
+    turnMarker=await read(()=>beginWebTurn(page,provider,prompt));
     stage='send';
     throwIfStopped(shouldStop);await page.locator(ui.send).filter({visible:true}).last().click({timeout:10000});
     sent=true;stage='answer';
@@ -215,7 +220,10 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
       if(text!==last){lastProgress=Date.now();stable=0;}else if(text)stable++;
       last=text;
       if(current&&text&&stable>=3&&!state.generating)return {ok:true,answer:text,provider:provider.id,waitedMs:Date.now()-started};
-      if(Date.now()-lastProgress>stuck)return {ok:false,errorCode:'answer-not-confirmed',error:`${provider.label}本次回答未能确认，已保留本题；请打开软件内 AI 网页核对，不代表平台限流`,waitedMs:Date.now()-started};
+      if(Date.now()-lastProgress>stuck){
+        log(`    ${provider.label}回答核对：页面回答 ${state.count} 条；本次提问回执${state.turnObserved?'已捕获':'未捕获'}；回答关联${state.turnConfirmed?'已确认':'未确认'}${state.turnInvalidated?'；检测到其他提问':''}`, 'warn');
+        return {ok:false,errorCode:'answer-not-confirmed',error:`${provider.label}本次回答未能确认，已保留本题；请打开软件内 AI 网页核对，不代表平台限流`,waitedMs:Date.now()-started};
+      }
     }
     return {ok:false,errorCode:'answer-not-confirmed',error:`${provider.label}回答等待超时，已保留本题；未使用历史或未完成的回答`};
   }catch(error){
@@ -223,5 +231,7 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
     const code=({editor:'editor-unavailable',upload:'upload-failed',send:'send-failed'})[stage]||'exception';
     const label=({editor:'填写输入框失败',upload:'图片上传失败',send:'点击发送失败',answer:'回答读取失败',page:'页面读取失败'})[stage];
     return {ok:false,errorCode:code,sent,error:`${provider.label}${label}${sent?'':'（尚未确认发送）'}：${error.message}`};
+  }finally{
+    await waitForRead(()=>endWebTurn(page,turnMarker),{timeoutMs:2000}).catch(()=>{});
   }
 }

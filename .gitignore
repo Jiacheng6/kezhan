@@ -165,3 +165,5 @@ tools/test/*
 !tools/test/test-embedded-capture.cjs
 !tools/test/test-web-answer-identity.mjs
 !tools/test/test-web-virtual-turns.mjs
+!tools/test/test-web-turn.mjs
+!tools/test/test-doubao-receipt.mjs

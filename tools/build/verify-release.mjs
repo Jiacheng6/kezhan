@@ -32,6 +32,8 @@ assert.equal(fs.existsSync(path.join(app, 'desktop', 'App.cs')), false);
 const pkg = JSON.parse(fs.readFileSync(path.join(app, 'package.json'), 'utf8'));
 assert.equal(fs.readFileSync(path.join(app, 'src/ai/question-prompt.mjs')).equals(fs.readFileSync(path.join(ROOT, 'src/ai/question-prompt.mjs'))), true, '发布包必须包含无字母选项说明修复');
 assert.equal(fs.readFileSync(path.join(app, 'src/ai/web-chat.mjs')).equals(fs.readFileSync(path.join(ROOT, 'src/ai/web-chat.mjs'))), true, '发布包必须包含本次 AI 网页输入恢复修复');
+  assert.equal(fs.readFileSync(path.join(app, 'src/ai/web-turn.mjs')).equals(fs.readFileSync(path.join(ROOT, 'src/ai/web-turn.mjs'))), true, '发布包必须包含提问卸载后的回答关联修复');
+  assert.equal(fs.readFileSync(path.join(app, 'src/ai/doubao-receipt.mjs')).equals(fs.readFileSync(path.join(ROOT, 'src/ai/doubao-receipt.mjs'))), true, '发布包必须包含本次网页回执核对');
 assert.equal(pkg.version, JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version);
 assert.equal(pkg.main, 'desktop/main.cjs');
 const archive = path.join(app, 'src/ui/library/archive');
