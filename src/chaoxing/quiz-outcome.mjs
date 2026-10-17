@@ -25,4 +25,4 @@ export function queueUnanswered(result, task, questions, reason) {
   }
 }
 
-export const AI_BLOCK_CODES = new Set(['verification-required', 'rate-limited', 'not-logged-in', 'draft-not-empty', 'draft-attachment', 'already-generating', 'wrong-ai-page']);
+export const AI_BLOCK_CODES = new Set(['verification-required', 'rate-limited', 'not-logged-in', 'draft-not-empty', 'draft-attachment', 'already-generating', 'wrong-ai-page', 'editor-unavailable', 'upload-failed', 'upload-not-ready', 'send-failed', 'exception']);

@@ -5,7 +5,7 @@ const root=process.cwd(),data=fs.mkdtempSync(path.join(root,'.desktop-test/web-a
 const {findEdge}=await import('../../src/browser/launch.mjs');
 const {AI_PROVIDERS,providerForUrl,ensureProviderPage}=await import('../../src/ai/providers.mjs');
 const {askImage,checkLogin}=await import('../../src/ai/ai.mjs');
-const {webChatState}=await import('../../src/ai/web-chat.mjs');
+const {webChatState,writeWebPrompt}=await import('../../src/ai/web-chat.mjs');
 const {normalizeSettings}=await import('../../src/settings.mjs');
 const {loadSettings}=await import('../../src/config.mjs');
 assert.equal(normalizeSettings({'ai.provider':'doubao'},loadSettings()).settings.ai.provider,'doubao');
@@ -32,6 +32,31 @@ try{
    assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.answer,'红色');
   }
   assert.equal(await page.evaluate(()=>window.sent),2,'same answers in consecutive turns must still be tied to new response nodes');
+  // Real browser input events through CDP, after a selector timeout. No AI send
+  // is retried and a draft typed while recovering must stay untouched.
+  const editorSelector=id==='doubao'?'.tiptap':'textarea';
+  await page.evaluate(selector=>document.querySelector(selector).addEventListener('input',()=>window.lastInput=document.querySelector(selector).value??document.querySelector(selector).innerText),editorSelector);
+  let beforeTimeout=async()=>{};
+  const timedOut={filter(){return this},first(){return this},locator(){return this},async fill(){await beforeTimeout();throw Error('locator.fill: Timeout 3000ms exceeded')}};
+  const recovering=new Proxy(page,{get(target,key){if(key==='locator')return()=>timedOut;const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value}});
+  await writeWebPrompt(recovering,provider,'RECOVERED PROMPT');
+  assert.equal((await webChatState(page,provider)).editorText,'RECOVERED PROMPT');
+  assert.equal(await page.evaluate(()=>window.lastInput),'RECOVERED PROMPT','recovery must trigger the actual editor input event');
+  assert.equal(await page.evaluate(()=>window.sent),2,'recovering text must never send or duplicate a request');
+  await page.locator(editorSelector).fill('');
+  beforeTimeout=()=>page.locator(editorSelector).fill('NEW USER DRAFT');
+  await assert.rejects(writeWebPrompt(recovering,provider,'DO NOT OVERWRITE'),/draft/);
+  assert.equal((await webChatState(page,provider)).editorText,'NEW USER DRAFT');
+  await page.locator(editorSelector).fill('');
+  const brokenLocator=locator=>new Proxy(locator,{get(target,key){
+    if(key==='fill')return async()=>{throw Error('Input is not editable')};
+    if(['filter','first','locator','nth'].includes(key))return(...args)=>brokenLocator(target[key](...args));
+    const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+  }});
+  const brokenPage=new Proxy(page,{get(target,key){if(key==='locator')return(...args)=>brokenLocator(target.locator(...args));const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value}});
+  const failedInput=await askImage({page:brokenPage,imagePath,prompt:'CANNOT TYPE',freshChat:false});
+  assert.equal(failedInput.errorCode,'editor-unavailable');assert.equal(failedInput.sent,false);
+  assert.match(failedInput.error,/填写输入框失败/);assert.equal(await page.evaluate(()=>window.sent),2);
   await page.locator(id==='doubao'?'.tiptap':'textarea').fill('MY UNSENT DRAFT');
   const guarded=await askImage({page,imagePath,prompt:'another question',freshChat:false});assert.equal(guarded.errorCode,'draft-not-empty');assert.equal(await page.evaluate(()=>window.sent),2);
   await page.evaluate(()=>{const e=document.createElement('div');e.setAttribute('role','dialog');e.textContent='请完成安全验证';document.body.append(e);});

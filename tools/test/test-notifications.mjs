@@ -36,7 +36,8 @@ shown.at(-1).emit('failed');assert.equal(center.snapshot().items[0].delivery,'fa
 console.log(`✓ ${Object.keys(catalog).length} 种关键通知、系统投递、失败/不支持回退、去重、点击跳转、关闭未读及重启保留`);
 
 const {BatchRunner,classifyTaskResult}=await import('../../src/batch.mjs');
-const {queueUnanswered}=await import('../../src/chaoxing/quiz-outcome.mjs');
+const {queueUnanswered,AI_BLOCK_CODES}=await import('../../src/chaoxing/quiz-outcome.mjs');
+for(const code of ['editor-unavailable','upload-failed','upload-not-ready','send-failed','exception'])assert.ok(AI_BLOCK_CODES.has(code),'本地网页操作失败必须立即停批并保留原始错误，不能继续冒充 AI 限流');
 const {loadState,mutateState}=await import('../../src/state.mjs');
 const {bus}=await import('../../src/logbus.mjs');
 mutateState(s=>{s.settings={maxRetries:1};});

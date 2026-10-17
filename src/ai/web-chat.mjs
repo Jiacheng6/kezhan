@@ -47,9 +47,55 @@ function webBlock(state,provider) {
   if(!state.loggedIn)return {ok:false,errorCode:'not-logged-in',error:`${provider.label}未登录或页面未就绪，请打开答题网页并登录`};
   return null;
 }
+// Hidden Electron views can expose a DOM editor while the automation selector
+// waits for its renderer. Recover only text entry, never repeat an AI send.
+export async function writeWebPrompt(page,provider,prompt,{shouldStop}={}) {
+  const ui=WEB_UI[provider.id];
+  throwIfStopped(shouldStop);
+  const initial=await webChatState(page,provider);
+  if(initial.editorText&&initial.editorText!==prompt)throw new Error('输入框已有其他草稿，未覆盖');
+  if(initial.editorText===prompt)return;
+  try {
+    await page.locator(ui.composer).filter({visible:true}).first().locator(ui.editor).filter({visible:true}).first().fill(prompt,{timeout:3000});
+  } catch(error) {
+    throwIfStopped(shouldStop);
+    if(!/timeout/i.test(error.message))throw error;
+    const session=await page.context().newCDPSession(page);
+    let focused=false;
+    try {
+      await session.send('Page.setWebLifecycleState',{state:'active'});
+      await session.send('Emulation.setFocusEmulationEnabled',{enabled:true});focused=true;
+      const status=await page.evaluate(({ui,prompt})=>{
+        const visible=e=>!!e.getClientRects().length;
+        const composer=[...document.querySelectorAll(ui.composer)].find(visible);
+        const editors=[...(composer?.querySelectorAll(ui.editor)||[])].filter(visible);
+        if(editors.length!==1)return 'missing';
+        const editor=editors[0],text=(editor.value??editor.innerText??'').trim();
+        if(text===prompt)return 'ready';
+        if(text)return 'draft';
+        if(editor.disabled||editor.readOnly||editor.getAttribute('aria-disabled')==='true')return 'disabled';
+        editor.focus();
+        if(document.activeElement!==editor)return 'unfocused';
+        return 'empty';
+      },{ui,prompt});
+      if(status==='empty') {
+        throwIfStopped(shouldStop);
+        await session.send('Input.insertText',{text:prompt});
+      } else if(status!=='ready')throw new Error(`输入框未能安全恢复（${status}），未覆盖草稿`);
+      log(`    ${provider.label}输入区已恢复，正在核对题干`, 'info');
+    }finally{
+      if(focused)await waitForRead(()=>session.send('Emulation.setFocusEmulationEnabled',{enabled:false}),{timeoutMs:1000}).catch(()=>{});
+      await waitForRead(()=>session.detach(),{timeoutMs:1000}).catch(()=>{});
+    }
+  }
+  throwIfStopped(shouldStop);
+  const state=await webChatState(page,provider);
+  if(state.editorText!==prompt.trim())throw new Error('题干写入后回读不一致，已停止上传和发送');
+}
 export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=false},provider) {
   const started=Date.now(),ui=WEB_UI[provider.id],settings=loadSettings().ai||{};
   const read=operation=>waitForRead(operation,{shouldStop,timeoutMs:10000,message:`${provider.label}页面读取超时`});
+  let stage='page',sent=false;
   try{
     throwIfStopped(shouldStop);
     let state=await read(()=>webChatState(page,provider)),blocked=webBlock(state,provider);if(blocked)return blocked;
@@ -57,13 +103,14 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
     if(state.editorText&&state.editorText!==prompt)return {ok:false,errorCode:'draft-not-empty',error:`${provider.label}输入框已有草稿，请先处理，避免覆盖你的内容`};
     if(!fs.existsSync(imagePath))return {ok:false,errorCode:'image-missing',error:'题目图片不存在'};
     if(freshChat){await page.goto(provider.url,{waitUntil:'domcontentloaded',timeout:45000});state=await read(()=>webChatState(page,provider));blocked=webBlock(state,provider);if(blocked)return blocked;}
-    const editor=page.locator(ui.editor).filter({visible:true}).first();
     if(state.editorText&&state.editorText!==prompt)return {ok:false,errorCode:'draft-not-empty',error:`${provider.label}输入框已有草稿，请先处理，避免覆盖你的内容`};
-    await editor.fill(prompt,{timeout:10000});
-    const existing=await read(()=>page.evaluate(()=>[...document.querySelectorAll('input[type="file"]')].map((e,i)=>({i,accept:e.accept,selected:e.files.length,testid:e.getAttribute('data-testid')}))));
+    const composer=page.locator(ui.composer).filter({visible:true}).first();
+    const existing=await read(()=>composer.locator('input[type="file"]').evaluateAll(inputs=>inputs.map((e,i)=>({i,accept:e.accept,selected:e.files.length,testid:e.getAttribute('data-testid')}))));
     const input=existing.find(e=>e.testid==='upload-file-input')||existing.find(e=>/image|\.png/i.test(e.accept))||existing.find(e=>!e.accept);
     if(existing.some(e=>e.selected))return {ok:false,errorCode:'draft-attachment',error:`${provider.label}输入区已有附件，请先处理原草稿，避免混入其他题目`};
-    if(input)await page.locator('input[type="file"]').nth(input.i).setInputFiles(imagePath,{timeout:15000});
+    stage='editor';await writeWebPrompt(page,provider,prompt,{shouldStop});
+    stage='upload';
+    if(input)await composer.locator('input[type="file"]').nth(input.i).setInputFiles(imagePath,{timeout:15000});
     else {
       const chooser=page.waitForEvent('filechooser',{timeout:10000});
       try {await page.locator(ui.upload).first().click({timeout:8000});await (await chooser).setFiles(imagePath,{timeout:15000});}
@@ -94,7 +141,9 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
     }
     if(!ready)return {ok:false,errorCode:'upload-not-ready',error:`${provider.label}未确认图片上传完成，已停止发送，避免发出无图题目`};
     const baseline=await read(()=>webChatState(page,provider));
+    stage='send';
     throwIfStopped(shouldStop);await page.locator(ui.send).filter({visible:true}).last().click({timeout:10000});
+    sent=true;stage='answer';
     log(`    ${provider.label}已发送图片题，等待回答`, 'info');
     let last='',stable=0,lastProgress=Date.now(),sawNew=false;
     const timeout=Math.max(60000,Number(settings.answerTimeoutMs)||240000),stuck=Math.max(15000,Number(settings.answerStuckMs)||60000);
@@ -109,5 +158,10 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
       if(Date.now()-lastProgress>stuck)return {ok:false,errorCode:'stuck-receiving',error:`${provider.label}长时间没有新内容，未使用未完成的回答`,waitedMs:Date.now()-started};
     }
     return {ok:false,errorCode:'timeout-empty',error:`${provider.label}回答等待超时，未使用历史或未完成的回答`};
-  }catch(error){if(error.code==='STOPPED')throw error;return {ok:false,errorCode:'exception',error:`${provider.label}网页操作失败：${error.message}`};}
+  }catch(error){
+    if(error.code==='STOPPED')throw error;
+    const code=({editor:'editor-unavailable',upload:'upload-failed',send:'send-failed'})[stage]||'exception';
+    const label=({editor:'填写输入框失败',upload:'图片上传失败',send:'点击发送失败',answer:'回答读取失败',page:'页面读取失败'})[stage];
+    return {ok:false,errorCode:code,sent,error:`${provider.label}${label}${sent?'':'（尚未确认发送）'}：${error.message}`};
+  }
 }

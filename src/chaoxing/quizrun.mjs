@@ -88,7 +88,10 @@ async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, sh
   throwIfStopped(shouldStop);
 
   if (ai.ok) reportSuccess();
-  else reportFailure({ errorCode: ai.errorCode, error: ai.error });
+  else {
+    reportFailure({ errorCode: ai.errorCode, error: ai.error });
+    log(`        AI请求失败（${ai.errorCode || 'unknown'}）：${ai.error || '无错误详情'}`, 'error');
+  }
 
   const parsed = parseAnswer(ai.ok ? ai.answer : '', question);
   const validation = validateBeforeSubmit(parsed, question);

@@ -30,6 +30,7 @@ assert.ok(fs.existsSync(path.join(dist, 'latest.yml')), '缺少在线更新清�
 assert.equal(fs.existsSync(path.join(app, 'node_modules', 'electron-builder')), false);
 assert.equal(fs.existsSync(path.join(app, 'desktop', 'App.cs')), false);
 const pkg = JSON.parse(fs.readFileSync(path.join(app, 'package.json'), 'utf8'));
+assert.equal(fs.readFileSync(path.join(app, 'src/ai/web-chat.mjs')).equals(fs.readFileSync(path.join(ROOT, 'src/ai/web-chat.mjs'))), true, '发布包必须包含本次 AI 网页输入恢复修复');
 assert.equal(pkg.version, JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version);
 assert.equal(pkg.main, 'desktop/main.cjs');
 const archive = path.join(app, 'src/ui/library/archive');

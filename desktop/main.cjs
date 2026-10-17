@@ -236,6 +236,11 @@ else {
     updates = createUpdates({ app, dataDir, testMode,
       onStatus: (status) => {
         if (!mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:update-status', status);
+        if (status.phase === 'current') {
+          for (const item of notifications.snapshot().items) {
+            if (!item.read && ['update-available', 'update-ready'].includes(item.kind)) notifications.read(item.id);
+          }
+        }
         if (status.phase !== previousUpdatePhase) {
           previousUpdatePhase = status.phase;
           const kind = ({available:'update-available',ready:'update-ready',error:'update-error'})[status.phase];
