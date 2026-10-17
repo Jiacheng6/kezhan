@@ -1464,15 +1464,39 @@ function renderReview(data) {
   $('#reviewSource').textContent = '已加载';
   const s = data.stats || {};
   const kept = data.keptPages || [];
+  const openWorkPages = kept.filter(record => record.info?.type !== 'video-quiz' && !record.closed && record.submittable).length;
+  const videoPageCount = kept.filter(record => record.info?.type === 'video-quiz').length;
   sum.innerHTML =
     `共 <b>${s.total || 0}</b> 题 · 待确认 <b>${s.pending || 0}</b> · 已填入 <b>${s.filled || 0}</b> · ` +
     `已提交 <b>${s.submitted || 0}</b> · 已丢弃 <b>${s.discarded || 0}</b>` +
-    `<br><span class="muted">作业页已打开 ${kept.filter(record=>!record.closed&&record.submittable).length} 个；页面关闭后可重新打开，恢复已保存的答案。</span>`;
+    `<br><span class="muted">作业页已打开 ${openWorkPages} 个，可恢复已保存的答案；保留的视频弹窗记录 ${videoPageCount} 条（需在学习通页面手动作答）。</span>`;
 
   const items = data.items || [];
   bodyEl.innerHTML = '';
   if (!items.length) {
-    bodyEl.innerHTML = '<p class="placeholder">队列为空。</p>';
+    const videoPages = kept.filter(record => record.info?.type === 'video-quiz');
+    if (!videoPages.length) {
+      bodyEl.innerHTML = '<p class="placeholder">待审答案队列为空。</p>';
+      return;
+    }
+    bodyEl.appendChild(el('p', 'placeholder', '待审答案队列为空。视频弹窗题不会进入此队列；请切换到保留的学习通页面，在视频弹窗中手动作答。'));
+    const list = el('div', 'review-kept-pages');
+    for (const record of videoPages) {
+      const info = record.info || {};
+      const row = el('article', 'reviewgroup');
+      const title = [info.course, info.secNo, info.sectionName || info.name].filter(Boolean).join(' · ') || '视频弹窗题';
+      row.appendChild(el('strong', null, title));
+      row.appendChild(el('p', 'muted', record.closed ? '弹窗页当前已关闭；请重新进入该视频任务。' : '弹窗页仍保持打开；请在学习通页面中手动作答。'));
+      if (info.reason) row.appendChild(el('p', 'muted', info.reason));
+      const viewPages = $('#viewWebPages');
+      if (!record.closed && viewPages && !viewPages.hidden) {
+        const open = el('button', 'ghost', '查看保留的学习通页面');
+        open.addEventListener('click', () => viewPages.click());
+        row.appendChild(open);
+      }
+      list.appendChild(row);
+    }
+    bodyEl.appendChild(list);
     return;
   }
 

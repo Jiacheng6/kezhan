@@ -372,7 +372,8 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent,
   const parsed = parseAnswer(ai.ok ? ai.answer : '', q);
   const validation = validateBeforeSubmit(parsed, q);
   log(
-    `        AI → ${parsed.letters.join('') || '(无)'} ${confidenceLabel(parsed.confidence)} ${parsed.reason}`,
+    `        AI → ${parsed.letters.join('') || '(无)'} ${confidenceLabel(parsed.confidence)} ${parsed.reason}` +
+      (ai.ok ? `；已收到 ${String(ai.answer || '').trim().length} 字回答` : `；未收到回答（${ai.errorCode || 'unknown'}：${ai.error || '无错误详情'}）`),
     parsed.confidence === 'high' ? 'ok' : 'warn',
   );
 

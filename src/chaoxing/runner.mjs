@@ -900,7 +900,7 @@ export async function runVideoTask({ ctx, task, personId, onProgress, shouldStop
           type: 'video-quiz',
           reason: result.error,
         });
-        log('    页面保持打开：弹窗题留给你手动作答（可到「待审队列」查看）', 'warn');
+        log('    页面保持打开：请在学习通视频弹窗中手动作答；处理记录见「需要你处理」，此题不在「待审答案」队列', 'warn');
       } catch {
         /* 登记失败不影响结果 */
       }

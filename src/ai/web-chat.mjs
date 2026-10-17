@@ -94,6 +94,7 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
     if(!ready)return {ok:false,errorCode:'upload-not-ready',error:`${provider.label}未确认图片上传完成，已停止发送，避免发出无图题目`};
     const baseline=await read(()=>webChatState(page,provider));
     throwIfStopped(shouldStop);await page.locator(ui.send).filter({visible:true}).last().click({timeout:10000});
+    log(`    ${provider.label}已发送图片题，等待回答`, 'info');
     let last='',stable=0,lastProgress=Date.now(),sawNew=false;
     const timeout=Math.max(60000,Number(settings.answerTimeoutMs)||240000),stuck=Math.max(15000,Number(settings.answerStuckMs)||60000);
     while(Date.now()-started<timeout){

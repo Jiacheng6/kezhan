@@ -557,7 +557,9 @@ export async function askImage({ page, imagePath, prompt = DEFAULT_PROMPT, fresh
           const sent = await send(page);
           if (!sent.ok) {
             lastFail = { errorCode: 'send-failed', error: `发送失败：${sent.error}` };
+            log(`    千问图片题发送失败：${sent.error}`, 'warn');
           } else {
+            log('    千问已发送图片题，等待回答', 'info');
             // 等回答时输出心跳 + 中途检测验证弹窗
             let lastTick = 0;
             let lastVerifyCheck = 0;
