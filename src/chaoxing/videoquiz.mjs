@@ -45,6 +45,7 @@ import { parseAnswer, validateBeforeSubmit, buildArchive, confidenceLabel } from
 import { waitTurn, markAsked, reportSuccess, reportFailure } from '../ai/throttle.mjs';
 import { throwIfStopped } from '../control.mjs';
 import { shootQuestion } from './quiz.mjs';
+import { AI_BLOCK_CODES } from './quiz-outcome.mjs';
 
 /** 弹窗根选择器（视频 iframe 内） */
 export const QUIZ_SELECTOR = '.ans-videoquiz';
@@ -391,8 +392,8 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent,
     validation,
   };
 
-  if (['verification-required','rate-limited','not-logged-in','draft-not-empty','draft-attachment','already-generating','wrong-ai-page'].includes(ai.errorCode)) {
-    archiveAnswer({ ...base, action: 'halt', note: 'AI触发风控验证' });
+  if (AI_BLOCK_CODES.has(ai.errorCode)) {
+    archiveAnswer({ ...base, action: 'halt', note: ai.error || 'AI 请求未能确认' });
     return { ok: false, needsHuman: true, aiErrorCode:ai.errorCode, error: ai.error, question: q, imagePath };
   }
 

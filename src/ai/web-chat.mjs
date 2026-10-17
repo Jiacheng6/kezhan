@@ -1,6 +1,7 @@
 // Visible web UI adapters. Login/verification are always performed by the user.
 import fs from 'node:fs';
 import path from 'node:path';
+import {randomUUID} from 'node:crypto';
 import {interruptibleSleep,throwIfStopped,waitForRead} from '../control.mjs';
 import {loadSettings} from '../config.mjs';
 import {log} from '../logbus.mjs';
@@ -36,9 +37,21 @@ export async function webChatState(page,provider) {
     // Discard nested duplicates when the site exposes both wrapper and content selectors.
     const answers=cards.filter(e=>!cards.some(other=>other!==e&&e.contains(other)));
     const last=answers.at(-1);
+    // Virtualized chat history removes older bubbles. A new answer can have
+    // both the same text and the same visible count as the previous answer.
+    const identitySymbol=Symbol.for('xxt.web-chat-dom-identities');
+    const identities=globalThis[identitySymbol] ||= {nodes:new WeakMap(),next:0,prefix:Date.now().toString(36)+Math.random().toString(36)};
+    const key=node=>{if(!node)return '';if(!identities.nodes.has(node))identities.nodes.set(node,`${identities.prefix}:${++identities.next}`);return identities.nodes.get(node);};
+    const root=node=>node?.closest('[data-testid="union_message"]')||node;
+    const users=id==='doubao'?[...document.querySelectorAll('[data-testid="send_message"]')].filter(visible):[];
+    const textUsers=users.filter(e=>(e.innerText||'').trim());
+    const user=textUsers.at(-1),imageUser=users.filter(e=>e.querySelector('img')).at(-1);
+    const answerRoot=root(last);
+    const beforeAnswer=textUsers.filter(e=>answerRoot&&(root(e).compareDocumentPosition(answerRoot)&Node.DOCUMENT_POSITION_FOLLOWING)).at(-1);
     const generating=last?.getAttribute('data-streaming')==='true'||!![...document.querySelectorAll(ui.stop)].find(visible)||buttons.some(e=>/^(停止生成|停止回答|Stop generating)$/i.test((e.innerText||e.getAttribute('aria-label')||'').trim()))
       ||(id==='deepseek'&&!!document.querySelector('.ds-button--primary.ds-button--circle svg rect'));
-    return {loggedIn:!!editor&&!signedOut,verification,limited,editor:!!editor,editorText:(editor?.value??editor?.innerText??'').trim(),count:answers.length,text:last?.innerText?.trim()||'',generating};
+    return {loggedIn:!!editor&&!signedOut,verification,limited,editor:!!editor,editorText:(editor?.value??editor?.innerText??'').trim(),count:answers.length,text:last?.innerText?.trim()||'',generating,
+      answerKey:key(answerRoot),hasUserTurns:users.length>0,userKey:key(root(user)),userText:(user?.innerText||'').trim(),imageKey:key(root(imageUser)),replyUserKey:key(root(beforeAnswer))};
   },{ui:WEB_UI[provider.id],id:provider.id});
 }
 function webBlock(state,provider) {
@@ -49,6 +62,19 @@ function webBlock(state,provider) {
 }
 const normalizedPrompt=text=>String(text||'').replace(/[\u200b\ufeff]/g,'').replace(/\s+/g,' ').trim();
 const samePrompt=(left,right)=>normalizedPrompt(left)===normalizedPrompt(right);
+export function isCurrentWebAnswer(state,baseline,prompt) {
+  const newNode=!!state.answerKey&&state.answerKey!==baseline.answerKey;
+  // Doubao recycles nodes and decorates prompts with spacing and timestamps.
+  // The unique request tag and reply order survive those display changes.
+  const marker=/本次提问标记：([0-9a-f-]{36})。标记仅用于区分本次提问，答案中不要重复标记。$/.exec(prompt)?.[1];
+  if(marker)return !!state.hasUserTurns&&!!state.userKey&&state.replyUserKey===state.userKey&&state.userText.includes(marker);
+  if(state.hasUserTurns||baseline.hasUserTurns) {
+    return newNode&&!!state.userKey&&state.userKey!==baseline.userKey
+      &&!!state.imageKey&&state.imageKey!==baseline.imageKey
+      &&state.replyUserKey===state.userKey&&samePrompt(state.userText,prompt);
+  }
+  return newNode||state.count>baseline.count||(state.text!==baseline.text&&state.count>0);
+}
 function hasComposerAttachment(page,provider) {
   return page.evaluate(ui=>{
     const visible=e=>!!e.getClientRects().length;
@@ -114,6 +140,9 @@ export async function writeWebPrompt(page,provider,prompt,{shouldStop}={}) {
   if(!samePrompt(state.editorText,prompt))throw new Error('题干写入后回读不一致，已停止上传和发送');
 }
 export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=false},provider) {
+  // A unique user-turn marker also rejects remounted historical bubbles when
+  // the virtual list recycles every DOM node. The model need not echo it.
+  if(provider.id==='doubao')prompt+=`\n\n本次提问标记：${randomUUID()}。标记仅用于区分本次提问，答案中不要重复标记。`;
   const started=Date.now(),ui=WEB_UI[provider.id],settings=loadSettings().ai||{};
   const read=operation=>waitForRead(operation,{shouldStop,timeoutMs:10000,message:`${provider.label}页面读取超时`});
   let stage='page',sent=false;
@@ -176,19 +205,19 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
     throwIfStopped(shouldStop);await page.locator(ui.send).filter({visible:true}).last().click({timeout:10000});
     sent=true;stage='answer';
     log(`    ${provider.label}已发送图片题，等待回答`, 'info');
-    let last='',stable=0,lastProgress=Date.now(),sawNew=false;
+    let last='',stable=0,lastProgress=Date.now();
     const timeout=Math.max(60000,Number(settings.answerTimeoutMs)||240000),stuck=Math.max(15000,Number(settings.answerStuckMs)||60000);
     while(Date.now()-started<timeout){
       await interruptibleSleep(1200,shouldStop);
       state=await read(()=>webChatState(page,provider));blocked=webBlock(state,provider);if(blocked)return blocked;
-      sawNew ||= state.count>baseline.count||(state.text!==baseline.text&&state.count>0);
-      const text=sawNew?state.text:'';
+      const current=isCurrentWebAnswer(state,baseline,prompt);
+      const text=current?state.text:'';
       if(text!==last){lastProgress=Date.now();stable=0;}else if(text)stable++;
       last=text;
-      if(sawNew&&text&&stable>=3&&!state.generating)return {ok:true,answer:text,provider:provider.id,waitedMs:Date.now()-started};
-      if(Date.now()-lastProgress>stuck)return {ok:false,errorCode:'stuck-receiving',error:`${provider.label}长时间没有新内容，未使用未完成的回答`,waitedMs:Date.now()-started};
+      if(current&&text&&stable>=3&&!state.generating)return {ok:true,answer:text,provider:provider.id,waitedMs:Date.now()-started};
+      if(Date.now()-lastProgress>stuck)return {ok:false,errorCode:'answer-not-confirmed',error:`${provider.label}本次回答未能确认，已保留本题；请打开软件内 AI 网页核对，不代表平台限流`,waitedMs:Date.now()-started};
     }
-    return {ok:false,errorCode:'timeout-empty',error:`${provider.label}回答等待超时，未使用历史或未完成的回答`};
+    return {ok:false,errorCode:'answer-not-confirmed',error:`${provider.label}回答等待超时，已保留本题；未使用历史或未完成的回答`};
   }catch(error){
     if(error.code==='STOPPED')throw error;
     const code=({editor:'editor-unavailable',upload:'upload-failed',send:'send-failed'})[stage]||'exception';

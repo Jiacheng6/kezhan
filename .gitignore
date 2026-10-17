@@ -163,3 +163,5 @@ tools/test/*
 
 !tools/test/test-question-prompt.mjs
 !tools/test/test-embedded-capture.cjs
+!tools/test/test-web-answer-identity.mjs
+!tools/test/test-web-virtual-turns.mjs

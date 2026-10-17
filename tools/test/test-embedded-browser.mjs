@@ -31,8 +31,8 @@ let app, browser;
 const nativeCapture = async (page, rect) => {
   const session=await page.context().newCDPSession(page);let targetId;
   try{targetId=(await session.send('Target.getTargetInfo')).targetInfo.targetId}finally{await session.detach()}
-  return app.evaluate(({BrowserWindow,webContents},{targetId,rect})=>{
-    const require=process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json');
+  return app.evaluate(({BrowserWindow,webContents,app},{targetId,rect})=>{
+    const require=process.getBuiltinModule('module').createRequire(app.getAppPath()+'/package.json');
     const {EmbeddedBrowser}=require('./desktop/embedded-browser.cjs');
     const contents=webContents.fromDevToolsTargetId(targetId);
     const view=BrowserWindow.getAllWindows().flatMap(window=>window.contentView.children).find(view=>view.webContents===contents);
@@ -49,7 +49,7 @@ async function poll(read, accept, timeout = 20000) {
   throw new Error('等待测试状态超时');
 }
 async function launch() {
-  app = await electron.launch({ executablePath: path.join(root, 'node_modules/electron/dist/electron.exe'), args: [root, '--embedded-test'],
+  app = await electron.launch({ executablePath: process.env.XXT_TEST_EXECUTABLE || path.join(root, 'node_modules/electron/dist/electron.exe'), args: process.env.XXT_TEST_EXECUTABLE ? ['--embedded-test'] : [root, '--embedded-test'],
     env: { ...process.env, XXT_TEST_DATA_DIR: data, XXT_EMBEDDED_TEST_HOME: home }, timeout: 30000 });
   const page = await app.firstWindow(); page.setDefaultTimeout(15000); page.on('pageerror', e => errors.push(e.message));
   await page.waitForURL('http://127.0.0.1:*/');
@@ -64,10 +64,10 @@ async function exit() {
   if (app) { await requestTestExit(app); await app.close().catch(() => {}); app = null; }
 }
 async function capture(file) {
-  await app.evaluate(async ({ BrowserWindow }, file) => {
+  await app.evaluate(async ({ BrowserWindow,app }, file) => {
     await new Promise(resolve => setTimeout(resolve, 120));
     const win = BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);
-    const { desktopCapturer } = process.getBuiltinModule('module').createRequire(process.cwd() + '/package.json')('electron');
+    const { desktopCapturer } = process.getBuiltinModule('module').createRequire(app.getAppPath() + '/package.json')('electron');
     const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 1320, height: 940 } });
     const source = sources.find(s => s.id === win.getMediaSourceId());
     if (!source || source.thumbnail.isEmpty()) throw new Error('无法截取真实测试窗口');
@@ -84,7 +84,7 @@ function aiHTML(id) {
   function ready(){composer.hidden=false;login.remove()}if(document.cookie.includes('fixture_ai=ready'))ready();else login.onclick=()=>{document.cookie='fixture_ai=ready; path=/; SameSite=Lax';ready()};
   input.onchange=()=>{attachment.innerHTML='<img alt="'+input.files[0].name+'" src="'+URL.createObjectURL(input.files[0])+'">'};
   editor.onpaste=()=>{attachment.innerHTML='<img src="https://workspace-zb-cdn.qianwen.com/fixture.png">'};
-  window.sent=0;document.querySelector('#composer button').onclick=()=>{window.sent++;editor.${q || d ? 'innerText' : 'value'}='';input.value='';attachment.innerHTML='';document.querySelector('#answers').insertAdjacentHTML('beforeend',${JSON.stringify(answer)});if(window.fixtureAnswer)document.querySelector('#answers').lastElementChild.textContent=window.fixtureAnswer};</script>`;
+  window.sent=0;document.querySelector('#composer button').onclick=()=>{window.sent++;if(${d}){const user=document.createElement('div');user.dataset.testid='send_message';user.textContent=editor.innerText;document.querySelector('#answers').append(user)}editor.${q || d ? 'innerText' : 'value'}='';input.value='';attachment.innerHTML='';document.querySelector('#answers').insertAdjacentHTML('beforeend',${JSON.stringify(answer)});if(window.fixtureAnswer)document.querySelector('#answers').lastElementChild.textContent=window.fixtureAnswer};</script>`;
 }
 try {
   let page = await launch();
@@ -93,8 +93,8 @@ try {
     assert.equal(r.ok, true, JSON.stringify(r)); return r.result;
   };
   const status = await page.evaluate(() => fetch('/api/status').then(r => r.json()));
-  const metadata=await app.evaluate(async()=>{
-    const {EmbeddedBrowser}=process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('./desktop/embedded-browser.cjs');
+  const metadata=await app.evaluate(async({app})=>{
+    const {EmbeddedBrowser}=process.getBuiltinModule('module').createRequire(app.getAppPath()+'/package.json')('./desktop/embedded-browser.cjs');
     const record={targetId:'owned-task'},fake={views:new Map([[1,record]]),publish(){}};
     const request=params=>EmbeddedBrowser.prototype.request.call(fake,params);
     await request({method:'annotate',targetId:'owned-task',role:'video',busy:true});const started={role:record.role,busy:record.busy};
@@ -159,8 +159,8 @@ try {
   // Native notification click must select the existing AI view, preserving its
   // captcha/conversation; no new AI page or reload is allowed.
   await fixtureQAI.evaluate(() => window.fixtureKeepAI = true);
-  await app.evaluate(() => {
-    const require = process.getBuiltinModule('module').createRequire(process.cwd() + '/package.json');
+  await app.evaluate(({app}) => {
+    const require = process.getBuiltinModule('module').createRequire(app.getAppPath() + '/package.json');
     require('./desktop/main.cjs').notificationCenter.push({kind:'ai-verification',key:'fixture-ai-notice'});
   });
   await page.locator('#notificationPrompt[open]').waitFor();
@@ -189,8 +189,8 @@ try {
   assert.ok(await page.locator('#webPagesList .wp-page').count() >= 4);
   const initialPages=await page.evaluate(()=>window.desktopApp.webState());
   const learningId=initialPages.tabs.find(tab=>tab.url.startsWith(home)).id;
-  await app.evaluate(()=>{
-    const {EmbeddedBrowser}=process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('./desktop/embedded-browser.cjs');
+  await app.evaluate(({app})=>{
+    const {EmbeddedBrowser}=process.getBuiltinModule('module').createRequire(app.getAppPath()+'/package.json')('./desktop/embedded-browser.cjs');
     const original=EmbeddedBrowser.prototype.command;
     EmbeddedBrowser.prototype.command=function(command){
       if(command.action==='fixture-annotate')return this.request({method:'annotate',targetId:command.targetId,role:command.role,busy:command.busy});

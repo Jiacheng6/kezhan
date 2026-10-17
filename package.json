@@ -1,6 +1,6 @@
 {
   "name": "xuexitong-auto",
-  "version": "0.5.8",
+  "version": "0.5.9",
   "private": true,
   "type": "module",
   "description": "学习通桌面助手：软件内网页、课程管理与网页版 AI 辅助",
@@ -30,7 +30,7 @@
   },
   "build": {
     "releaseInfo": {
-      "releaseNotesFile": "docs/releases/0.5.8.md"
+      "releaseNotesFile": "docs/releases/0.5.9.md"
     },
     "publish": [
       {
