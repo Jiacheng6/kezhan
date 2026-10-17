@@ -22,7 +22,7 @@ try{
   const markup=`<meta charset="utf-8"><div id="answers">${answer}</div><div data-testid="chat_input" class="_77cefa5">${editor}<input type="file" accept="image/png"><div id="attachment"></div>${send}</div><script>
   const input=document.querySelector('input'),send=document.querySelector('button,[role=button]');
   window.sent=0;input.onchange=()=>{document.querySelector('#attachment').innerHTML='<img alt="'+input.files[0].name+'" src="'+URL.createObjectURL(input.files[0])+'">';};
-  send.onclick=()=>{window.sent++;document.querySelector('${id==='doubao'?'.tiptap':'textarea'}').${id==='doubao'?'innerText':'value'}='';input.value='';document.querySelector('#attachment').innerHTML='';const response=document.createElement('div');response.innerHTML=${JSON.stringify(answer.replace('OLD ANSWER','红色'))};document.querySelector('#answers').append(response);};</script>`;
+  send.onclick=()=>{window.sent++;document.querySelector('${id==='doubao'?'.tiptap':'textarea'}').${id==='doubao'?'innerText':'value'}='';${id==='doubao'?'':'input.value="";'}document.querySelector('#attachment').innerHTML='';const response=document.createElement('div');response.innerHTML=${JSON.stringify(answer.replace('OLD ANSWER','红色'))};document.querySelector('#answers').append(response);};</script>`;
   await page.route('**/*',route=>route.fulfill({contentType:'text/html',body:markup}));await page.goto(provider.url);
   assert.equal((await checkLogin(page)).loggedIn,true);
   assert.equal(await ensureProviderPage(context,provider),page,'reuse the selected provider page');
@@ -32,9 +32,20 @@ try{
    assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.answer,'红色');
   }
   assert.equal(await page.evaluate(()=>window.sent),2,'same answers in consecutive turns must still be tied to new response nodes');
+  if(id==='doubao')assert.equal(await page.locator('input[type=file]').evaluate(input=>input.files.length),1,'fixture must retain the sent FileList');
+  await page.locator('input[type=file]').evaluate(input=>{input.value='';});
+  await page.locator('input[type=file]').setInputFiles(imagePath);
+  await page.locator('#attachment img').waitFor({state:'visible'});
+  await page.locator('input[type=file]').evaluate(input=>{input.value='';});
+  const attachmentDraft=await askImage({page,imagePath,prompt:'DO NOT REPLACE DRAFT IMAGE',freshChat:false});
+  assert.equal(attachmentDraft.errorCode,'draft-attachment');assert.equal(await page.evaluate(()=>window.sent),2);
+  await page.evaluate(()=>document.querySelector('#attachment').innerHTML='');
   // Real browser input events through CDP, after a selector timeout. No AI send
   // is retried and a draft typed while recovering must stay untouched.
   const editorSelector=id==='doubao'?'.tiptap':'textarea';
+  await writeWebPrompt(page,provider,'FIRST\n\nSECOND');
+  assert.match((await webChatState(page,provider)).editorText,/FIRST\s+SECOND/);
+  await page.locator(editorSelector).fill('');
   await page.evaluate(selector=>document.querySelector(selector).addEventListener('input',()=>window.lastInput=document.querySelector(selector).value??document.querySelector(selector).innerText),editorSelector);
   let beforeTimeout=async()=>{};
   const timedOut={filter(){return this},first(){return this},locator(){return this},async fill(){await beforeTimeout();throw Error('locator.fill: Timeout 3000ms exceeded')}};
@@ -64,6 +75,21 @@ try{
   await page.evaluate(()=>{document.querySelector('[role=dialog]').remove();const e=document.createElement('div');e.setAttribute('role','alert');e.textContent='请求频繁，请稍后再试';document.body.append(e);});
   assert.equal((await webChatState(page,provider)).limited,true);
   const limited=await askImage({page,imagePath,prompt:'another question',freshChat:false});assert.equal(limited.errorCode,'rate-limited');assert.equal(await page.evaluate(()=>window.sent),2);
+  // Fresh real clients can mount the hidden upload input only after typing.
+  // Remove it again after each send to exercise the first and second questions.
+  await page.setContent(`<meta charset="utf-8"><div id="answers"></div><div data-testid="chat_input" class="_77cefa5">${editor}<div id="attachment"></div>${send}</div><script>(function(){
+    const composer=document.querySelector('[data-testid=chat_input]'),editor=composer.querySelector('[contenteditable],textarea'),send=composer.querySelector('button,[role=button]');
+    window.sent=0;editor.addEventListener('input',()=>{if(composer.querySelector('input'))return;const input=document.createElement('input');input.type='file';input.accept='image/png';input.hidden=true;input.dataset.testid='upload-file-input';composer.append(input);input.onchange=()=>{document.querySelector('#attachment').innerHTML='<img alt="'+input.files[0].name+'" src="'+URL.createObjectURL(input.files[0])+'">'}});
+    send.onclick=()=>{if(!composer.querySelector('input')?.files.length)return;window.sent++;editor.${id==='doubao'?'innerText':'value'}='';composer.querySelector('input').remove();document.querySelector('#attachment').innerHTML='';document.querySelector('#answers').insertAdjacentHTML('beforeend',${JSON.stringify(answer.replace('OLD ANSWER','红色'))})};
+  })();</script>`);
+  assert.equal(await page.locator('[data-testid=chat_input] input').count(),0);
+  for(let round=0;round<2;round++){
+   const lazy=await askImage({page,imagePath,prompt:'lazy upload fixture',freshChat:false});
+   assert.equal(lazy.ok,true,JSON.stringify(lazy));assert.equal(lazy.answer,'红色');
+   assert.equal(await page.locator('[data-testid=chat_input] input').count(),0);
+  }
+  assert.equal(await page.evaluate(()=>window.sent),2);
+  console.log(`✓ ${provider.label}：首次输入后动态挂载上传控件、连续两题重建上传控件`);
   await page.close();console.log(`✓ ${provider.label}：图片上传、真实新轮次回答、同答案多轮、草稿保护、验证与限额停止`);
  }
  const q=await context.newPage();let qMarkup='';

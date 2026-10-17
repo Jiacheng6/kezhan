@@ -30,6 +30,7 @@ import { throwIfStopped, interruptibleSleep, waitForRead } from '../control.mjs'
 import { log } from '../logbus.mjs';
 import { providerForUrl } from './providers.mjs';
 import { askWebImage, webChatState } from './web-chat.mjs';
+import { questionPrompt } from './question-prompt.mjs';
 
 const READY_IMG_HOST = 'workspace-zb-cdn.qianwen.com';
 
@@ -471,8 +472,9 @@ export async function readVerificationText(page) {
  * @param {boolean} [opts.freshChat] 是否新建对话（默认 true，避免上下文干扰）
  * @returns {Promise<{ok:boolean, answer?:string, raw?:string, error?:string, errorCode?:string, waitedMs?:number}>}
  */
-export async function askImage({ page, imagePath, prompt = DEFAULT_PROMPT, freshChat = true, shouldStop }) {
+export async function askImage({ page, imagePath, prompt = DEFAULT_PROMPT, freshChat = true, shouldStop, question }) {
   throwIfStopped(shouldStop);
+  prompt = questionPrompt(prompt, question);
   if(!page)return {ok:false,errorCode:'not-logged-in',error:'没有可用的 AI 网页，请先打开所选平台并登录'};
   const provider=providerForUrl(page.url?.());
   if(typeof page.url==='function'&&!provider)return {ok:false,errorCode:'wrong-ai-page',error:'答题网页不属于所选官方 AI 平台，已停止发送'};

@@ -53,7 +53,7 @@ async function launch() {
     env: { ...process.env, XXT_TEST_DATA_DIR: data, XXT_EMBEDDED_TEST_HOME: home }, timeout: 30000 });
   const page = await app.firstWindow(); page.setDefaultTimeout(15000); page.on('pageerror', e => errors.push(e.message));
   await page.waitForURL('http://127.0.0.1:*/');
-  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setContentSize(1320, 900); w.showInactive(); });
+  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setContentSize(1320, 900); w.setTitle('学习通助手 · 自动回归（无需登录）'); w.showInactive(); });
   await poll(() => page.evaluate(() => fetch('/api/status').then(r => r.json())), s => s.ready);
   const port = fs.readFileSync(path.join(data, 'DevToolsActivePort'), 'utf8').split('\n')[0];
   browser = await chromium.connectOverCDP('http://127.0.0.1:' + port);

@@ -47,14 +47,34 @@ function webBlock(state,provider) {
   if(!state.loggedIn)return {ok:false,errorCode:'not-logged-in',error:`${provider.label}未登录或页面未就绪，请打开答题网页并登录`};
   return null;
 }
+const normalizedPrompt=text=>String(text||'').replace(/[\u200b\ufeff]/g,'').replace(/\s+/g,' ').trim();
+const samePrompt=(left,right)=>normalizedPrompt(left)===normalizedPrompt(right);
+function hasComposerAttachment(page,provider) {
+  return page.evaluate(ui=>{
+    const visible=e=>!!e.getClientRects().length;
+    const composer=[...document.querySelectorAll(ui.composer)].find(visible);
+    if(!composer)return false;
+    const names=[...composer.querySelectorAll('input[type="file"]')].flatMap(input=>[...input.files].map(file=>file.name));
+    const text=composer.innerText||'';
+    // A file input may keep its FileList after a successful send. Only actual
+    // draft UI counts: the preview, filename chip, or visible upload progress.
+    const preview=[...composer.querySelectorAll('img')].some(image=>{
+      if(!visible(image))return false;
+      const rect=image.getBoundingClientRect();
+      return image.src.startsWith('blob:')||names.includes(image.alt)||(rect.width>=40&&rect.height>=40);
+    });
+    return preview||names.some(name=>text.includes(name))
+      ||[...composer.querySelectorAll('[aria-busy="true"],[role="progressbar"],.ds-loading,[data-testid*="attachment"]')].some(visible);
+  },WEB_UI[provider.id]);
+}
 // Hidden Electron views can expose a DOM editor while the automation selector
 // waits for its renderer. Recover only text entry, never repeat an AI send.
 export async function writeWebPrompt(page,provider,prompt,{shouldStop}={}) {
   const ui=WEB_UI[provider.id];
   throwIfStopped(shouldStop);
   const initial=await webChatState(page,provider);
-  if(initial.editorText&&initial.editorText!==prompt)throw new Error('输入框已有其他草稿，未覆盖');
-  if(initial.editorText===prompt)return;
+  if(initial.editorText&&!samePrompt(initial.editorText,prompt))throw new Error('输入框已有其他草稿，未覆盖');
+  if(samePrompt(initial.editorText,prompt))return;
   try {
     await page.locator(ui.composer).filter({visible:true}).first().locator(ui.editor).filter({visible:true}).first().fill(prompt,{timeout:3000});
   } catch(error) {
@@ -71,7 +91,8 @@ export async function writeWebPrompt(page,provider,prompt,{shouldStop}={}) {
         const editors=[...(composer?.querySelectorAll(ui.editor)||[])].filter(visible);
         if(editors.length!==1)return 'missing';
         const editor=editors[0],text=(editor.value??editor.innerText??'').trim();
-        if(text===prompt)return 'ready';
+        const normalize=value=>value.replace(/[\u200b\ufeff]/g,'').replace(/\s+/g,' ').trim();
+        if(normalize(text)===normalize(prompt))return 'ready';
         if(text)return 'draft';
         if(editor.disabled||editor.readOnly||editor.getAttribute('aria-disabled')==='true')return 'disabled';
         editor.focus();
@@ -90,7 +111,7 @@ export async function writeWebPrompt(page,provider,prompt,{shouldStop}={}) {
   }
   throwIfStopped(shouldStop);
   const state=await webChatState(page,provider);
-  if(state.editorText!==prompt.trim())throw new Error('题干写入后回读不一致，已停止上传和发送');
+  if(!samePrompt(state.editorText,prompt))throw new Error('题干写入后回读不一致，已停止上传和发送');
 }
 export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=false},provider) {
   const started=Date.now(),ui=WEB_UI[provider.id],settings=loadSettings().ai||{};
@@ -100,17 +121,27 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
     throwIfStopped(shouldStop);
     let state=await read(()=>webChatState(page,provider)),blocked=webBlock(state,provider);if(blocked)return blocked;
     if(state.generating)return {ok:false,errorCode:'already-generating',error:`${provider.label}仍在回答上一条消息，请等待结束后再开始`};
-    if(state.editorText&&state.editorText!==prompt)return {ok:false,errorCode:'draft-not-empty',error:`${provider.label}输入框已有草稿，请先处理，避免覆盖你的内容`};
+    if(state.editorText&&!samePrompt(state.editorText,prompt))return {ok:false,errorCode:'draft-not-empty',error:`${provider.label}输入框已有草稿，请先处理，避免覆盖你的内容`};
     if(!fs.existsSync(imagePath))return {ok:false,errorCode:'image-missing',error:'题目图片不存在'};
     if(freshChat){await page.goto(provider.url,{waitUntil:'domcontentloaded',timeout:45000});state=await read(()=>webChatState(page,provider));blocked=webBlock(state,provider);if(blocked)return blocked;}
-    if(state.editorText&&state.editorText!==prompt)return {ok:false,errorCode:'draft-not-empty',error:`${provider.label}输入框已有草稿，请先处理，避免覆盖你的内容`};
+    if(state.editorText&&!samePrompt(state.editorText,prompt))return {ok:false,errorCode:'draft-not-empty',error:`${provider.label}输入框已有草稿，请先处理，避免覆盖你的内容`};
     const composer=page.locator(ui.composer).filter({visible:true}).first();
-    const existing=await read(()=>composer.locator('input[type="file"]').evaluateAll(inputs=>inputs.map((e,i)=>({i,accept:e.accept,selected:e.files.length,testid:e.getAttribute('data-testid')}))));
-    const input=existing.find(e=>e.testid==='upload-file-input')||existing.find(e=>/image|\.png/i.test(e.accept))||existing.find(e=>!e.accept);
-    if(existing.some(e=>e.selected))return {ok:false,errorCode:'draft-attachment',error:`${provider.label}输入区已有附件，请先处理原草稿，避免混入其他题目`};
+    const inputs=()=>read(()=>composer.locator('input[type="file"]').evaluateAll(inputs=>inputs.map((e,i)=>({i,accept:e.accept,selected:e.files.length,testid:e.getAttribute('data-testid')}))));
+    if(await read(()=>hasComposerAttachment(page,provider)))return {ok:false,errorCode:'draft-attachment',error:`${provider.label}输入区已有附件，请先处理原草稿，避免混入其他题目`};
     stage='editor';await writeWebPrompt(page,provider,prompt,{shouldStop});
     stage='upload';
-    if(input)await composer.locator('input[type="file"]').nth(input.i).setInputFiles(imagePath,{timeout:15000});
+    // Doubao mounts its file inputs after the first focus/text update. Never use
+    // the pre-input snapshot for the upload target.
+    const existing=await inputs();
+    if(await read(()=>hasComposerAttachment(page,provider)))return {ok:false,errorCode:'draft-attachment',error:`${provider.label}输入区已有附件，请先处理原草稿，避免混入其他题目`};
+    const input=existing.find(e=>e.testid==='upload-file-input')||existing.find(e=>/image|\.png/i.test(e.accept))||existing.find(e=>!e.accept);
+    if(input){
+      const target=composer.locator('input[type="file"]').nth(input.i);
+      // No visible draft exists (checked above). Clear the stale browser value
+      // without a change event so selecting the same file triggers upload again.
+      throwIfStopped(shouldStop);await target.evaluate(input=>{input.value='';});
+      throwIfStopped(shouldStop);await target.setInputFiles(imagePath,{timeout:15000});
+    }
     else {
       const chooser=page.waitForEvent('filechooser',{timeout:10000});
       try {await page.locator(ui.upload).first().click({timeout:8000});await (await chooser).setFiles(imagePath,{timeout:15000});}

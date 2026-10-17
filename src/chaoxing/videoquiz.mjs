@@ -359,6 +359,7 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent,
 
   await waitTurn({ shouldStop });
   const ai = await askImage({
+    question: q,
     page: qianwenPage,
     imagePath,
     prompt: settings.quizPrompt,

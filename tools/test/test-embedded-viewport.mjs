@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+const {setViewBounds}=createRequire(import.meta.url)('../../desktop/embedded-browser.cjs');
+const bounds=[],emulations=[];
+const record={view:{setBounds:value=>bounds.push(value),webContents:{enableDeviceEmulation:value=>emulations.push(value)}}};
+record.viewportReady=false;
+setViewBounds(record,{x:0,y:0,width:1100,height:760});
+assert.equal(emulations.length,0,'never emulate before the first renderer document is ready');
+record.viewportReady=true;
+setViewBounds(record,{x:0,y:0,width:1100,height:760});
+assert.deepEqual(emulations[0].viewSize,{width:1100,height:760},'hidden views need a usable renderer viewport before navigation');
+assert.equal(emulations[0].screenPosition,'desktop');assert.equal(emulations[0].scale,1);
+setViewBounds(record,{x:210,y:174,width:1100,height:760});
+assert.equal(emulations.length,1,'moving a view must not reset the renderer');
+setViewBounds(record,{x:210,y:174,width:1004,height:627});
+assert.equal(bounds.length,4);assert.equal(emulations.length,2);
+assert.deepEqual(emulations[1].viewSize,{width:1004,height:627},'resizing must keep native and renderer bounds aligned');
+console.log('✓ hidden viewport initialization, desktop dimensions and resize alignment');

@@ -7,6 +7,22 @@ function webURL(url) {
   try { return ['https:', 'http:'].includes(new URL(url).protocol); } catch { return false; }
 }
 
+// On Windows an initially hidden WebContentsView can retain a 0x0 renderer
+// viewport even after its native bounds are set. Give it the same desktop
+// viewport explicitly when its first document is ready. Do not rely on a
+// second DevTools connection or briefly exposing the page to initialize it.
+function setViewBounds(record, bounds) {
+  record.view.setBounds(bounds);
+  // Electron cannot emulate a renderer before its first document is ready.
+  if (record.viewportReady === false) return;
+  const key = `${bounds.width}x${bounds.height}`;
+  if (record.viewportKey === key) return;
+  record.view.webContents.enableDeviceEmulation({ screenPosition: 'desktop',
+    screenSize: { width: bounds.width, height: bounds.height },
+    viewSize: { width: bounds.width, height: bounds.height }, deviceScaleFactor: 0, scale: 1 });
+  record.viewportKey = key;
+}
+
 // The only remote pages in the desktop app. They share an isolated persistent
 // session, never the trusted workspace's preload, cookies or desktop privileges.
 class EmbeddedBrowser {
@@ -75,9 +91,10 @@ class EmbeddedBrowser {
   async register(view) {
     const c = view.webContents;
     const id = c.id;
-    const record = { view, targetId: null, error: '' }; this.views.set(c.id, record);
+    const record = { view, targetId: null, error: '', viewportReady: false }; this.views.set(c.id, record);
     this.window.contentView.addChildView(view); view.setVisible(false);
-    view.setBounds({ x: 0, y: 0, width: 1100, height: 760 });
+    setViewBounds(record, { x: 0, y: 0, width: 1100, height: 760 });
+    c.on('dom-ready', () => { record.viewportReady = true; record.viewportKey = null; this.applyBounds(); });
     c.on('will-navigate', (event, url) => { if (!webURL(url)) event.preventDefault(); });
     c.on('will-redirect', (event, url) => { if (!webURL(url)) event.preventDefault(); });
     c.on('will-prevent-unload', event => event.preventDefault());
@@ -138,7 +155,7 @@ class EmbeddedBrowser {
     for (const [id, r] of this.views) {
       if (r.view.webContents.isDestroyed()) continue;
       // Keep inactive/hidden pages alive for tasks; only their presentation changes.
-      r.view.setBounds(bounds);
+      setViewBounds(r, bounds);
       r.view.setVisible(this.visible && !this.suspended && !this.closeSuspended && id === this.active);
     }
   }
@@ -199,4 +216,4 @@ class EmbeddedBrowser {
     this.views.clear();
   }
 }
-module.exports = { EmbeddedBrowser, webURL };
+module.exports = { EmbeddedBrowser, webURL, setViewBounds };

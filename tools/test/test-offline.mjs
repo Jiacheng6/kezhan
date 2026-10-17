@@ -33,6 +33,8 @@ if (!process.env.XXT_DATA_DIR) {
 }
 
 const suite = [
+  ['无字母选项 / 图片顺序与答案格式', 'tools/test/test-question-prompt.mjs'],
+  ['后台内置网页尺寸初始化 / 随窗口同步', 'tools/test/test-embedded-viewport.mjs'],
   ['执行范围核对 / 仅选一项', 'tools/test/test-run-scope.mjs'],
   ['系统通知 / 阻塞停批 / 待审记账', 'tools/test/test-notifications.mjs'],
   ['任务进度 / 网页入口定位', 'tools/test/test-task-progress.mjs'],

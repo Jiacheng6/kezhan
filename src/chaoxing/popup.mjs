@@ -200,6 +200,7 @@ export async function handlePopupOnce({ page, qianwenPage, onProgress }) {
     await waitTurn();
 
     const ai = await askImage({
+      question: q,
       page: qianwenPage,
       imagePath,
       prompt: settings.quizPrompt,

@@ -78,6 +78,7 @@ async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, sh
 
   const settings = loadSettings();
   const ai = await askImage({
+    question,
     page: qianwenPage,
     imagePath,
     prompt,

@@ -1,0 +1,14 @@
+import assert from'node:assert/strict';
+import{questionPrompt}from'../../src/ai/question-prompt.mjs';
+import{parseAnswer,validateBeforeSubmit}from'../../src/ai/parse.mjs';
+const q={qtype:'single',options:['A','B','C','D'].map(letter=>({letter,text:'not used as prompt text'}))};
+const prompt=questionPrompt('请看题目图片',q);
+assert.match(prompt,/第1项对应A.*第2项对应B.*第3项对应C.*第4项对应D/);
+assert.match(prompt,/不要只回答人名/);assert.ok(!prompt.includes('not used as prompt text'));
+assert.equal(questionPrompt('essay',{qtype:'essay'}),'essay');assert.equal(questionPrompt('judge',{qtype:'judge'}),'judge');
+assert.equal(questionPrompt('no metadata'), 'no metadata');
+assert.equal(questionPrompt('invalid',{qtype:'single',options:[{letter:'A'},{letter:'A'}]}),'invalid');
+assert.match(questionPrompt('custom',{qtype:'multiple',options:[{letter:'D'},{letter:'B'}]}),/第1项对应D，第2项对应B/);
+const parsed=parseAnswer('答案：C',q);assert.deepEqual(parsed.letters,['C']);assert.equal(parsed.confidence,'high');assert.equal(validateBeforeSubmit(parsed,q).safe,true);
+assert.equal(parseAnswer('an unrecognized option name',q).confidence,'low','names without a verified mapping must never be guessed into a letter');
+console.log('✓ unlabeled option order, single/multiple response format, metadata guards and parser compatibility');
