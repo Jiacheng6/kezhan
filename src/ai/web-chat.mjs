@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {interruptibleSleep,throwIfStopped,waitForRead} from '../control.mjs';
 import {loadSettings} from '../config.mjs';
+import {log} from '../logbus.mjs';
 export const WEB_UI = {
   doubao: {
     composer: '[data-testid="chat_input"]',
