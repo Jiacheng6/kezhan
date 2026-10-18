@@ -42,6 +42,7 @@ import { newTaskPage, releasePage, setPageBusy, markSavedReviewPage } from '../b
 import { isReviewLocked } from './review-lock.mjs';
 import { AI_BLOCK_CODES, queueUnanswered } from './quiz-outcome.mjs';
 import { pageSubmissionState } from './submission-state.mjs';
+import {activateSubmitConfirmation} from './submit-control.mjs';
 
 export { cardsUrl };
 const submittingPages=new WeakSet();
@@ -643,7 +644,7 @@ export async function submitKeptWork(key) {
  *   1) 早期只点 .btnSubmit 然后去找 #submitBackOk（那是交卷**之后**的返回按钮），
  *      确认框一直挂着，提交从未发生 —— 表现为"点了提交但任务点仍未完成"。
  *   2) 确认框按钮**必须用真实指针事件**。JS 原生 el.click() 点不动 #popok
- *      （疑似绑的是 jQuery 事件），必须用 Playwright 的 locator.click()。
+ *      （疑似绑的是 jQuery 事件），使用真实鼠标或按钮原生 Enter 激活。
  */
 export async function submitWork(workFrame,{confirmationOnly=false}={}) {
   const page=workFrame.page();let clicked=false,confirmed=false,nativeError='';
@@ -682,7 +683,7 @@ export async function submitWork(workFrame,{confirmationOnly=false}={}) {
       if(nativeError)return {ok:false,pendingConfirmation:!/未答|必填|不能为空|请完成|未完成/.test(nativeError),error:nativeError};
       if(!confirmed){
         confirmation=confirmation||await findControl('#popok, #popOk',true);
-        if(confirmation){confirmed=true;await confirmation.click({timeout:8000});confirmation=null;}
+        if(confirmation){confirmed=true;await activateSubmitConfirmation(confirmation,page);confirmation=null;}
       }
       await page.waitForTimeout(300);
     }

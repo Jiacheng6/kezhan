@@ -176,3 +176,4 @@ api-config.bin*
 !tools/test/test-qianwen-turns.mjs
 !tools/test/fixture-png.mjs
 !tools/test/test-atomic-file.mjs
+!tools/test/test-submit-offscreen.mjs

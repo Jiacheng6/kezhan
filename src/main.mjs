@@ -848,8 +848,8 @@ function buildHooks() {
       try { result=await submitPendingReviews(ctx(),opts,{personId:PERSON_ID}); }
       catch(error) { notifyUser('submit-failed',{key:`submit-failed:${Date.now()}`,detail:error.message}); throw error; }
       for(const item of result.details||[])log(item.ok?'待审作业已确认提交':`待审提交未完成：${item.error}`,item.ok?'ok':'error');
-      if(result.submitted)notifyUser('submit-success',{key:`submit:${Date.now()}`});
-      if(result.failed)notifyUser('submit-failed',{key:`submit-failed:${Date.now()}`});
+      if(result.failed)notifyUser('submit-failed',{key:`submit-failed:${Date.now()}`,detail:`本次已确认 ${result.submitted||0} 组，未成功 ${result.failed} 组；失败的作业仍在待审中。`});
+      else if(result.submitted)notifyUser('submit-success',{key:`submit:${Date.now()}`,detail:`本次已确认 ${result.submitted} 组答案。`});
       patchStatus({ reviewCount: listReviewItems().length });
       return result;
     },
