@@ -8,13 +8,29 @@ import { getKeptPage, registerKeptPage, dropKeptPage, submitKeptWork, workIdenti
 import { loadState, listReviewItems, markReviewItem, clearReviewByTask, setTaskStatus } from '../state.mjs';
 import { listKeptPages } from './quizrun.mjs';
 import { normalizeEssayText } from '../ai/parse.mjs';
-import { newTaskPage, releasePage } from '../browser/pages.mjs';
+import { newTaskPage, releasePage, setPageBusy, markSavedReviewPage } from '../browser/pages.mjs';
 import { withReviewLock } from './review-lock.mjs';
+import { submissionState, pageSubmissionState } from './submission-state.mjs';
 export { withReviewLock } from './review-lock.mjs';
 
 const text=value=>String(value||'').replace(/\s+/g,' ').trim();
 const optionSignature=options=>JSON.stringify((options||[]).map(o=>[String(o.letter),text(o.text)]).sort((a,b)=>a[0].localeCompare(b[0])));
-const questionId=item=>String(item.questionId||item.archive?.questionId||'');
+// Legacy essay records used answerEditor0/1 (a render index) as a question ID.
+// Those indices change with ordering and cannot be used as platform identity.
+const questionId=item=>{const id=String(item.questionId||item.archive?.questionId||'');return /^\d{1,4}$/.test(id)&&item.qtype==='essay'?'':id;};
+
+async function waitReviewFrame(page,waitMs){
+  const deadline=Date.now()+waitMs;
+  while(Date.now()<deadline){
+    for(const frame of page.frames()){
+      if(!/mooc-ans\/(?:api\/)?work\/|\/work\/selectWorkQuestion/.test(frame.url()))continue;
+      const hasQuestions=await frame.evaluate(()=>document.querySelectorAll('.TiMu,.newTiMu').length>0).catch(()=>false);
+      if(hasQuestions||(await submissionState(frame).catch(()=>({}))).submitted)return frame;
+    }
+    await page.waitForTimeout(300);
+  }
+  return null;
+}
 
 export function matchReviewQuestions(items, questions) {
   const used=new Set();
@@ -42,7 +58,7 @@ async function readAnswer(frame, question) {
   }
   if(question.qtype==='fill'){
     const ready=await frame.evaluate(index=>{
-      const q=document.querySelectorAll('.TiMu, [class*="TiMu"]')[index];
+      const q=document.querySelectorAll('.TiMu, .newTiMu')[index];
       const inputs=[...(q?.querySelectorAll('textarea,input[type="text"],[contenteditable="true"]')||[])];
       return inputs.length>0&&inputs.every(input=>String(input.value??input.textContent??'').trim());
     },question.domIndex);
@@ -89,14 +105,38 @@ export async function restoreReviewAnswers(frame, items, {expectedCount, restore
 }
 
 export async function readSubmissionState(frame) {
-  return frame.evaluate(()=>{
-    const button=document.querySelector('.btnSubmit');
-    const visible=!!button&&button.getBoundingClientRect().width>0;
-    return {submitted:!visible&&/提交成功|已提交|测评结果|本次成绩\s*[\d.]+\s*分/.test(document.body?.innerText||'')};
-  });
+  return submissionState(frame);
 }
 
-export async function reopenReviewWork(ctx,key,{personId,restoreAnswers=true,waitMs=30000}={}) {
+function finishManualReview(key) {
+  clearReviewByTask(key,'submitted');
+  setTaskStatus(key,{status:'done',note:'已核对平台手动提交结果',submittedAt:new Date().toISOString()});
+  dropKeptPage(key);
+}
+
+export async function syncSubmittedReviews() {
+  let synced=0;
+  for(const record of listKeptPages().filter(r=>!r.closed)){
+    try{await withReviewLock(record.key,async()=>{
+      const entry=getKeptPage(record.key);if(!entry)return;
+      const expected=entry.info?.workIdentity||{};
+      const result=await pageSubmissionState(entry.page,findWorkFrame(entry.page));
+      if(!result.submitted)return;
+      const actual=workIdentity(result.frame.url());
+      if(!expected.workid||actual.workid!==expected.workid)return;
+      if(Object.entries(expected).some(([field,value])=>actual[field]&&actual[field]!==value))return;
+      finishManualReview(record.key);synced++;
+    });}catch{ /* Busy or still loading: check on the next read. */ }
+  }
+  return {synced};
+}
+
+export async function reopenReviewWork(ctx,key,options={}) {
+  const previous=getKeptPage(key)?.page;let result;if(previous)setPageBusy(previous,true);
+  try{result=await reopenReviewWorkCore(ctx,key,options);return result;}
+  finally{const current=getKeptPage(key)?.page;if(current)markSavedReviewPage(current);else{const page=result?.page||previous;if(page&&!page.isClosed())setPageBusy(page,false);}}
+}
+async function reopenReviewWorkCore(ctx,key,{personId,restoreAnswers=true,waitMs=30000}={}) {
   if(!ctx)throw new Error('浏览器未连接，请先打开并登录学习通');
   const items=listReviewItems().filter(item=>item.taskKey===key);
   if(!items.length)throw new Error('此作业没有待审记录，请刷新列表');
@@ -106,7 +146,7 @@ export async function reopenReviewWork(ctx,key,{personId,restoreAnswers=true,wai
   if(info.personId&&String(info.personId)!==String(personId))throw new Error('账号已变更，请重新核对待审记录');
   if(!entry&&record?.url){
     const hit=ctx.pages().find(page=>!page.isClosed()&&page.url()===record.url);
-    if(hit){registerKeptPage(key,hit,info);entry=getKeptPage(key);}
+    if(hit){registerKeptPage(key,hit,info,{busy:true});entry=getKeptPage(key);}
   }
   if(!entry){
     const known=buildChecklist()?.courses.flatMap(course=>course.tasks||[]).find(task=>task.key===key);
@@ -126,13 +166,16 @@ export async function reopenReviewWork(ctx,key,{personId,restoreAnswers=true,wai
       // same bounded card lookup as the runner, followed by question validation.
       if(Number.isInteger(cardNum)&&cardNum>=0){await page.goto(cardsUrl({...task,personId,cardNum}),{waitUntil:'domcontentloaded',timeout:60000});}
       else{const {openSectionCard}=await import('./section.mjs');const card=await openSectionCard(page,{...task,name:task.name||info.name},personId);cardNum=card.cardNum;}
-      const frame=await waitWorkFrame(page,waitMs)||findWorkFrame(page);
+      const frame=await waitReviewFrame(page,waitMs)||findWorkFrame(page);
       if(!frame)throw new Error('作业页面未加载，请检查学习通登录或验证提示');
-      registerKeptPage(key,page,{...info,task:{...task,cardNum},personId:String(personId)});
+      registerKeptPage(key,page,{...info,task:{...task,cardNum},personId:String(personId)},{busy:true});
       entry=getKeptPage(key);reopened=true;
     }catch(error){await page.close().catch(()=>{});releasePage(page);throw error;}
   }
-  const frame=await waitWorkFrame(entry.page,waitMs)||findWorkFrame(entry.page);
+  const detected=await pageSubmissionState(entry.page,findWorkFrame(entry.page));
+  const detectedIdentity=detected.frame?workIdentity(detected.frame.url()):{};
+  if(detected.submitted&&info.workIdentity?.workid&&detectedIdentity.workid===info.workIdentity.workid&&!Object.entries(info.workIdentity).some(([field,value])=>detectedIdentity[field]&&detectedIdentity[field]!==value)){finishManualReview(key);return {page:entry.page,alreadySubmitted:true,reopened,ready:true,restored:0};}
+  const frame=await waitReviewFrame(entry.page,waitMs)||findWorkFrame(entry.page);
   if(!frame)throw new Error('作业页面未加载，请检查登录或验证提示');
   const actual=workIdentity(frame.url());
   if(Object.entries(info.workIdentity||{}).some(([field,value])=>value&&actual[field]!==value))throw new Error('作业或作答次数已变化，未恢复或提交，请人工核对');
@@ -142,12 +185,18 @@ export async function reopenReviewWork(ctx,key,{personId,restoreAnswers=true,wai
       if(!questions.length)throw new Error('旧记录缺少作业标识，无法确认此提交结果，请在页面人工核对；草稿已保留');
       matchReviewQuestions(items,questions);
     }
+    finishManualReview(key);
     return {page:entry.page,alreadySubmitted:true,reopened,ready:true,restored:0};
   }
-  if(info.submissionPending)throw new Error('上次提交结果尚未确认，请在页面核对，避免重复提交；待审记录已保留');
+  if(info.submissionPending){
+    const confirmation=await Promise.all(entry.page.frames().map(f=>f.locator('#popok, #popOk').filter({visible:true}).count().catch(()=>0)));
+    if(!confirmation.some(Boolean))throw new Error('上次提交结果尚未确认，请在页面核对，避免重复提交；待审记录已保留');
+    const result=await restoreReviewAnswers(frame,items,{restoreAnswers:false,expectedCount:info.totalQuestions});
+    return {...result,page:entry.page,reopened,alreadySubmitted:false,pendingConfirmation:true};
+  }
   const meta=await getWorkMeta(frame);
   const result=await restoreReviewAnswers(frame,items,{restoreAnswers,expectedCount:info.totalQuestions||loadState().quizzes?.[key]?.totalQuestions});
-  registerKeptPage(key,entry.page,{...entry.info,workIdentity:actual,totalQuestions:meta.questionTotal});
+  registerKeptPage(key,entry.page,{...entry.info,workIdentity:actual,totalQuestions:meta.questionTotal},{busy:true});
   return {...result,page:entry.page,reopened,alreadySubmitted:false};
 }
 
@@ -156,7 +205,8 @@ export async function submitReviewWork(ctx,key,options) {
     const prepared=await reopenReviewWork(ctx,key,options);
     if(prepared.alreadySubmitted){await prepared.page.close().catch(()=>{});releasePage(prepared.page);dropKeptPage(key);return {ok:true,alreadySubmitted:true};}
     if(!prepared.ready)return {ok:false,error:`第 ${prepared.missing.join('、')} 题尚未填写完整，已保留答案，请补全后提交`};
-    return submitKeptWork(key);
+    setPageBusy(prepared.page,true);
+    try{return await submitKeptWork(key);}finally{if(!prepared.page.isClosed())setPageBusy(prepared.page,false);}
   });
 }
 

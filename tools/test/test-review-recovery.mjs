@@ -16,6 +16,10 @@ assert.throws(()=>matchReviewQuestions([item],[{...live,questionId:'changed'}]),
 assert.throws(()=>matchReviewQuestions([item],[live,{...live,domIndex:0}]),/无法唯一对应/);
 assert.throws(()=>matchReviewQuestions([item],[{...live,options:[options[1],{...options[0],text:'变更选项'}]}]),/选项已变化/);
 assert.throws(()=>matchReviewQuestions([{...item,questionId:'',archive:{}}],[live]),/无法唯一对应/,'没有身份信息不得按位置猜测');
+const essay={...item,qtype:'essay',questionId:'1',options:[],archive:{stemTextRaw:'简答题完整题干'}};
+const essayLive={...live,qtype:'essay',questionId:'0',options:[],stemTextRaw:'简答题完整题干'};
+assert.equal(matchReviewQuestions([essay],[essayLive])[0].question.domIndex,1,'简答编辑器序号不能当稳定标识');
+assert.throws(()=>matchReviewQuestions([essay],[essayLive,{...essayLive,domIndex:2}]),/无法唯一对应/,'相同题干不可猜测');
 mutateState(state=>{state.reviewQueue=[item];});
 const url='https://mooc1.chaoxing.com/mooc-ans/knowledge/cards?courseid=demo&num=1&token='+'x'.repeat(240);
 registerKeptPage('demo',{isClosed:()=>true,url:()=>url},{totalQuestions:1});

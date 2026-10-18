@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, dialog, ipcMain, shell, utilityProcess, powerSaveBlocker, Notification } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, dialog, ipcMain, shell, utilityProcess, powerSaveBlocker, Notification, safeStorage } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -6,6 +6,7 @@ const { createUpdates, backupUserData } = require('./updates.cjs');
 const { CloseConfirmation } = require('./close-confirmation.cjs');
 const { EmbeddedBrowser } = require('./embedded-browser.cjs');
 const { NotificationCenter } = require('./notifications.cjs');
+const {createApiService}=require('./ai-api.cjs');
 
 const title = '学习通助手';
 const smokeTest = process.argv.includes('--smoke-test');
@@ -28,6 +29,13 @@ let mainWindow, tray, worker, serviceUrl, error = '', quitting = false, closeDia
 let heartbeat, startupTimer, blocker;
 let updates, internalBrowser, rendererGone = false;
 let notifications, previousUpdatePhase = null;
+let apiService;
+async function handleBrowserRequest(request){
+  if(request.method==='api-status')return apiService.status();
+  if(request.method==='api-cancel')return apiService.cancel(request.jobId);
+  if(request.method==='api-ask')return apiService.ask(request);
+  return internalBrowser.request(request);
+}
 const closeConfirmation = new CloseConfirmation(request => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:close-request', request);
 });
@@ -145,7 +153,7 @@ async function startWorker() {
     if (worker !== child) return;
     if (message.type === 'user-notice') { notifications?.push(message.notice); return; }
     if (message.type === 'browser-request') {
-      try { child.postMessage({ type: 'browser-response', id: message.id, result: await internalBrowser.request(message.request) }); }
+      try { const result=await handleBrowserRequest(message.request);child.postMessage({ type: 'browser-response', id: message.id, result }); }
       catch (error) { child.postMessage({ type: 'browser-response', id: message.id, error: error.message }); }
       return;
     }
@@ -232,6 +240,7 @@ else {
       if (!mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:web-state', state);
       worker?.postMessage({ type: 'browser-state', state });
     } });
+    if(testMode)module.exports.embeddedBrowser=internalBrowser;
     mainWindow.webContents.on('render-process-gone', () => { rendererGone = true; showError('界面发生异常，请从托盘重新打开或重启服务。'); });
     updates = createUpdates({ app, dataDir, testMode,
       onStatus: (status) => {
@@ -283,6 +292,11 @@ else {
       { label: '关闭软件…', click: () => { showMain(); requestClose(); } },
     ]));
     const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) => { assertSender(event); return fn(...args); });
+    apiService=createApiService({dataDir,safeStorage});
+    if(testMode)module.exports.handleBrowserRequest=handleBrowserRequest;
+    handle('desktop:api-status',()=>apiService.status());
+    handle('desktop:api-save',patch=>apiService.save(patch));
+    handle('desktop:api-test',()=>apiService.test());
     handle('desktop:browser', (visible) => internalBrowser.setVisible(visible));
     handle('desktop:web-state', () => internalBrowser.snapshot());
     handle('desktop:web-command', command => internalBrowser.command(command));

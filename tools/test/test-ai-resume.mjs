@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {aiResumeStatus,continueAI,onAIResumeChange,waitForAIResume} from '../../src/ai/resume.mjs';
+const events=[];onAIResumeChange(status=>events.push(status.waiting));let verified=false,stopped=false;
+const options={provider:{id:'doubao',label:'豆包'},page:{isClosed:()=>false},check:async()=>verified,shouldStop:()=>stopped};
+const first=waitForAIResume(options);assert.equal(aiResumeStatus().waiting,true);
+await assert.rejects(continueAI(),/仍要求验证/);assert.equal(aiResumeStatus().waiting,true);
+verified=true;assert.equal((await continueAI()).continued,true);assert.ok(await first>=0);assert.equal(aiResumeStatus().waiting,false);
+assert.deepEqual(events,[true,false]);
+const second=waitForAIResume(options);stopped=true;await assert.rejects(second,error=>error.code==='STOPPED');assert.equal(aiResumeStatus().waiting,false);
+assert.equal((await continueAI()).continued,false);
+console.log('✓ 人工验证：显式继续、未验证拦截、同一等待恢复、中止与状态清理通过');

@@ -6,6 +6,7 @@ import {interruptibleSleep,throwIfStopped,waitForRead} from '../control.mjs';
 import {loadSettings} from '../config.mjs';
 import {log} from '../logbus.mjs';
 import {beginWebTurn,endWebTurn,webRequestMarker} from './web-turn.mjs';
+import {canPauseAI,waitForAIResume} from './resume.mjs';
 export const WEB_UI = {
   doubao: {
     composer: '[data-testid="chat_input"]',
@@ -26,12 +27,12 @@ export const WEB_UI = {
 };
 export async function webChatState(page,provider) {
   return page.evaluate(({ui,id})=>{
-    const visible=e=>!!e?.getClientRects().length;
+    const visible=e=>!!e?.getClientRects().length&&e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
     const editor=[...document.querySelectorAll(ui.editor)].find(visible);
     const buttons=[...document.querySelectorAll('button,[role="button"]')].filter(visible);
     const signedOut=/sign_in|login/i.test(location.pathname)||buttons.some(e=>/^(登录|立即登录|登录注册)$/.test((e.innerText||'').trim()));
     const dialogs=[...document.querySelectorAll('[role="dialog"], [class*="captcha"], iframe[src*="captcha"]')].filter(visible);
-    const verification=dialogs.some(e=>/captcha/i.test(e.className||e.getAttribute('src')||'')||/完成验证|安全验证|拖动滑块|人机验证/.test(e.innerText||''));
+    const verification=dialogs.filter(e=>e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})&&e.getBoundingClientRect().width>4&&e.getBoundingClientRect().height>4).some(e=>/captcha/i.test(e.className||e.getAttribute('src')||'')||/完成验证|安全验证|拖动滑块|人机验证/.test(e.innerText||''));
     const notices=[...document.querySelectorAll('[role="alert"], [role="status"], [class*="toast"]')].filter(visible).map(e=>e.innerText||'').join(' ');
     const limited=/操作频繁|请求频繁|达到.*上限|额度.*用完|稍后再试|rate limit/i.test(notices);
     const cards=[...document.querySelectorAll(ui.answer)].filter(visible);
@@ -81,7 +82,7 @@ export function isCurrentWebAnswer(state,baseline,prompt) {
 }
 function hasComposerAttachment(page,provider) {
   return page.evaluate(ui=>{
-    const visible=e=>!!e.getClientRects().length;
+    const visible=e=>!!e.getClientRects().length&&e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
     const composer=[...document.querySelectorAll(ui.composer)].find(visible);
     if(!composer)return false;
     const names=[...composer.querySelectorAll('input[type="file"]')].flatMap(input=>[...input.files].map(file=>file.name));
@@ -147,16 +148,26 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
   // A unique user-turn marker also rejects remounted historical bubbles when
   // the virtual list recycles every DOM node. The model need not echo it.
   if(provider.id==='doubao')prompt+=`\n\n本次提问标记：${randomUUID()}。标记仅用于区分本次提问，答案中不要重复标记。`;
-  const started=Date.now(),ui=WEB_UI[provider.id],settings=loadSettings().ai||{};
+  let started=Date.now(),pausedMs=0;
+  const ui=WEB_UI[provider.id],settings=loadSettings().ai||{};
   const read=operation=>waitForRead(operation,{shouldStop,timeoutMs:10000,message:`${provider.label}页面读取超时`});
+  const readState=async()=>{
+    let state=await read(()=>webChatState(page,provider));
+    while(state.verification&&canPauseAI()){
+      const elapsed=await waitForAIResume({provider,page,shouldStop,check:async()=>{const next=await webChatState(page,provider);return !next.verification&&next.loggedIn;}});
+      started+=elapsed;pausedMs+=elapsed;state=await read(()=>webChatState(page,provider));
+    }
+    return state;
+  };
   let stage='page',sent=false,turnMarker='';
   try{
     throwIfStopped(shouldStop);
-    let state=await read(()=>webChatState(page,provider)),blocked=webBlock(state,provider);if(blocked)return blocked;
+    await dismissWebObstructions(page);
+    let state=await readState(),blocked=webBlock(state,provider);if(blocked)return blocked;
     if(state.generating)return {ok:false,errorCode:'already-generating',error:`${provider.label}仍在回答上一条消息，请等待结束后再开始`};
     if(state.editorText&&!samePrompt(state.editorText,prompt))return {ok:false,errorCode:'draft-not-empty',error:`${provider.label}输入框已有草稿，请先处理，避免覆盖你的内容`};
     if(!fs.existsSync(imagePath))return {ok:false,errorCode:'image-missing',error:'题目图片不存在'};
-    if(freshChat){await page.goto(provider.url,{waitUntil:'domcontentloaded',timeout:45000});state=await read(()=>webChatState(page,provider));blocked=webBlock(state,provider);if(blocked)return blocked;}
+    if(freshChat){await page.goto(provider.url,{waitUntil:'domcontentloaded',timeout:45000});state=await readState();blocked=webBlock(state,provider);if(blocked)return blocked;}
     if(state.editorText&&!samePrompt(state.editorText,prompt))return {ok:false,errorCode:'draft-not-empty',error:`${provider.label}输入框已有草稿，请先处理，避免覆盖你的内容`};
     const composer=page.locator(ui.composer).filter({visible:true}).first();
     const inputs=()=>read(()=>composer.locator('input[type="file"]').evaluateAll(inputs=>inputs.map((e,i)=>({i,accept:e.accept,selected:e.files.length,testid:e.getAttribute('data-testid')}))));
@@ -184,7 +195,7 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
     let ready=false;
     while(Date.now()-started<45000){
       throwIfStopped(shouldStop);
-      state=await read(()=>webChatState(page,provider));blocked=webBlock(state,provider);if(blocked)return blocked;
+      state=await readState();blocked=webBlock(state,provider);if(blocked)return blocked;
       ready=await read(()=>page.evaluate(({ui,name})=>{
         const editor=[...document.querySelectorAll(ui.editor)].find(e=>e.getClientRects().length);
         const composer=editor?.closest(ui.composer);
@@ -195,7 +206,7 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
           const image=[...composer.querySelectorAll('img')].some(e=>e.complete&&e.naturalWidth>0&&(e.alt===name||(e.getAttribute('src')||'').startsWith('blob:')));
           const attachment=text.includes(name)||image;
           if(!attachment)return false;
-          const busy=!!composer.querySelector('[aria-busy="true"], [role="progressbar"], .ds-loading')||/正在上传|上传中|解析中/.test(text)
+          const busy=[...composer.querySelectorAll('[aria-busy="true"], [role="progressbar"], .ds-loading')].some(e=>e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})&&!!e.getClientRects().length)||/正在上传|上传中|解析中/.test(text)
             ||[...text.matchAll(/\b(\d{1,3})%/g)].some(match=>Number(match[1])<100);
           return attachment&&!busy&&!send.disabled&&send.getAttribute('aria-disabled')!=='true'&&!send.classList.contains('ds-button--disabled');
         }
@@ -207,6 +218,7 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
     const baseline=await read(()=>webChatState(page,provider));
     turnMarker=await read(()=>beginWebTurn(page,provider,prompt));
     stage='send';
+    await dismissWebObstructions(page);
     throwIfStopped(shouldStop);await page.locator(ui.send).filter({visible:true}).last().click({timeout:10000});
     sent=true;stage='answer';
     log(`    ${provider.label}已发送图片题，等待回答`, 'info');
@@ -214,7 +226,7 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
     const timeout=Math.max(60000,Number(settings.answerTimeoutMs)||240000),stuck=Math.max(15000,Number(settings.answerStuckMs)||60000);
     while(Date.now()-started<timeout){
       await interruptibleSleep(1200,shouldStop);
-      state=await read(()=>webChatState(page,provider));blocked=webBlock(state,provider);if(blocked)return blocked;
+      const beforePaused=pausedMs;state=await readState();lastProgress+=pausedMs-beforePaused;blocked=webBlock(state,provider);if(blocked)return blocked;
       const current=isCurrentWebAnswer(state,baseline,prompt);
       const text=current?state.text:'';
       if(text!==last){lastProgress=Date.now();stable=0;}else if(text)stable++;
@@ -233,5 +245,18 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
     return {ok:false,errorCode:code,sent,error:`${provider.label}${label}${sent?'':'（尚未确认发送）'}：${error.message}`};
   }finally{
     await waitForRead(()=>endWebTurn(page,turnMarker),{timeoutMs:2000}).catch(()=>{});
+  }
+}
+
+export async function dismissWebObstructions(page){
+  for(let i=0;i<3;i++){
+    const dialogs=page.locator('[role="dialog"]').filter({visible:true});let closed=false;
+    for(let n=0;n<await dialogs.count();n++){
+      const dialog=dialogs.nth(n),text=await dialog.innerText().catch(()=>'');
+      if(/验证|captcha|登录|注册|密码|扫码/i.test(text))continue;
+      const close=dialog.getByRole('button',{name:/^(关闭|跳过|知道了|以后再说|暂不)$/}).first();
+      if(await close.count()){await close.click({timeout:1500}).catch(()=>{});closed=true;break;}
+    }
+    if(!closed)break;
   }
 }

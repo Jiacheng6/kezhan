@@ -1,5 +1,6 @@
-// Only official, free-to-access web clients. No API keys or paid API endpoints.
+// Official web clients and the separately configured OpenAI-compatible API.
 export const AI_PROVIDERS = {
+  api:{id:'api',label:'API',url:'',hosts:[]},
   qianwen: { id: 'qianwen', label: '千问', url: 'https://www.qianwen.com/', hosts: ['qianwen.com', 'tongyi.com'] },
   doubao: { id: 'doubao', label: '豆包', url: 'https://www.doubao.com/chat/', hosts: ['doubao.com'] },
   deepseek: { id: 'deepseek', label: 'DeepSeek', url: 'https://chat.deepseek.com/', hosts: ['chat.deepseek.com'] },
@@ -14,6 +15,7 @@ export function providerForUrl(url) {
 }
 const opening=new WeakMap();
 export async function ensureProviderPage(context, provider, {create=true}={}) {
+  if(provider.id==='api')return null;
   const pending=opening.get(context)?.get(provider.id);
   if(pending)return pending;
   let page=context.pages().find(page=>!page.isClosed()&&providerForUrl(page.url())?.id===provider.id);

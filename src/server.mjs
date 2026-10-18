@@ -205,7 +205,6 @@ export async function startServer(hooks = {}) {
     // —— 待审队列 ——
     if (pathname === '/api/review') {
       try {
-        const items = listReviewItems();
         /*
          * 注意：hooks 里的方法都是 async，必须 await。
          * 且不能写成 `await p.catch(...)` —— await 先求值，那里没有 catch 可调，
@@ -221,7 +220,7 @@ export async function startServer(hooks = {}) {
         }
         return json(res, 200, {
           ok: true,
-          result: { items, stats: reviewStats(), keptPages: keptPages || [] },
+          result: { items:listReviewItems(), stats: reviewStats(), keptPages: keptPages || [] },
         });
       } catch (err) {
         return json(res, 200, { ok: false, error: err.message });

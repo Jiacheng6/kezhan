@@ -33,6 +33,12 @@ try{
   assert.ok(r.items.every(i=>i.status==='pending-review'&&!i.textAnswer&&!i.aiAnswer));
   assert.equal(loadState().taskPoints[task.key].status,'manual');
   assert.equal(loadState().reviewQueue.filter(i=>i.taskKey===task.key).length,2);
+  if(name==='limit'){
+   const {submitWork}=await import('../../src/chaoxing/quizrun.mjs');const frame=r.workPage.frames().find(f=>f.url().includes('/work/'));
+   await frame.evaluate(()=>{document.body.innerHTML='<button class="btnSubmit" onclick="if(confirm(\'是否提交作业？\'))document.body.innerHTML=\'<p>提交成功，本次成绩 90 分</p>\'">提交</button>';});
+   assert.equal((await submitWork(frame)).ok,true,'真实执行器原有弹窗监听不能抢先处理提交确认');
+   console.log('✓ 另外验证：保留页面的原有监听与受控原生提交确认兼容（模拟作业）');
+  }
   await r.workPage.close();console.log(`✓ ${name}：真实执行器首题阻塞、两题入待审、保留页面、零填写/提交、未记完成`);
  }
 }finally{await browser.close();}

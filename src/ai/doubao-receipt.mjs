@@ -40,7 +40,9 @@ export function observeDoubaoReceipt(page, marker, onReceipt, onSuperseded) {
     const turn=doubaoRequestTurn(response.request(),marker);
     if(!active||!turn?.matches||!turn.localId||response.status()!==200)return;
     void (async()=>{
-      const body=await waitForRead(()=>response.text(),{shouldStop:()=>!active,timeoutMs:120000,message:'网页回执尚未结束'});
+      // The owning question controls timeout and disposes this observer. Human
+      // verification may pause that question for longer than two minutes.
+      const body=await waitForRead(()=>response.text(),{shouldStop:()=>!active,timeoutMs:24*60*60*1000,message:'网页回执尚未结束'});
       const receipt=doubaoReplyReceipt(body,turn.localId);
       if(active&&receipt)await onReceipt(receipt);
     })().catch(()=>{}); // The DOM reader remains available when receipts change.

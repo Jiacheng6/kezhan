@@ -12,7 +12,7 @@ const {findEdge}=await import('../../src/browser/launch.mjs');
 const {startServer}=await import('../../src/server.mjs');
 const {mutateState,loadState,listReviewItems,updateReviewAnswer}=await import('../../src/state.mjs');
 const {getKeptPage,listKeptPages,editKeptEssayReviewAnswer}=await import('../../src/chaoxing/quizrun.mjs');
-const {reopenReviewWork,submitPendingReviews,withReviewLock}=await import('../../src/chaoxing/review-recovery.mjs');
+const {reopenReviewWork,submitPendingReviews,withReviewLock,syncSubmittedReviews}=await import('../../src/chaoxing/review-recovery.mjs');
 const {cardsUrl}=await import('../../src/chaoxing/section.mjs');
 const {readSelection,findWorkFrame}=await import('../../src/chaoxing/quiz.mjs');
 const {readEssayAnswer}=await import('../../src/chaoxing/essay.mjs');
@@ -26,7 +26,9 @@ function seed(key,{mode='normal',missing=false,edited=false,append=false}={}){
     {id:key+'#q1',taskKey:key,questionId:'choice-demo',questionIndex:1,domIndex:0,qtype:'single',qtypeRaw:'单选题',options,letters:edited?['B']:['A'],editedByHuman:edited,autoFilled:!edited,status:'filled'},
     {id:key+'#q2',taskKey:key,questionId:'essay-demo',questionIndex:2,domIndex:1,qtype:'essay',qtypeRaw:'简答题',options:[],textAnswer:draft,requiresReview:true,autoFilled:!missing,status:missing?'pending-review':'filled'},
   ].map(item=>({...item,courseId:task.courseId,clazzId:task.clazzId,knowledgeId:key,course:'示例课程',secNo:'1.2',sectionName:'示例小节'}));
+  if(mode==='legacy-essay'){items[1].questionId='1';items[1].archive={stemTextRaw:'示例简答题干'};}
   mutateState(state=>{
+    state.onboarding={version:2,completedAt:new Date().toISOString()};
     state.reviewQueue=append?[...state.reviewQueue,...items]:items;
     state.taskPoints[key]={status:'manual'};
     state.keptPages[key]={savedAt:Date.now(),url:cardsUrl({...task,personId}),info:{task,personId,totalQuestions:2,workIdentity:{workid:key,workanswerid:'answer-'+key}}};
@@ -49,7 +51,7 @@ await context.route('https://mooc1.chaoxing.com/**',async route=>{
     const key=url.searchParams.get('workId'),mode=variants.get(key);
     if(mode==='completed')return route.fulfill({contentType:'text/html',body:'<meta charset="utf-8"><p>已提交，本次成绩 90 分</p>'});
     return route.fulfill({contentType:'text/html',body:`<meta charset="utf-8">
-<div class="TiMu" data="essay-demo"><span class="newZy_TItle">【简答题】</span><div class="Zy_TItle"><p>示例简答题干</p></div><textarea name="answerEditor-essay-demo"></textarea></div>
+<div class="TiMu" data="essay-demo"><div class="TiMuHead"><span class="newZy_TItle">【简答题】</span></div><div class="Zy_TItle"><p>示例简答题干</p></div><textarea name="answerEditor-${mode==='legacy-essay'?'0':'essay-demo'}"></textarea></div>
 <div class="TiMu"><span class="newZy_TItle">【单选题】</span><div class="Zy_TItle"><p>示例选择题干</p></div><ul class="Zy_ulTop">${options.map(option=>`<li role="radio" qid="${mode==='changed'?'changed-question':'choice-demo'}"><span class="num_option ${mode==='prefilled'&&option.letter==='A'?'check_answer':''}" data="${option.letter}">${option.letter}</span><a class="after"><p>${option.text}</p></a></li>`).join('')}</ul></div>
 ${mode==='pending'?'<p>我的答案：已完成。本次成绩 100 分（这是题目示例，仍未提交）。</p>':''}
 <button class="btnSubmit" onclick="document.querySelector('#popok').hidden=false">提交</button><button id="popok" hidden>确认提交</button>
@@ -81,6 +83,8 @@ try{
   assert.deepEqual((await readSelection(frame,1)).selected,['A']);
   assert.equal(loadState().reviewQueue[0].domIndex,1,'恢复时以题目标识重新定位');
   assert.equal(confirmed.length,0,'恢复不提交');
+  const draftEditor=ui.locator('.qedit textarea');await draftEditor.fill('尚未保存的人工编辑');await new Promise(resolve=>setTimeout(resolve,5200));
+  assert.equal(await draftEditor.inputValue(),'尚未保存的人工编辑','自动刷新待审状态不能清空用户编辑');await draftEditor.fill(draft);
   await ui.screenshot({path:path.join(data,'restored-review.png')});
   await entry.page.close();
   await ui.locator('#panel-review [data-action="loadReview"]').click();
@@ -116,7 +120,7 @@ try{
 
   seed('uncertain-demo',{mode:'pending'});
   response=await post('submit',{taskKey:'uncertain-demo'});
-  assert.equal(response.ok,false);assert.match(response.error,/尚未确认平台结果/);
+  assert.equal(response.ok,false);assert.match(response.error,/提交结果尚未确认/);
   assert.equal(confirmed.length,3);assert.equal(listReviewItems().length,2);
   assert.equal(loadState().keptPages['uncertain-demo'].info.submissionPending,true);
   response=await post('submit',{taskKey:'uncertain-demo'});
@@ -141,6 +145,14 @@ try{
   assert.equal(response.ok,false);assert.equal(response.result.submitted,1);assert.equal(response.result.failed,1);
   assert.ok(listReviewItems().every(item=>item.taskKey==='bulk-missing'));
   assert.equal(confirmed.length,5);
+  seed('legacy-demo',{mode:'legacy-essay'});
+  const legacy=await reopenReviewWork(context,'legacy-demo',{personId,waitMs:150});
+  assert.equal(legacy.restored,2);assert.equal(legacy.total,2,'嵌套 TiMuHead 不是额外一道题');
+  seed('manual-demo');
+  const manual=await reopenReviewWork(context,'manual-demo',{personId,waitMs:150});
+  const manualFrame=findWorkFrame(manual.page);await manualFrame.locator('.btnSubmit').click();await manualFrame.locator('#popok').click();
+  assert.equal((await syncSubmittedReviews()).synced,1);assert.equal(listReviewItems().length,0,'手动提交应清除待审');
+  assert.equal(loadState().taskPoints['manual-demo'].status,'done');
   console.log('✓ 真实隔离页面：关闭/重启记录恢复、题序变化、选择与简答回填、人工修改、缺题/错题/换次拦截、提交结果核实、未知结果不重交、并发和批量部分失败通过');
   console.log(`截图：${path.join(data,'restored-review.png')}`);
 }finally{

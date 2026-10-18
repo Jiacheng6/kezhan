@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { PATHS, PERSON_ID, loadSettings } from './config.mjs';
 import { loadState, mutateState } from './state.mjs';
 
-const providers = new Set(['qianwen', 'doubao', 'deepseek']);
+const providers = new Set(['qianwen', 'doubao', 'deepseek','api']);
 
 // Version 2 introduces the embedded-web setup. Legacy completion only covered
 // external-browser accounts, so upgrades need this guide once as well.

@@ -38,11 +38,13 @@ import { fillEssayAnswer } from './essay.mjs';
 import { cardsUrl, openSectionCard, waitForAttachments } from './section.mjs';
 import { readPointStatusFromPage } from './attach.mjs';
 import { skipDecision, describeSkip } from './skip.mjs';
-import { newTaskPage, releasePage, setPageBusy } from '../browser/pages.mjs';
+import { newTaskPage, releasePage, setPageBusy, markSavedReviewPage } from '../browser/pages.mjs';
 import { isReviewLocked } from './review-lock.mjs';
 import { AI_BLOCK_CODES, queueUnanswered } from './quiz-outcome.mjs';
+import { pageSubmissionState } from './submission-state.mjs';
 
 export { cardsUrl };
+const submittingPages=new WeakSet();
 
 export function canAutoSubmitItems(items, expectedCount = items.length) {
   return items.length > 0 && items.length === expectedCount && items.every((it) =>
@@ -144,7 +146,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
   };
 
   const page = await newTaskPage(ctx, 'quiz');
-  page.on('dialog', (d) => d.accept().catch(() => {}));
+  page.on('dialog', (d) => {if(!submittingPages.has(page))void d.accept().catch(() => {});});
   let workFrame = null, questions = [];
   const keepForReview = () => {
     result.keepPageOpen = true; result.workPage = page;
@@ -469,8 +471,8 @@ const keptWorkPages = new Map();
  */
 const MAX_KEPT_PAGES = 6;
 
-export function registerKeptPage(key, page, info = {}) {
-  setPageBusy(page, false);
+export function registerKeptPage(key, page, info = {}, {busy=false}={}) {
+  setPageBusy(page, busy);
   keptWorkPages.set(key, { page, savedAt: Date.now(), info });
 
   // 超出上限 → 关掉最旧的（新注册的这个一定是"最近"的，不动）
@@ -599,7 +601,7 @@ export async function editKeptEssayReviewAnswer(id, value, { ensurePage } = {}) 
   updateReviewAnswer(id, { textAnswer: text, filled: null });
   let filled;
   try{
-    if(ensurePage)await ensurePage(item.taskKey);
+    if(ensurePage){const prepared=await ensurePage(item.taskKey);if(prepared?.alreadySubmitted)return {id,alreadySubmitted:true};}
     const current=listReviewItems().find(it=>it.id===id);
     filled = await fillKeptEssayAnswer(item.taskKey, current.domIndex, text);
     if (!filled.ok) throw new Error(filled.error);
@@ -614,7 +616,7 @@ export async function submitKeptWork(key) {
   const { findWorkFrame } = await import('./quiz.mjs');
   const wf = findWorkFrame(page);
   if (!wf) return { ok: false, error: '找不到作业 frame' };
-  const r = await submitWork(wf);
+  const r = await submitWork(wf,{confirmationOnly:!!e.info?.submissionPending});
   if(r.pendingConfirmation){
     e.info={...e.info,submissionPending:true};
     mutateState(state=>{if(state.keptPages?.[key])state.keptPages[key].info=e.info;});
@@ -643,77 +645,50 @@ export async function submitKeptWork(key) {
  *   2) 确认框按钮**必须用真实指针事件**。JS 原生 el.click() 点不动 #popok
  *      （疑似绑的是 jQuery 事件），必须用 Playwright 的 locator.click()。
  */
-export async function submitWork(workFrame) {
-  const page = workFrame.page();
-
-  // 1) 点"提交"（真实指针事件）
-  try {
-    await workFrame.locator('.btnSubmit').first().click({ timeout: 15000 });
-  } catch (err) {
-    return { ok: false, error: `点提交按钮失败：${err.message}` };
-  }
-
-  // 2) 等确认框出现，并用真实指针事件点 #popok
-  let confirmed = false;
-  for (let i = 0; i < 12; i += 1) {
-    await page.waitForTimeout(700);
-    const visible = await workFrame
-      .evaluate(() => {
-        const ok = document.querySelector('#popok');
-        return !!(ok && ok.getBoundingClientRect().width > 0);
-      })
-      .catch(() => false);
-    if (!visible) continue;
-
-    try {
-      await workFrame.locator('#popok').click({ timeout: 8000 });
-      confirmed = true;
-      log(`    已点确认框的「提交」（真实指针事件）`, 'debug');
-    } catch (err) {
-      log(`    点确认框失败：${err.message}`, 'warn');
+export async function submitWork(workFrame,{confirmationOnly=false}={}) {
+  const page=workFrame.page();let clicked=false,confirmed=false,nativeError='';
+  submittingPages.add(page);
+  const frames=()=>[workFrame,...page.frames()].filter((f,i,a)=>f&&a.indexOf(f)===i);
+  const findControl=async(selector,confirm=false)=>{
+    for(const frame of frames()){
+      const control=frame.locator(selector).filter({visible:true});
+      const count=await control.count().catch(()=>0);
+      for(let i=0;i<count;i++){
+        const item=control.nth(i);
+        if(confirm&&!await item.evaluate(e=>/提交|交卷/.test((e.closest('.popDiv,.layui-layer,[role="dialog"]')||e.parentElement)?.innerText||'')).catch(()=>false))continue;
+        return item;
+      }
     }
-    break;
-  }
-
-  if (!confirmed) {
-    return { ok: false, error: '确认框未出现或未能点到确认按钮' };
-  }
-
-  // 3) 等提交结果
-  let result = null;
-  for (let i = 0; i < 20; i += 1) {
-    await page.waitForTimeout(1200);
-    const st = await workFrame
-      .evaluate(() => {
-        const body = document.body.innerText || '';
-        const score = body.match(/本次成绩\s*([\d.]+)\s*分/) || body.match(/得分[:：]?\s*([\d.]+)/);
-        const button=document.querySelector('.btnSubmit');
-        const submitVisible=!!button&&button.getBoundingClientRect().width>0;
-        const done = !submitVisible && /提交成功|已提交|测评结果|本次成绩\s*[\d.]+\s*分/.test(body);
-        return { done, score: score ? score[1] || score[0] : null };
-      })
-      .catch(() => ({ done: false, score: null }));
-
-    if (st.done) {
-      result = { status: 'success', score: st.score };
-      break;
+    return null;
+  };
+  const onDialog=dialog=>{
+    if(dialog.type()==='confirm'&&/提交|交卷/.test(dialog.message())){confirmed=true;void dialog.accept().catch(()=>{});}
+    else{nativeError=dialog.message().slice(0,160);void dialog.dismiss().catch(()=>{});}
+  };
+  page.on('dialog',onDialog);
+  try{
+    if((await pageSubmissionState(page,workFrame)).submitted)return {ok:true,alreadySubmitted:true};
+    let confirmation=await findControl('#popok, #popOk',true);
+    if(!confirmation){
+      if(confirmationOnly)return {ok:false,pendingConfirmation:true,error:'上次提交结果尚未确认，当前没有待确认弹窗，暂不重复提交'};
+      const submit=await findControl('.btnSubmit');
+      if(!submit)return {ok:false,error:'未找到可用的提交按钮，请核对作业页面'};
+      clicked=true;await submit.click({timeout:10000});
     }
-    // 有的版本会弹一个"确定"返回框
-    const backVisible = await workFrame
-      .evaluate(() => {
-        const b2 = document.querySelector('#submitBackOk');
-        return !!(b2 && b2.getBoundingClientRect().width > 0);
-      })
-      .catch(() => false);
-    if (backVisible) {
-      await workFrame.locator('#submitBackOk').click({ timeout: 5000 }).catch(() => {});
-      result = { status: 'success', note: '经返回框确认' };
-      break;
+    const deadline=Date.now()+30000;
+    while(Date.now()<deadline){
+      const result=await pageSubmissionState(page,workFrame);
+      if(result.submitted)return {ok:true,status:'success',score:result.score};
+      if(nativeError)return {ok:false,pendingConfirmation:!/未答|必填|不能为空|请完成|未完成/.test(nativeError),error:nativeError};
+      if(!confirmed){
+        confirmation=confirmation||await findControl('#popok, #popOk',true);
+        if(confirmation){confirmed=true;await confirmation.click({timeout:8000});confirmation=null;}
+      }
+      await page.waitForTimeout(300);
     }
-  }
-
-  if (!result) return { ok: false, pendingConfirmation:true, error: '已发送提交请求，但尚未确认平台结果，请在页面核对；答案与待审记录已保留，暂不重复提交' };
-  return { ok: true, ...result };
+    return {ok:false,pendingConfirmation:clicked||confirmed,error:'提交结果尚未确认，答案已保留；请核对网页结果，暂不重复提交'};
+  }catch(error){return {ok:false,pendingConfirmation:clicked||confirmed,error:'提交未完成：'+error.message};}
+  finally{page.off('dialog',onDialog);submittingPages.delete(page);}
 }
 
 /**
@@ -723,7 +698,7 @@ export async function submitWork(workFrame) {
  * 在"外部进程也改了同一文件"的场景下会被覆盖，导致待审队列写不进去。
  */
 export function recordQuizResult(result) {
-  return mutateState((state) => {
+  const saved=mutateState((state) => {
     state.quizzes = state.quizzes || {};
     state.quizzes[result.key] = {
       at: new Date().toISOString(),
@@ -795,4 +770,6 @@ export function recordQuizResult(result) {
     }
     return { queueLen: state.reviewQueue.length, kept: keep.length };
   });
+  const kept=getKeptPage(result.key);if(kept)markSavedReviewPage(kept.page);
+  return saved;
 }

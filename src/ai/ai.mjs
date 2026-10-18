@@ -31,6 +31,10 @@ import { log } from '../logbus.mjs';
 import { providerForUrl } from './providers.mjs';
 import { askWebImage, webChatState } from './web-chat.mjs';
 import { questionPrompt } from './question-prompt.mjs';
+import {selectedProvider} from './providers.mjs';
+import {apiStatus,askApiImage} from './api.mjs';
+import {embedded,embeddedRequest,targetOf} from '../browser/embedded.mjs';
+import {canPauseAI,waitForAIResume} from './resume.mjs';
 
 const READY_IMG_HOST = 'workspace-zb-cdn.qianwen.com';
 
@@ -43,6 +47,7 @@ const SEND_BTN = 'button[aria-label="发送消息"]';
  * 空白、加载或错误页面也没有按钮，必须同时找到可见编辑器和发送控件。
  */
 export async function checkLogin(page) {
+  if(selectedProvider(loadSettings()).id==='api')return {loggedIn:!!(await apiStatus().catch(()=>({configured:false}))).configured};
   if(!page)return {loggedIn:false};
   const provider=providerForUrl(page.url?.());
   if(typeof page.url==='function'&&!provider)return {loggedIn:false,error:'非官方 AI 网页'};
@@ -64,7 +69,7 @@ export async function checkLogin(page) {
 /** 读编辑器真实内容（排除 placeholder 回落） */
 export async function readEditor(page) {
   return page.evaluate((sel) => {
-    const e = document.querySelector(sel);
+    const e = [...document.querySelectorAll(sel)].find(e=>e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}));
     if (!e) return { text: '', empty: true };
     const t = (e.innerText || '').trim();
     const ph = (e.getAttribute('data-placeholder') || '').trim();
@@ -83,14 +88,13 @@ export async function dismissDialogs(page, rounds = 4) {
           d.querySelector('[aria-label="关闭"]') ||
           d.querySelector('button[class*="close"]') ||
           Array.from(d.querySelectorAll('button')).find((x) => /^(关闭|跳过|知道了)$/.test((x.textContent || '').trim()));
-        if (btn) {
+        if (btn && !/验证|captcha|密码|扫码|登录|注册/i.test(d.innerText||'')) {
           btn.click();
           closed += 1;
         }
       });
       return closed;
     });
-    await page.keyboard.press('Escape').catch(() => {});
     await page.waitForTimeout(300);
     if (!n) break;
   }
@@ -123,14 +127,15 @@ export async function pasteImage(page, imagePath) {
   const name = path.basename(imagePath);
 
   // 先聚焦编辑器（用 force，避免残留浮层导致超时）
-  const ed = page.locator(EDITOR).first();
+  const ed = page.locator(EDITOR).filter({visible:true}).first();
   await ed.click({ timeout: 10000, force: true }).catch(() => {});
   await page.waitForTimeout(300);
 
   const injected = await page.evaluate(
     async ({ b64, name, sel }) => {
-      const e = document.querySelector(sel);
+      const e = [...document.querySelectorAll(sel)].find(e=>e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}));
       if (!e) return { ok: false, error: '找不到编辑器' };
+      globalThis[Symbol.for('xxt.qianwen-upload-baseline')]=new Map([...document.querySelectorAll('img')].map(e=>[e,e.getAttribute('src')]));
       const bin = atob(b64);
       const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
@@ -156,8 +161,11 @@ export async function pasteImage(page, imagePath) {
   const t0 = Date.now();
   while (Date.now() - t0 < 30000) {
     const ready = await page.evaluate((host) => {
-      const imgs = Array.from(document.querySelectorAll('img'));
-      return imgs.some((e) => (e.getAttribute('src') || '').includes(host) && e.naturalWidth > 0);
+      const editor=[...document.querySelectorAll('[contenteditable="true"]')].find(e=>e.checkVisibility());
+      let composer=editor;for(let i=0;composer&&i<7;i++,composer=composer.parentElement)if(composer.querySelector('button[aria-label="发送消息"]'))break;
+      const scope=composer?.parentElement||document;
+      const baseline=globalThis[Symbol.for('xxt.qianwen-upload-baseline')]||new Map();
+      return [...scope.querySelectorAll('img')].some(e=>e.checkVisibility()&&(e.getAttribute('src')||'').includes(host)&&e.naturalWidth>0&&(!baseline.has(e)||baseline.get(e)!==e.getAttribute('src')));
     }, READY_IMG_HOST);
     if (ready) return { ok: true, waitedMs: Date.now() - t0 };
     await page.waitForTimeout(500);
@@ -167,13 +175,8 @@ export async function pasteImage(page, imagePath) {
 
 /** 往编辑器写文本（清空后输入） */
 export async function typePrompt(page, text) {
-  const ed = page.locator(EDITOR).first();
-  await ed.click({ timeout: 10000, force: true }).catch(() => {});
-  await page.keyboard.press('Control+A').catch(() => {});
-  await page.keyboard.press('Delete').catch(() => {});
-  await page.waitForTimeout(200);
-  await page.keyboard.type(text, { delay: 8 });
-  await page.waitForTimeout(400);
+  const ed = page.locator(EDITOR).filter({visible:true}).first();
+  await ed.fill(text,{timeout:8000});
   return readEditor(page);
 }
 
@@ -184,7 +187,7 @@ export async function send(page) {
   const st = await readEditor(page);
   if (st.empty) return { ok: false, error: '编辑器为空，拒绝发送' };
 
-  const btn = page.locator(SEND_BTN).first();
+  const btn = page.locator(SEND_BTN).filter({visible:true}).first();
   if (!(await btn.count())) return { ok: false, error: '找不到发送按钮' };
   if (await btn.isDisabled().catch(() => true)) return { ok: false, error: '发送按钮不可用' };
 
@@ -204,14 +207,17 @@ export async function send(page) {
  */
 export async function readAnswer(page) {
   return page.evaluate(() => {
-    const cards = Array.from(document.querySelectorAll('.chat-answers-card-wrap'));
+    const cards = Array.from(document.querySelectorAll('.chat-answers-card-wrap')).filter(e=>e.checkVisibility());
     const wrap = cards.length ? cards[cards.length - 1] : null;
     const txt = wrap ? (wrap.innerText || '').trim() : '';
+    const visible=e=>!!e?.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+    const identities=globalThis[Symbol.for('xxt.qianwen-identities')] ||= {nodes:new WeakMap(),next:0,prefix:Date.now().toString(36)+Math.random().toString(36)};
+    if(wrap&&!identities.nodes.has(wrap))identities.nodes.set(wrap,identities.prefix+':'+(++identities.next));
     const generating =
       Array.from(document.querySelectorAll('button')).some((x) =>
-        /停止|stop/i.test((x.getAttribute('aria-label') || '') + (x.textContent || '')),
-      ) || !!document.querySelector('[class*="loading"], [class*="generating"], [class*="typing"]');
-    return { text: txt, len: txt.length, generating, count: cards.length };
+        visible(x)&&/停止|stop/i.test((x.getAttribute('aria-label') || '') + (x.textContent || '')),
+      ) || [...document.querySelectorAll('[class*="loading"], [class*="generating"], [class*="typing"]')].some(visible);
+    return { text: txt, len: txt.length, generating, count: cards.length,answerKey:wrap?identities.nodes.get(wrap):'' };
   });
 }
 
@@ -221,7 +227,7 @@ export async function readAnswer(page) {
  */
 export async function answerBaseline(page) {
   const r = await readAnswer(page).catch(() => null);
-  return { count: r?.count ?? 0, lastText: r?.text ?? '' };
+  return { count: r?.count ?? 0, lastText: r?.text ?? '',answerKey:r?.answerKey||'' };
 }
 
 /**
@@ -317,7 +323,7 @@ export function shouldReask({ errorCode, attempt, retries }) {
  */
 export async function waitAnswer(page, { timeoutMs = 240000, stuckMs = 60000, stableRounds = 3, onTick, baseline = null, shouldStop } = {}) {
   throwIfStopped(shouldStop);
-  const t0 = Date.now();
+  let t0 = Date.now();
   let lastLen = -1;
   let stable = 0;
   let best = '';
@@ -328,15 +334,18 @@ export async function waitAnswer(page, { timeoutMs = 240000, stuckMs = 60000, st
     await interruptibleSleep(2000, shouldStop);
 
     const st = await waitForRead(() => page.evaluate(() => {
-      const cards = Array.from(document.querySelectorAll('.chat-answers-card-wrap'));
+      const cards = Array.from(document.querySelectorAll('.chat-answers-card-wrap')).filter(e=>e.checkVisibility());
       const wrap = cards.length ? cards[cards.length - 1] : null;
       const txt = wrap ? (wrap.innerText || '').trim() : '';
-      const receiving = !!document.querySelector('.answer-receiving-card, [class*="receiving"]');
-      const loading = !!document.querySelector('.chat-answers-card-wrap [class*="loading"]');
+      const visible=e=>!!e?.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+      const receiving = [...document.querySelectorAll('.answer-receiving-card, [class*="receiving"]')].some(visible);
+      const loading = [...document.querySelectorAll('.chat-answers-card-wrap [class*="loading"]')].some(visible);
       const stopBtn = Array.from(document.querySelectorAll('button')).some((x) =>
-        /停止|stop/i.test((x.getAttribute('aria-label') || '') + (x.textContent || '')),
+        visible(x)&&/停止|stop/i.test((x.getAttribute('aria-label') || '') + (x.textContent || '')),
       );
-      return { txt, len: txt.length, receiving, loading, stopBtn, count: cards.length };
+      const identities=globalThis[Symbol.for('xxt.qianwen-identities')] ||= {nodes:new WeakMap(),next:0,prefix:Date.now().toString(36)+Math.random().toString(36)};
+      if(wrap&&!identities.nodes.has(wrap))identities.nodes.set(wrap,identities.prefix+':'+(++identities.next));
+      return { txt, len: txt.length, receiving, loading, stopBtn, count: cards.length,answerKey:wrap?identities.nodes.get(wrap):'' };
     }), { shouldStop, timeoutMs: 10000, message: '千问页面读取超时' });
 
     if (st.receiving || st.loading) sawReceiving = true;
@@ -349,6 +358,7 @@ export async function waitAnswer(page, { timeoutMs = 240000, stuckMs = 60000, st
      */
     const isNew =
       !baseline ||
+      (!!baseline.answerKey&&!!st.answerKey&&st.answerKey!==baseline.answerKey)||
       st.count > (baseline.count || 0) ||
       (st.count > 0 && st.txt !== (baseline.lastText || '')) ||
       (st.count >= (baseline.count || 0) && generating);
@@ -358,7 +368,7 @@ export async function waitAnswer(page, { timeoutMs = 240000, stuckMs = 60000, st
 
     if (len > 0) best = txt;
     // onTick 可能是 async（内部要检测风控弹窗并抛异常），必须 await
-    if (onTick) await onTick({ len, generating, elapsed: Date.now() - t0, receiving: st.receiving });
+    if (onTick){const paused=await onTick({ len, generating, elapsed: Date.now() - t0, receiving: st.receiving });if(paused>0){t0+=paused;lastProgressAt+=paused;continue;}}
 
     // 有进展就刷新"最后进展时刻"：文本变长，或刚开始生成
     if (len > lastLen || (generating && lastLen <= 0)) lastProgressAt = Date.now();
@@ -437,7 +447,7 @@ export async function detectVerification(page) {
   return page
     .evaluate(() => {
       // 验证完成后千问会保留隐藏的弹层和 iframe，不能仅凭节点存在阻断。
-      const visible = element => element.checkVisibility() && element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0;
+      const visible = element => element.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}) && element.getBoundingClientRect().width > 4 && element.getBoundingClientRect().height > 4;
       const mask = Array.from(document.querySelectorAll('.baxia-dialog-mask, .baxia-dialog, [class*="baxia-dialog"]')).find(visible);
       const iframes = Array.from(document.querySelectorAll('iframe'));
       const punish = iframes.find((f) => /_____tmd_____|punish|x5secdata/.test(f.getAttribute('src') || '') && visible(f));
@@ -472,9 +482,16 @@ export async function readVerificationText(page) {
  * @param {boolean} [opts.freshChat] 是否新建对话（默认 true，避免上下文干扰）
  * @returns {Promise<{ok:boolean, answer?:string, raw?:string, error?:string, errorCode?:string, waitedMs?:number}>}
  */
-export async function askImage({ page, imagePath, prompt = DEFAULT_PROMPT, freshChat = true, shouldStop, question }) {
+export async function askImage(args) {
+  const page=args.page;
+  const annotate=async busy=>{if(embedded&&page&&!page.isClosed())await targetOf(page).then(targetId=>embeddedRequest('annotate',{targetId,busy})).catch(()=>{});};
+  await annotate(true);
+  try{return await askImageCore(args);}finally{await annotate(false);}
+}
+async function askImageCore({ page, imagePath, prompt = DEFAULT_PROMPT, freshChat = true, shouldStop, question }) {
   throwIfStopped(shouldStop);
   prompt = questionPrompt(prompt, question);
+  if(selectedProvider(loadSettings()).id==='api')return askApiImage({imagePath,prompt,shouldStop});
   if(!page)return {ok:false,errorCode:'not-logged-in',error:'没有可用的 AI 网页，请先打开所选平台并登录'};
   const provider=providerForUrl(page.url?.());
   if(typeof page.url==='function'&&!provider)return {ok:false,errorCode:'wrong-ai-page',error:'答题网页不属于所选官方 AI 平台，已停止发送'};
@@ -488,7 +505,7 @@ export async function askImage({ page, imagePath, prompt = DEFAULT_PROMPT, fresh
   try {
     throwIfStopped(shouldStop);
     const login = await checkLogin(page);
-    if (!login.loggedIn) {
+    if (!login.loggedIn && !(await detectVerification(page)).required) {
       return { ok: false, errorCode: 'not-logged-in', error: '千问未登录，请先打开千问网页并登录' };
     }
 
@@ -508,9 +525,16 @@ export async function askImage({ page, imagePath, prompt = DEFAULT_PROMPT, fresh
       if (attempt > 1) {
         log(`    千问没回答（${lastFail?.errorCode}）→ 重新提问（第 ${attempt}/${retries + 1} 次）`, 'warn');
       }
+      if(attempt===1){
+        if(!(await readEditor(page)).empty)return {ok:false,errorCode:'draft-not-empty',error:'千问输入框已有草稿，请先处理，避免覆盖你的内容'};
+        if((await readAnswer(page)).generating)return {ok:false,errorCode:'already-generating',error:'千问仍在回答上一条消息，请等待结束后再开始'};
+      }
 
       // 进任何操作前先看有没有风控验证挂着
       const pre = await detectVerification(page);
+      if(pre.required&&canPauseAI()){
+        await waitForAIResume({provider:{id:'qianwen',label:'千问'},page,shouldStop,check:async()=>!(await detectVerification(page)).required&&(await checkLogin(page)).loggedIn});pre.required=false;
+      }
       if (pre.required) {
         const hint = await readVerificationText(page);
         return {
@@ -530,6 +554,9 @@ export async function askImage({ page, imagePath, prompt = DEFAULT_PROMPT, fresh
 
       // 新对话后可能立刻弹验证
       const postChat = await detectVerification(page);
+      if(postChat.required&&canPauseAI()){
+        await waitForAIResume({provider:{id:'qianwen',label:'千问'},page,shouldStop,check:async()=>!(await detectVerification(page)).required&&(await checkLogin(page)).loggedIn});postChat.required=false;
+      }
       if (postChat.required) {
         const hint = await readVerificationText(page);
         return {
@@ -582,7 +609,10 @@ export async function askImage({ page, imagePath, prompt = DEFAULT_PROMPT, fresh
                 if (elapsed - lastVerifyCheck >= 5000) {
                   lastVerifyCheck = elapsed;
                   const v = await detectVerification(page).catch(() => ({ required: false }));
-                  if (v.required) throw Object.assign(new Error('verification-required'), { code: 'verification-required' });
+                  if (v.required){
+                    if(canPauseAI())return waitForAIResume({provider:{id:'qianwen',label:'千问'},page,shouldStop,check:async()=>!(await detectVerification(page)).required&&(await checkLogin(page)).loggedIn});
+                    throw Object.assign(new Error('verification-required'), { code: 'verification-required' });
+                  }
                 }
               },
             });

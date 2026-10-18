@@ -24,6 +24,7 @@ function backupUserData(dataDir, version) {
   const files = relativeFiles.filter((file) => fs.existsSync(path.join(dataDir, file)));
   for (const file of files) JSON.parse(fs.readFileSync(path.join(dataDir, file), 'utf8'));
   if (fs.existsSync(path.join(dataDir, 'browser-session.bin'))) files.push('browser-session.bin');
+  if (fs.existsSync(path.join(dataDir, 'api-config.bin'))) files.push('api-config.bin');
   fs.mkdirSync(path.join(dataDir, 'updates', 'backups'), { recursive: true });
   const backup = fs.mkdtempSync(path.join(dataDir, 'updates', 'backups', `${version.replace(/[^\w.-]/g, '_')}-`));
   for (const file of files) {

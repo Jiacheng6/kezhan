@@ -49,7 +49,7 @@ export function findWorkFrame(page) {
   return (
     page.frames().find((f) => {
       const u = f.url();
-      return /mooc-ans\/work\/doHomeWorkNew|work\/selectWorkQuestion|mooc-ans\/api\/work/.test(u);
+      return /mooc-ans\/work\/|work\/selectWorkQuestion|mooc-ans\/api\/work/.test(u);
     }) || null
   );
 }
@@ -60,7 +60,7 @@ export async function waitWorkFrame(page, timeoutMs = 30000) {
   while (Date.now() - t0 < timeoutMs) {
     for (const f of page.frames()) {
       if (!/mooc-ans\/work\/|doHomeWorkNew/.test(f.url())) continue;
-      const n = await f.evaluate(() => document.querySelectorAll('.TiMu, [class*="TiMu"]').length).catch(() => 0);
+      const n = await f.evaluate(() => document.querySelectorAll('.TiMu, .newTiMu').length).catch(() => 0);
       if (n > 0) return f;
     }
     await page.waitForTimeout(500);
@@ -80,7 +80,7 @@ export async function extractQuestions(workFrame) {
   return workFrame.evaluate(() => {
     const t = (el) => (el?.textContent || '').trim().replace(/\s+/g, ' ');
 
-    return Array.from(document.querySelectorAll('.TiMu, [class*="TiMu"]')).map((q, i) => {
+    return Array.from(document.querySelectorAll('.TiMu, .newTiMu')).map((q, i) => {
       const typeRaw = t(q.querySelector('.newZy_TItle, [class*="TItle"] span'));
       const stemRaw = t(q.querySelector('.Zy_TItle .fontLabel p, .Zy_TItle p'));
 
@@ -160,7 +160,7 @@ export async function getWorkMeta(workFrame) {
     };
     return {
       url: location.href,
-      questionTotal: document.querySelectorAll('.TiMu, [class*="TiMu"]').length,
+      questionTotal: document.querySelectorAll('.TiMu, .newTiMu').length,
       saveBtn: find('.btnSave'),
       submitBtn: find('.btnSubmit'),
       title: t(document.querySelector('.workTitle, h1, .tit, [class*="title"]')).slice(0, 80),
@@ -172,7 +172,7 @@ export async function getWorkMeta(workFrame) {
  * 截取单道题的图片（精确裁剪）。
  * @returns {Promise<string>} 图片文件路径
  */
-export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, readTimeoutMs = 8000, onRecovery, selector = '.TiMu, [class*="TiMu"]', nativeCapture = embedded ? captureEmbeddedPage : null } = {}) {
+export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, readTimeoutMs = 8000, onRecovery, selector = '.TiMu, .newTiMu', nativeCapture = embedded ? captureEmbeddedPage : null } = {}) {
   throwIfStopped(shouldStop);
   fs.mkdirSync(outDir, { recursive: true });
   const read = async (stage, operation) => {
@@ -343,7 +343,7 @@ export async function selectOptions(workFrame, domIndex, letters, { clearFirst =
       // eslint-disable-next-line no-eval
       eval(helpers);
 
-      const q = document.querySelectorAll('.TiMu, [class*="TiMu"]')[idx];
+      const q = document.querySelectorAll('.TiMu, .newTiMu')[idx];
       if (!q) return { ok: false, error: '题目元素不存在' };
 
       const items = Array.from(q.querySelectorAll('li[qid]'));
@@ -380,7 +380,7 @@ export async function readSelection(workFrame, domIndex) {
     ({ idx, helpers }) => {
       // eslint-disable-next-line no-eval
       eval(helpers);
-      const q = document.querySelectorAll('.TiMu, [class*="TiMu"]')[idx];
+      const q = document.querySelectorAll('.TiMu, .newTiMu')[idx];
       if (!q) return null;
       const items = Array.from(q.querySelectorAll('li[qid]'));
       return {

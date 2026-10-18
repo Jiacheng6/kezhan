@@ -767,6 +767,7 @@ async function refreshTreeProgress() {
 
 setInterval(() => {
   const library = document.getElementById('libraryHome');
+  if ($('#panel-review')?.classList.contains('active')&&!state.status?.running)void loadReview({passive:true}).catch(()=>{});
   if ($('#panel-courses').classList.contains('active') || (library && !library.hidden)) refreshTreeProgress();
 }, 5000);
 
@@ -1424,15 +1425,22 @@ $$('.tab').forEach((btn) => {
 
 /* ---------------- 待审队列 ---------------- */
 
-async function loadReview() {
+let reviewReadSequence=0,reviewReadCount=0;
+function hasReviewEdits(){return !!document.activeElement?.closest('.qedit')||[...document.querySelectorAll('.qedit input,.qedit textarea')].some(e=>e.value!==e.dataset.savedValue);}
+async function loadReview({passive=false}={}) {
+  if(passive&&reviewReadCount)return;
+  const ticket=++reviewReadSequence;reviewReadCount++;
+  try{
   const res = await fetch('/api/review');
   const body = await res.json();
+  if(ticket!==reviewReadSequence||(passive&&hasReviewEdits()))return;
   if (!body.ok) {
     $('#reviewSummary').textContent = body.error || '读取待审队列失败';
     $('#reviewSource').textContent = '出错';
     return;
   }
   renderReview(body.result);
+  }finally{reviewReadCount--;}
 }
 
 const reviewFeedback=new Map();
@@ -1627,9 +1635,10 @@ function renderQCard(it, taskKey) {
   const inp = document.createElement(isEssay ? 'textarea' : 'input');
   if (isEssay) { inp.rows = 6; inp.maxLength = 10000; } else inp.type = 'text';
   inp.value = isEssay ? it.textAnswer || '' : (it.letters || []).map((l) => String(l).toUpperCase()).join('');
+  inp.dataset.savedValue=inp.value;
   inp.placeholder = isEssay ? '填写简答正文，支持分段' : '如 AB';
   inp.title = isEssay ? '保存并填入将替换该题页面上的草稿；不会提交作业' : '人工修改答案（选择题填字母，判断题填 T/F 或 对/错）';
-  const save = el('button', null, isEssay ? '保存并填入' : '改答案');
+  const save = el('button', null, '保存并填入');
   save.addEventListener('click', async () => {
     const v = inp.value.trim();
     if (isEssay) {
@@ -1641,7 +1650,7 @@ function renderQCard(it, taskKey) {
       }).then((x) => x.json()).catch((e) => ({ ok: false, error: e.message }));
       save.disabled = false;
       appendLog({ t: Date.now(), level: r.ok ? 'ok' : 'error', message: r.ok
-        ? `简答正文已保存并填入（${v.length} 字符），请核对后提交` : `简答填写失败：${r.error}` });
+        ? (r.result?.alreadySubmitted?'平台已提交，待审记录已同步清除':`简答正文已保存并填入（${v.length} 字符），请核对后提交`) : `简答填写失败：${r.error}` });
       if (r.ok) await loadReview();
       return;
     }
@@ -1649,13 +1658,11 @@ function renderQCard(it, taskKey) {
       .split('')
       .filter((c) => /[A-Ha-h]/.test(c))
       .map((c) => c.toUpperCase());
-    const finalLetters = letters.length
-      ? letters
-      : /^(t|true|对|正确)$/i.test(v)
+    const finalLetters = /^(t|true|对|正确)$/i.test(v)
         ? ['true']
         : /^(f|false|错|错误)$/i.test(v)
           ? ['false']
-          : [];
+          : letters;
     if (!finalLetters.length) {
       appendLog({ t: Date.now(), level: 'warn', message: `无法解析输入「${v}」` });
       return;
@@ -1666,7 +1673,7 @@ function renderQCard(it, taskKey) {
       body: JSON.stringify({ id: it.id, letters: finalLetters }),
     }).then((x) => x.json()).catch((e) => ({ ok: false, error: e.message }));
     if (r.ok) {
-      appendLog({ t: Date.now(), level: 'ok', message: `已改为 ${finalLetters.join('')}（提交时以你为准）` });
+      appendLog({ t: Date.now(), level: 'ok', message: r.result?.alreadySubmitted?'平台已提交，待审记录已同步清除':`已保存并填入 ${finalLetters.join('')}，请核对后提交` });
       await loadReview();
     } else {
       appendLog({ t: Date.now(), level: 'error', message: `改答案失败：${r.error}` });

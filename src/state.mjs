@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { PATHS } from './config.mjs';
+import atomicFile from './atomic-file.cjs';
 
 const STATE_FILE = PATHS.state;
 
@@ -113,7 +114,7 @@ function writeState(s) {
   try {
     fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true });
     fs.writeFileSync(tmp, JSON.stringify(s, null, 2), 'utf8');
-    fs.renameSync(tmp, STATE_FILE);
+    atomicFile.renameWithRetry(tmp, STATE_FILE);
     cacheStamp = stampOf();
     return { ok: true };
   } catch (err) {

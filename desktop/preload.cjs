@@ -1,5 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('desktopApp', Object.freeze({
+  apiStatus:()=>ipcRenderer.invoke('desktop:api-status'),
+  apiSave:patch=>ipcRenderer.invoke('desktop:api-save',patch),
+  apiTest:()=>ipcRenderer.invoke('desktop:api-test'),
   notifications: () => ipcRenderer.invoke('desktop:notifications'),
   readNotification: id => ipcRenderer.invoke('desktop:notification-read', id),
   openNotification: id => ipcRenderer.invoke('desktop:notification-open', id),

@@ -18,7 +18,7 @@ import { DEFAULT_SETTINGS } from './config.mjs';
  *   advanced: 是否折叠到"高级"里
  */
 export const SETTING_SPEC = [
-  { path: 'ai.provider', label: 'AI 网页版答题通道', kind: 'select', options: [['qianwen', '千问网页版'], ['doubao', '豆包网页版'], ['deepseek', 'DeepSeek 网页版']], help: '使用自己的网页账号，无需 API Key。保存后打开所选平台；任务运行期间不可切换。额度和验证限制以网页提示为准。' },
+  { path: 'ai.provider', label: 'AI 答题通道', kind: 'select', options: [['qianwen', '千问网页版'], ['doubao', '豆包网页版'], ['deepseek', 'DeepSeek 网页版'],['api','OpenAI 兼容 API']], help: '网页版使用自己的账号；API 地址、密钥和模型在此页配置。切换通道前请先停止任务。' },
   {
     path: 'submitMode',
     label: '测验提交模式',

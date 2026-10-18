@@ -41,6 +41,7 @@ if (app?.webState) {
     if (await command({ action: 'select', id })) picker.close();
     else $('webPagesMessage').textContent = '这个网页已关闭，请选择其他页面或重新打开。';
   };
+  const closePage=async id=>{await command({action:'close',id});};
   const renderPages = () => {
     const task = currentTaskPage(state.tabs);
     $('webPageCount').textContent = state.tabs.length;
@@ -67,7 +68,8 @@ if (app?.webState) {
       const detail = document.createElement('small'); let host = ''; try { host = new URL(tab.url).host; } catch {}
       detail.textContent = [pageKind(tab), host, tab.loading ? '加载中' : ''].filter(Boolean).join(' · ');
       const arrow = document.createElement('span'); arrow.className = 'wp-page-arrow'; arrow.textContent = '↗'; arrow.setAttribute('aria-hidden', 'true');
-      copy.append(title, detail); button.append(icon, copy, arrow); button.onclick = () => openPage(tab.id); return button;
+      copy.append(title, detail); button.append(icon, copy, arrow); button.onclick = () => openPage(tab.id);
+      const row=document.createElement('div');row.className='wp-page-row';const close=document.createElement('button');close.className='web-tab-close';close.textContent='×';close.disabled=!!tab.busy;close.setAttribute('aria-label',`关闭网页：${tab.title||'网页'}`);close.title=tab.busy?'请先停止此网页的任务':'关闭网页，已保存的待审草稿保留';close.onclick=()=>closePage(tab.id);row.append(button,close);return row;
     }));
     $('webPagesMessage').textContent = state.tabs.length ? '' : '还没有打开网页，可以先打开学习通或 AI 登录页。';
     if (focusId) ($('webPagesList').querySelector(`[data-page-id="${Number(focusId)}"]`) || $('webPagesClose')).focus();
@@ -86,7 +88,7 @@ if (app?.webState) {
     state = next; pane.hidden = !state.visible;
     if (changed) document.dispatchEvent(new Event(state.visible ? 'embedded-browser-show' : 'embedded-browser-hide'));
     const active = state.tabs.find(t => t.id === state.active);
-    const key = JSON.stringify([state.active, state.tabs.map(t => [t.id, t.title, t.url])]);
+    const key = JSON.stringify([state.active, state.tabs.map(t => [t.id, t.title, t.url,t.busy])]);
     if (tabsKey !== key) {
     tabsKey = key;
     const focusId = document.activeElement?.dataset?.webId;
@@ -94,7 +96,8 @@ if (app?.webState) {
       const button = document.createElement('button'); button.type = 'button'; button.setAttribute('role', 'tab');
       button.setAttribute('aria-selected', String(tab.id === state.active)); button.dataset.webId = tab.id;
       button.textContent = tab.url === 'about:blank' ? '待打开网页' : tab.title || '正在打开网页'; button.title = button.textContent;
-      button.onclick = () => command({ action: 'select', id: tab.id }); return button;
+      button.onclick = () => command({ action: 'select', id: tab.id });
+      const wrapper=document.createElement('span');wrapper.className='web-tab-item';const close=document.createElement('button');close.className='web-tab-close';close.textContent='×';close.disabled=!!tab.busy;close.setAttribute('aria-label',`关闭网页：${tab.title||'网页'}`);close.title=tab.busy?'请先停止任务':'关闭网页';close.onclick=()=>closePage(tab.id);wrapper.append(button,close);return wrapper;
     }));
     if (focusId) $('webTabs').querySelector(`[data-web-id="${Number(focusId)}"]`)?.focus();
     }
@@ -130,7 +133,7 @@ if (app?.webState) {
     connected = !!status?.edge?.connected;
     renderTaskProgress($('webTaskProgress'), status || {});
     $('webOpenLearning').disabled = !status?.edge?.connected;
-    $('webOpenAI').disabled = !status?.edge?.connected || busy;
+    $('webOpenAI').disabled = !status?.edge?.connected;
     render(state);
   });
   new ResizeObserver(layout).observe($('webViewport'));

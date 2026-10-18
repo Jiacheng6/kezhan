@@ -73,6 +73,11 @@ export function setPageBusy(page, busy) {
   if (embedded && !page.isClosed()) void targetOf(page).then(targetId => embeddedRequest('annotate', { targetId, busy: !!busy })).catch(() => {});
 }
 
+export function markSavedReviewPage(page) {
+  const record=registry.get(page);if(record){record.kind='review';record.busy=false;}
+  if(embedded&&!page.isClosed())void targetOf(page).then(targetId=>embeddedRequest('annotate',{targetId,role:'review',busy:false})).catch(()=>{});
+}
+
 export function trackedPages() {
   return [...registry.entries()]
     .filter(([p]) => !p.isClosed())

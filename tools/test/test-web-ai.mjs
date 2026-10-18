@@ -1,6 +1,7 @@
 // Synthetic fixtures using markup inspected on the real web clients.
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';
 import {chromium} from 'playwright-core';
+import {fixturePng} from './fixture-png.mjs';
 const root=process.cwd(),data=fs.mkdtempSync(path.join(root,'.desktop-test/web-ai-'));process.env.XXT_DATA_DIR=data;
 const {findEdge}=await import('../../src/browser/launch.mjs');
 const {AI_PROVIDERS,providerForUrl,ensureProviderPage}=await import('../../src/ai/providers.mjs');
@@ -19,14 +20,14 @@ try{
   const editor=id==='doubao'?'<div class="tiptap" contenteditable="true"></div>':'<textarea placeholder="给 DeepSeek 发送消息 "></textarea>';
   const send=id==='doubao'?'<button data-testid="chat_input_send_button">发送</button>':'<div role="button" class="ds-button--primary ds-button--circle">发送</div>';
   const answer=id==='doubao'?'<div data-testid="receive_message"><div data-testid="message_text_content">OLD ANSWER</div></div>':'<div class="ds-assistant-message-main-content">OLD ANSWER</div>';
-  const markup=`<meta charset="utf-8"><div id="answers">${answer}</div><div data-testid="chat_input" class="_77cefa5">${editor}<input type="file" accept="image/png"><div id="attachment"></div>${send}</div><script>
+  const markup=`<meta charset="utf-8"><div id="answers">${answer}</div><div data-testid="chat_input" class="_77cefa5">${editor}<input type="file" accept="image/png"><div id="attachment"></div><div class="ds-loading" hidden>旧加载状态</div>${send}</div><script>
   const input=document.querySelector('input'),send=document.querySelector('button,[role=button]');
   window.sent=0;input.onchange=()=>{document.querySelector('#attachment').innerHTML='<img alt="'+input.files[0].name+'" src="'+URL.createObjectURL(input.files[0])+'">';};
   send.onclick=()=>{window.sent++;if('${id}'==='doubao'){const user=document.createElement('div');user.dataset.testid='send_message';user.textContent=document.querySelector('.tiptap').innerText;document.querySelector('#answers').append(user)}document.querySelector('${id==='doubao'?'.tiptap':'textarea'}').${id==='doubao'?'innerText':'value'}='';${id==='doubao'?'':'input.value="";'}document.querySelector('#attachment').innerHTML='';const response=document.createElement('div');response.innerHTML=${JSON.stringify(answer.replace('OLD ANSWER','红色'))};document.querySelector('#answers').append(response);};</script>`;
   await page.route('**/*',route=>route.fulfill({contentType:'text/html',body:markup}));await page.goto(provider.url);
   assert.equal((await checkLogin(page)).loggedIn,true);
   assert.equal(await ensureProviderPage(context,provider),page,'reuse the selected provider page');
-  const imagePath=path.join(root,'.desktop-test/hidden-screenshot/verified-hidden.png');
+  const imagePath=path.join(data,'fixture.png');fs.writeFileSync(imagePath,fixturePng());
   for(let round=0;round<2;round++){
    const result=await askImage({page,imagePath,prompt:'只回答方块颜色',freshChat:false});
    assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.answer,'红色');

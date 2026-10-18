@@ -16,11 +16,12 @@ dialog.innerHTML = `
   </section>
   <section id="onboardingAI" hidden>
     <h2 id="onboardingAITitle" tabindex="-1">选择你的做题 AI</h2>
-    <p class="onboarding-description">使用自己的网页账号，无需 API Key。以后可以在偏好设置中切换。</p>
+    <p class="onboarding-description">可使用网页版，或稍后在偏好设置中配置 OpenAI 兼容 API。</p>
     <fieldset class="onboarding-providers"><legend class="sr-only">做题 AI</legend>
       <label><input type="radio" name="onboardingProvider" value="qianwen" checked><span><b>千问</b><small>网页版</small></span></label>
       <label><input type="radio" name="onboardingProvider" value="doubao"><span><b>豆包</b><small>网页版</small></span></label>
       <label><input type="radio" name="onboardingProvider" value="deepseek"><span><b>DeepSeek</b><small>网页版</small></span></label>
+      <label><input type="radio" name="onboardingProvider" value="api"><span><b>API</b><small>自备密钥</small></span></label>
     </fieldset>
     <div class="onboarding-status"><span class="onboarding-status-dot" aria-hidden="true"></span><span id="onboardingAIStatus" role="status">尚未检测登录</span></div>
     <div class="onboarding-actions"><button id="onboardingOpenAI">保存并打开 AI 登录 ↗</button><button id="onboardingCheckAI">检测 AI 登录</button></div>
@@ -32,7 +33,7 @@ document.body.append(dialog);
 const $ = id => document.getElementById(id);
 let status = workspace.snapshot().status || {}, step = 1, busy = false, autoPending = false, paused = false;
 const provider = () => dialog.querySelector('input:checked').value;
-const names = { qianwen: '千问', doubao: '豆包', deepseek: 'DeepSeek' };
+const names = { qianwen: '千问', doubao: '豆包', deepseek: 'DeepSeek', api:'API' };
 const blocked = () => status.running || status.reconRunning;
 const browserReady = () => status.edge?.connected && (status.ready || status.browserMode === 'embedded');
 async function api(url, body) {
@@ -53,7 +54,9 @@ function render() {
   $('onboardingLoginStatus').textContent = login ? '学习通已登录，可以继续' : status.bootError || (browserReady() ? '等待你在内置网页中完成登录' : '正在准备网页引擎，请稍候…');
   $('onboardingLoginStatus').parentElement.classList.toggle('is-ready', login);
   const aiReady = status.ai?.provider === provider() && status.ai.loggedIn;
-  $('onboardingAIStatus').textContent = aiReady ? `${names[provider()]}已登录` : `${names[provider()]}尚未检测到登录`;
+  $('onboardingAIStatus').textContent = provider()==='api'?(aiReady?'API 已配置':'请在偏好设置填写 API 地址、密钥与模型'):(aiReady ? `${names[provider()]}已登录` : `${names[provider()]}尚未检测到登录`);
+  $('onboardingOpenAI').textContent=provider()==='api'?'保存并配置 API →':'保存并打开 AI 登录 ↗';
+  $('onboardingCheckAI').textContent=provider()==='api'?'检测 API 配置':'检测 AI 登录';
   $('onboardingAIStatus').parentElement.classList.toggle('is-ready', !!aiReady);
   $('onboardingNext').textContent = busy ? '正在处理…' : step === 1 ? '下一步 →' : '保存选择，去选课 →';
   $('onboardingBack').hidden = step !== 2;
@@ -94,7 +97,7 @@ $('onboardingCheckLogin').onclick = () => run(async () => {
   await action('refreshLogin');
   if (!status.login?.loggedIn) throw new Error('还未检测到学习通登录，请在软件内的学习通网页完成登录后重试。');
 });
-$('onboardingOpenAI').onclick = () => run(async () => { await saveProvider(); await action('openAI'); });
+$('onboardingOpenAI').onclick = () => run(async () => { await saveProvider();if(provider()==='api'){dismiss();workspace.navigate('settings');const details=$('apiSettings');if(details)details.open=true;}else await action('openAI'); });
 $('onboardingCheckAI').onclick = () => run(async () => {
   await saveProvider(); await action('checkQianwen');
   if (status.ai?.provider !== provider() || !status.ai.loggedIn) throw new Error('还未检测到所选 AI 登录，请完成网页登录后重试，也可以稍后登录。');

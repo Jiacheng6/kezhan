@@ -167,3 +167,12 @@ tools/test/*
 !tools/test/test-web-virtual-turns.mjs
 !tools/test/test-web-turn.mjs
 !tools/test/test-doubao-receipt.mjs
+api-config.bin*
+!tools/test/test-ai-api.mjs
+!tools/test/test-ai-resume.mjs
+!tools/test/test-web-resume.mjs
+!tools/test/test-desktop-ai-controls.mjs
+!tools/test/test-submit-dialogs.mjs
+!tools/test/test-qianwen-turns.mjs
+!tools/test/fixture-png.mjs
+!tools/test/test-atomic-file.mjs

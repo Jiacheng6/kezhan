@@ -8,7 +8,7 @@ import { loadLearningTerms, containsLearningTerms } from '../test/privacy-learni
 import { isPublicNumericAsset } from '../test/privacy-public-assets.mjs';
 const dist = path.join(ROOT, 'dist');
 const app = path.join(dist, 'win-unpacked', 'resources', 'app');
-for (const excluded of ['edge-profile', 'Partitions', 'browser-session.bin', 'notifications.json', 'logs', 'data', 'local.json', 'state.json', 'recon-selection.json', '.git', 'tools', 'docs']) {
+for (const excluded of ['edge-profile', 'Partitions', 'browser-session.bin', 'api-config.bin', 'notifications.json', 'logs', 'data', 'local.json', 'state.json', 'recon-selection.json', '.git', 'tools', 'docs']) {
   assert.equal(fs.existsSync(path.join(app, excluded)), false, `发布包不能包含 ${excluded}`);
 }
 assert.ok(fs.existsSync(path.join(app, 'desktop', 'native', 'BrowserWindowControl.exe')));
@@ -21,6 +21,9 @@ for (const relative of ['src/ui/run-scope.js', 'src/batch.mjs', 'src/chaoxing/qu
   assert.equal(fs.readFileSync(path.join(app, relative)).equals(fs.readFileSync(path.join(ROOT, relative))), true, '打包源码不一致：' + relative);
 }
 for (const file of ['review-recovery.mjs', 'review-lock.mjs']) assert.ok(fs.existsSync(path.join(app, 'src', 'chaoxing', file)), '缺少作业恢复模块：' + file);
+for(const relative of ['src/atomic-file.cjs','desktop/ai-api.cjs','src/ai/api.mjs','src/ai/resume.mjs','src/chaoxing/submission-state.mjs','src/ui/ai-controls.js','src/ui/ai-controls.css']){
+  assert.equal(fs.readFileSync(path.join(app,relative)).equals(fs.readFileSync(path.join(ROOT,relative))),true,'本次答题修复模块缺失或版本不一致：'+relative);
+}
 assert.ok(fs.existsSync(path.join(app, 'node_modules', 'playwright-core', 'package.json')));
 assert.ok(fs.existsSync(path.join(app, 'node_modules', 'ws', 'package.json')));
 assert.ok(fs.existsSync(path.join(app, 'node_modules', 'electron-updater', 'package.json')));

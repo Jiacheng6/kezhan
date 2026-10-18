@@ -5,7 +5,7 @@ const crypto = require('node:crypto');
 // Windows renders native toasts in the system style. In-app reminders use the
 // shared application dialog; both surfaces carry the same copy and action.
 const catalog = {
-  'ai-verification': ['AI 需要人工验证', '本批次已暂停，当前题目已保留。请在软件内 AI 网页完成验证，再重新开始。', 'ai', true],
+  'ai-verification': ['AI 需要人工验证', '当前题目已暂停。请在软件内 AI 网页完成验证，再点击“验证已完成，继续本题”。', 'ai', true],
   'ai-login': ['AI 登录已失效', '本批次已暂停，题目已保留。请在软件内 AI 网页登录后重新开始。', 'ai', true],
   'ai-limited': ['AI 暂时无法继续', '已暂停任务并保留题目。请查看 AI 网页的额度或使用限制，稍后重新开始。', 'ai', true],
   'ai-draft': ['AI 网页有待处理内容', '已有草稿或附件，已暂停任务，避免混入下一题。请在软件内查看后重新开始。', 'ai', true],

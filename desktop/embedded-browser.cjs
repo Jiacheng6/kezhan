@@ -99,6 +99,12 @@ class EmbeddedBrowser {
   publish() { if (!this.disposed) this.onState(this.snapshot()); }
   async create({ url = 'about:blank', show = false } = {}) {
     if (!webURL(url)) throw new Error('仅支持软件内的 HTTP/HTTPS 网页');
+    // Release only persisted, idle review pages. The queue can restore them;
+    // never turn a page-count threshold into a dead end for a new task.
+    if(this.views.size>=12){
+      const idle=[...this.views.values()].filter(r=>r.role==='review'&&!r.busy&&r.view.webContents.id!==this.active).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+      for(const r of idle){if(this.views.size<10)break;await this.closePage(r);}
+    }
     const view = new WebContentsView({ webPreferences: { session: this.session, nodeIntegration: false,
       nodeIntegrationInSubFrames: false, contextIsolation: true, sandbox: true, webSecurity: true,
       backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required' } });
@@ -113,7 +119,7 @@ class EmbeddedBrowser {
     this.ensureCaptureWindow();
     const c = view.webContents;
     const id = c.id;
-    const record = { view, host: this.captureWindow, targetId: null, error: '', viewportReady: false }; this.views.set(c.id, record);
+    const record = { view, host: this.captureWindow, targetId: null, error: '', viewportReady: false, createdAt:Date.now() }; this.views.set(c.id, record);
     this.captureWindow.contentView.addChildView(view); view.setVisible(false);
     setViewBounds(record, { x: 0, y: 0, width: 1100, height: 760 });
     c.on('dom-ready', () => { record.viewportReady = true; record.viewportKey = null; this.applyBounds(); });
@@ -194,10 +200,26 @@ class EmbeddedBrowser {
       r.view.setVisible(true);
     }
   }
-  command({ action, id } = {}) {
+  async closePage(record){
+    const contents=record.view.webContents;if(contents.isDestroyed())return;
+    await new Promise((resolve,reject)=>{
+      const done=()=>{clearTimeout(timer);resolve();};
+      const timer=setTimeout(()=>{contents.off('destroyed',done);reject(new Error('网页尚未关闭，请稍后重试'));},3000);
+      contents.once('destroyed',done);
+      try{contents.close({waitForBeforeUnload:false});}catch(error){clearTimeout(timer);contents.off('destroyed',done);reject(error);}
+    });
+  }
+  async command({ action, id } = {}) {
     if (action === 'hide') return this.setVisible(false);
     if (action === 'show') return this.setVisible(true);
     if (action === 'select') return this.activate(id, true);
+    if(action==='close'){
+      const record=this.views.get(Number(id??this.active));
+      if(!record)return this.snapshot();
+      if(record.busy)throw new Error('此网页正在执行任务，请先停止任务，再关闭网页');
+      await this.closePage(record);
+      return this.snapshot();
+    }
     const c = this.views.get(this.active)?.view.webContents;
     if (!c || c.isDestroyed()) throw new Error('请先打开网页');
     if (action === 'back' && c.navigationHistory.canGoBack()) c.navigationHistory.goBack();

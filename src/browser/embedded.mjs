@@ -13,7 +13,7 @@ export function embeddedRequest(method, params = {}) {
   if (!embedded || !process.parentPort) return Promise.reject(new Error('内置网页服务不可用'));
   return new Promise((resolve, reject) => {
     const id = ++sequence;
-    const timer = setTimeout(() => { pending.delete(id); reject(new Error('内置网页响应超时')); }, method === 'post' ? 25000 : 15000);
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error('内置网页响应超时')); }, method === 'api-ask'?125000:method === 'post' ? 25000 : 15000);
     pending.set(id, { resolve, reject, timer });
     process.parentPort.postMessage({ type: 'browser-request', id, request: { method, ...params } });
   });

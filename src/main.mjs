@@ -18,7 +18,7 @@ import { batchRunner, buildRunTasks } from './batch.mjs';
 import { assertRunScope } from './ui/run-scope.js';
 import { loadState, resetState, statePath, setTaskStatus, listReviewItems, markReviewItem, healStaleRunning, reconcile, mutateState } from './state.mjs';
 import { listKeptPages, registerKeptPage, editKeptEssayReviewAnswer } from './chaoxing/quizrun.mjs';
-import { reopenReviewWork, submitPendingReviews, withReviewLock } from './chaoxing/review-recovery.mjs';
+import { reopenReviewWork, submitPendingReviews, withReviewLock, syncSubmittedReviews } from './chaoxing/review-recovery.mjs';
 import { updateReviewAnswer } from './state.mjs';
 import { startServer } from './server.mjs';
 import { embedded } from './browser/embedded.mjs';
@@ -26,6 +26,9 @@ import { getOnboarding } from './onboarding.mjs';
 import { startWindowControl, setBrowserVisible, isBrowserVisible, stopWindowControl } from './browser/window-control.mjs';
 import { ownerState, startOwnerMonitor } from './browser/owner-lifecycle.mjs';
 import {selectedProvider, ensureProviderPage} from './ai/providers.mjs';
+import {aiResumeStatus,continueAI,onAIResumeChange} from './ai/resume.mjs';
+import {apiStatus} from './ai/api.mjs';
+onAIResumeChange(wait=>{patchStatus({aiWaiting:wait});if(wait.waiting)notifyUser('ai-verification',{provider:wait.provider,key:wait.provider+'-verification',detail:`${wait.label}需要人工验证；完成后点击“验证已完成，继续本题”。`});});
 
 /*
  * ⚠ 不要在这里把 PERSON_ID 抄成常量。
@@ -403,6 +406,11 @@ async function readoptKeptPages() {
  */
 async function refreshQianwenStatus({create=false}={}) {
   const provider=selectedProvider(loadSettings());
+  if(provider.id==='api'){
+    const status=await apiStatus().catch(()=>({configured:false}));runtime.qianwenPage=null;
+    patchStatus({ai:{provider:'api',label:'API',loggedIn:status.configured,url:null},qianwen:{loggedIn:status.configured,url:null}});
+    return {loggedIn:status.configured};
+  }
   const sequence=runtime.aiProbeSequence=(runtime.aiProbeSequence||0)+1;
   const current=()=>runtime.aiProbeSequence===sequence&&selectedProvider(loadSettings()).id===provider.id;
   const publish=(loggedIn,url=null)=>{if(current())patchStatus({ai:{provider:provider.id,label:provider.label,loggedIn,url},qianwen:{loggedIn,url}});};
@@ -429,12 +437,20 @@ async function refreshQianwenStatus({create=false}={}) {
 
 function buildHooks() {
   return {
+    aiResumeStatus:async()=>aiResumeStatus(),
+    continueAI:async()=>continueAI(),
     editReviewAnswer: async (body) => {
       const item = listReviewItems().find((it) => it.id === body.id);
       if (!item) return null;
       if (item.qtype !== 'essay') {
         if (Object.hasOwn(body, 'textAnswer')) throw new Error('此题不是简答题');
-        return withReviewLock(item.taskKey,()=>updateReviewAnswer(body.id, body.letters || []));
+        if(batchRunner.running||recon.running)throw new Error('请先停止当前任务，再修改答案');
+        return withReviewLock(item.taskKey,async()=>{
+          const saved=updateReviewAnswer(body.id,body.letters||[]);
+            try{const prepared=await reopenReviewWork(ctx(),item.taskKey,{personId:PERSON_ID});if(prepared.alreadySubmitted)return {id:body.id,alreadySubmitted:true};}
+          catch(error){throw new Error(`答案已保存，但未能填入作业页：${error.message}`);}
+          return listReviewItems().find(it=>it.id===saved.id);
+        });
       }
       if (batchRunner.running) throw new Error('请先停止当前任务，再修改简答草稿');
       await readoptKeptPages();
@@ -453,6 +469,7 @@ function buildHooks() {
     /** 重新探测千问登录态（界面「答题通道」灯） */
     checkQianwen: async () => refreshQianwenStatus({create:true}),
     openAI: async () => {
+      if(selectedProvider(loadSettings()).id==='api')return {provider:'api',api:true};
       await refreshQianwenStatus({create:true});
       if(runtime.qianwenPage)await bringToFront(runtime.qianwenPage);
       if(process.env.XXT_DESKTOP==='1'){await setBrowserVisible(true);patchStatus({browserVisible:true});}
@@ -801,6 +818,7 @@ function buildHooks() {
      */
     listKeptPages: async () => {
       await readoptKeptPages();
+      if(!batchRunner.running&&!recon.running)await syncSubmittedReviews();
       return listKeptPages();
     },
 

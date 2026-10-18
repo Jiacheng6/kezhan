@@ -354,7 +354,7 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent,
     return null;
   });
 
-  if (!qianwenPage) {
+  if (!qianwenPage && settings.ai?.provider!=='api') {
     return { ok: false, needsHuman: true, aiErrorCode:'not-logged-in', error: '没有可用的AI页面，无法自动作答', question: q, imagePath };
   }
 

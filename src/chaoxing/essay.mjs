@@ -3,7 +3,7 @@ import { throwIfStopped } from '../control.mjs';
 
 // 运行在题目所在 frame。全部定位限定在一道题内，避免误写相邻题的编辑器。
 function editorAction({ domIndex, text, write, overwrite }) {
-  const q = document.querySelectorAll('.TiMu, [class*="TiMu"]')[domIndex];
+  const q = document.querySelectorAll('.TiMu, .newTiMu')[domIndex];
   if (!q) return { ok: false, error: '找不到对应的简答题' };
   const normalize = (value) => String(value || '').replace(/\r\n?/g, '\n').replace(/[\u0000\u200b\ufeff]/g, '').trim();
   const equal = (a, b) => normalize(a).replace(/\s+/g, ' ') === normalize(b).replace(/\s+/g, ' ');
