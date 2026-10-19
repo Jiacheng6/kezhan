@@ -316,7 +316,7 @@ export function updateReviewAnswer(id, answer) {
       it.autoFilled = false;
       it.fillError = null;
       it.filled = answer.filled;
-      it.status = 'filled';
+      it.status = answer.filled?.verified === true ? 'filled' : 'pending-review';
     }
     it.editedByHuman = true;
     it.updatedAt = new Date().toISOString();
@@ -330,7 +330,7 @@ export function reviewStats() {
   return {
     total: q.length,
     pending: q.filter((x) => x.status === 'pending-review' || (x.status === 'filled' && x.requiresReview)).length,
-    filled: q.filter((x) => x.status === 'filled').length,
+    filled: q.filter((x) => x.status === 'filled' && (x.autoFilled === true || x.filled?.verified === true)).length,
     submitted: q.filter((x) => x.status === 'submitted').length,
     discarded: q.filter((x) => x.status === 'discarded').length,
   };

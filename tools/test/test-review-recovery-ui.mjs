@@ -130,6 +130,32 @@ try{
   assert.equal(response.ok,false);assert.equal(confirmed.length,3,'提交结果未知时不得重复点击提交');
   assert.equal(loadState().taskPoints['uncertain-demo'].status,'manual');
 
+  // Use the actual primary button and toolbar, not just the open endpoint.
+  // The reported path was submit -> blocked, while the separate open worked.
+  seed('ui-pending-demo',{pending:true,mode:'legacy-essay'});
+  await ui.locator('#panel-review [data-action="loadReview"]').click();
+  let uiSubmitRequests=0;
+  const countUISubmit=request=>{if(new URL(request.url()).pathname==='/api/review/submit')uiSubmitRequests++;};
+  ui.on('request',countUISubmit);
+  await ui.getByRole('button',{name:'恢复并核对',exact:true}).click();
+  await ui.locator('.review-feedback').filter({hasText:'恢复 2 题'}).waitFor();
+  assert.equal(uiSubmitRequests,0,'恢复操作不能调用提交接口');
+  assert.equal(loadState().keptPages['ui-pending-demo'].info.submissionPending,false);
+  assert.equal((await readEssayAnswer(findWorkFrame(getKeptPage('ui-pending-demo').page),0)).storedText,draft);
+  assert.equal(confirmed.length,3);
+  await ui.getByRole('button',{name:'✔ 提交这一组',exact:true}).waitFor();
+
+  seed('toolbar-pending-demo',{pending:true,mode:'legacy-essay'});
+  seed('toolbar-ready-demo',{append:true});
+  await ui.locator('#panel-review [data-action="loadReview"]').click();
+  await ui.locator('[data-action="submitAllReviews"]').click();
+  await ui.locator('.review-feedback').filter({hasText:'恢复 2 题'}).waitFor();
+  assert.equal(uiSubmitRequests,0,'批量入口遇到待恢复项时也只恢复，本次不提交其他组');
+  assert.equal(loadState().keptPages['toolbar-pending-demo'].info.submissionPending,false);
+  assert.equal(confirmed.length,3);
+  ui.off('request',countUISubmit);
+  seed('uncertain-demo',{pending:true,mode:'pending'});
+
   // A persisted uncertain flag must not permanently block restoring a server
   // draft after restart. Retrying submission alone remains blocked above.
   response=await post('open',{taskKey:'uncertain-demo'});

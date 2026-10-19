@@ -87,7 +87,7 @@ try {
   assert.equal((await fillEssayAnswer(work.mainFrame(), 0, '同步失败测试', { overwrite: true })).ok, false);
   await work.evaluate(() => { const ed = window.UE.instances.fixture; ed.sync = () => { document.querySelector('[name="answerEditor0"]').value = ed.body.innerHTML; }; });
   registerKeptPage('fixture', work, { name: '简答测试' });
-  mutateState((s) => { s.reviewQueue = [{ id: 'fixture#q1', taskKey: 'fixture', questionIndex: 1, domIndex: 0,
+  mutateState((s) => { s.onboarding={version:2,completedAt:new Date().toISOString()};s.reviewQueue = [{ id: 'fixture#q1', taskKey: 'fixture', questionIndex: 1, domIndex: 0,
     qtype: 'essay', qtypeRaw: '简答题', textAnswer: draft, aiAnswer: draft, requiresReview: true,
     confidence: 'medium', autoFilled: true, filled: auto, status: 'filled' }]; });
   assert.equal(reviewStats().pending, 1, '已填入简答仍需人工确认');

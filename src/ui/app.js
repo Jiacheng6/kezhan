@@ -1444,7 +1444,34 @@ async function loadReview({passive=false}={}) {
 }
 
 const reviewFeedback=new Map();
+const reviewConfirmationReady=new Set();
+async function restoreReviewedAnswers(taskKey) {
+  const response=await fetch('/api/review/open',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({taskKey})})
+    .then(result=>result.json()).catch(error=>({ok:false,error:error.message}));
+  const result=response.result;
+  if(response.ok&&result.pendingConfirmation)reviewConfirmationReady.add(taskKey);else reviewConfirmationReady.delete(taskKey);
+  const message=response.ok?
+    result.alreadySubmitted?'平台显示该作业已提交，可刷新确认状态':result.pendingConfirmation?'作业页仍有提交确认框，请核对后继续确认；已保存答案保留':`${result.pendingRecovered?'已重新核对平台草稿':'作业页已打开'}，恢复 ${result.restored||0} 题${result.ready?'，请核对后提交':`；第 ${(result.missing||[]).join('、')} 题仍需填写`}`:
+    `恢复失败：${response.error}`;
+  reviewFeedback.set(taskKey,message);
+  appendLog({t:Date.now(),level:response.ok?'ok':'error',message});
+  return response;
+}
 async function submitReviewedAnswers(scope) {
+  // An uncertain request can survive a restart after its modal disappears.
+  // Read current state rather than trusting a stale button label. A recovery
+  // click only restores; the user must click again after reviewing the result.
+  const current=await fetch('/api/review').then(result=>result.json()).catch(error=>({ok:false,error:error.message}));
+  if(!current.ok){appendLog({t:Date.now(),level:'error',message:`未能核对待审状态，未提交：${current.error||'请刷新后重试'}`});return;}
+  const active=new Set((current.result?.items||[]).map(item=>item.taskKey));
+  const targets=(current.result?.keptPages||[]).filter(record=>active.has(record.key)&&(scope.all||record.key===scope.taskKey));
+  const pending=targets.filter(record=>record.info?.submissionPending&&!reviewConfirmationReady.has(record.key));
+  if(pending.length){
+    for(const record of pending)await restoreReviewedAnswers(record.key);
+    appendLog({t:Date.now(),level:'info',message:'已先核对需要恢复的作业，本次未执行提交；请核对答案后再次点击提交。'});
+    await loadReview();return;
+  }
+  for(const record of targets)reviewConfirmationReady.delete(record.key);
   const response=await fetch('/api/review/submit',{
     method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(scope),
   }).then(result=>result.json()).catch(error=>({ok:false,error:error.message}));
@@ -1526,27 +1553,22 @@ function renderReview(data) {
     {
       const opened=!!k&&!k.closed&&k.submittable;
       head.appendChild(el('span',`chip ${opened?'':'skip'}`,opened?'作业页已打开':'作业页已关闭，可恢复'));
+      const needsRecovery=!!k?.info?.submissionPending&&!reviewConfirmationReady.has(taskKey);
       const open=el('button','ghost',opened?'打开并核对':'重新打开并恢复');
       open.addEventListener('click',async()=>{
         open.disabled=true;open.textContent='正在恢复…';
-        const response=await fetch('/api/review/open',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({taskKey})})
-          .then(result=>result.json()).catch(error=>({ok:false,error:error.message}));
-        const result=response.result;
-        const message=response.ok?
-          result.alreadySubmitted?'平台显示该作业已提交，可刷新确认状态':result.pendingConfirmation?'作业页仍有提交确认框，请核对后继续确认；已保存答案保留':`${result.pendingRecovered?'已重新核对平台草稿':'作业页已打开'}，恢复 ${result.restored||0} 题${result.ready?'，请核对后提交':`；第 ${(result.missing||[]).join('、')} 题仍需填写`}`:
-          `恢复失败：${response.error}`;
-        reviewFeedback.set(taskKey,message);
-        appendLog({t:Date.now(),level:response.ok?'ok':'error',message});
+        await restoreReviewedAnswers(taskKey);
         await loadReview();
       });
       head.appendChild(open);
-      const btn = el('button', 'primary', opened?'✔ 提交这一组':'恢复后提交这一组');
+      const buttonLabel=needsRecovery?'恢复并核对':reviewConfirmationReady.has(taskKey)?'继续确认提交':opened?'✔ 提交这一组':'恢复后提交这一组';
+      const btn = el('button', 'primary', buttonLabel);
       btn.addEventListener('click', async () => {
         btn.disabled=true;
         btn.classList.add('busy');
-        btn.textContent = '提交中…';
+        btn.textContent = needsRecovery?'正在恢复…':'提交中…';
         try{await submitReviewedAnswers({taskKey});}
-        finally{btn.disabled=false;btn.classList.remove('busy');btn.textContent=opened?'✔ 提交这一组':'恢复后提交这一组';}
+        finally{btn.disabled=false;btn.classList.remove('busy');btn.textContent=buttonLabel;}
       });
       head.appendChild(btn);
     }
