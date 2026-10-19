@@ -10,7 +10,7 @@
  *   doc      文档/PPT/PDF —— 只做"点开即完成"类
  *   read     阅读材料     —— 同上
  *   live     直播        —— 跳过，转「待人工」
- *   discuss  讨论/话题    —— 跳过，转「待人工」
+ *   discuss  讨论/话题    —— 开启后生成草稿，逐条确认发布
  *   audio    音频        —— 暂不处理
  */
 import fs from 'node:fs';
@@ -281,6 +281,7 @@ function toCourseEntry(c, sel, summary, progress) {
       }
 
       const isExcluded = excluded.has(key);
+      const blockedReason=t.type==='discuss'&&!willHandleBase?'需开启讨论草稿':null;
       const willHandle = enabled && willHandleBase && !isExcluded;
 
       counts[t.type] = (counts[t.type] || 0) + 1;
@@ -324,6 +325,7 @@ function toCourseEntry(c, sel, summary, progress) {
         sizeText: t.sizeText,
         sizeBytes: t.sizeBytes ?? null,
         jobid: t.jobid,
+        objectId:t.objectId||null,
         idx: t.idx,
         cardNum:t.cardNum??0,
         discussionId:t.discussionId||null,
@@ -335,6 +337,7 @@ function toCourseEntry(c, sel, summary, progress) {
         completion: taskCompletion({...t,sectionDone:s.done===true}, progress[key]),
         condition: t.condition,
         policy: policy.action,
+        blockedReason,
         policyHandle: willHandleBase,
         workKind,
         willHandle,

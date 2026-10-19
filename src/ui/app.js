@@ -492,6 +492,7 @@ async function saveSettingsForm() {
     });
     settingsForm.pending = {};
     await loadSettingsForm();
+    await refreshTreeProgress();
     return r;
   } finally {
     if (btn) {
@@ -711,7 +712,12 @@ const tree = {
   completedSectionsOpen: new Map(),
 };
 const selectionDesk = createSelectionDesk({ root: $('#selectionDesk'), snapshot: workspaceSnapshot,
-  change() { tree.dirty = true; renderTree(); }, save: saveSelection, navigate: switchTab, action: runAction });
+  change() { tree.dirty = true; renderTree(); }, save: saveSelection, navigate: switchTab, action: runAction,openDiscussionSettings });
+
+async function openDiscussionSettings(){
+  switchTab('settings');await loadSettingsForm();
+  const input=document.querySelector('[data-setting="discussionDrafts"]');input?.scrollIntoView({block:'center'});input?.focus();
+}
 
 // 暴露到 window，便于在浏览器控制台里排查（不影响正常使用）
 window.__console = {
@@ -1329,7 +1335,7 @@ function renderTaskRow(course, tasks, index) {
   const cb = document.createElement('input');
   cb.type = 'checkbox';
   cb.dataset.motionKey = t.key + ':selected';
-  cb.checked = !t.excluded;
+  cb.checked = !t.excluded && t.policyHandle !== false;
   cb.title = t.excluded ? '已排除，点击恢复' : '取消勾选即排除';
   cb.addEventListener('change', () => {
     t.excluded = !cb.checked;
@@ -1338,6 +1344,7 @@ function renderTaskRow(course, tasks, index) {
     renderTree();
   });
   row.appendChild(cb);
+  if(t.blockedReason){cb.disabled=true;cb.title=t.blockedReason;const enable=el('button','text-button','开启讨论草稿 →');enable.addEventListener('click',openDiscussionSettings);row.appendChild(enable);}
 
   const typeChip = el('span', `chip ${['video', 'work', 'doc'].includes(t.type) ? t.type : 'skip'}`, t.typeName || ({ video: '视频', work: '测验', doc: '文档' })[t.type] || t.type);
   row.appendChild(typeChip);

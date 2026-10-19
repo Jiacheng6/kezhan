@@ -30,7 +30,7 @@ export const SETTING_SPEC = [
     help: '简答题始终人工确认提交；低可靠/多候选答案也不会自动提交。',
   },
   { path: 'essayAutoFill', label: '简答题自动填写草稿', kind: 'bool', help: '填写后回读验证，进入待审队列；不会自动交卷。已有答案不覆盖。' },
-  { path: 'discussionDrafts', label: '生成讨论草稿', kind: 'bool', help: '优先复制出现最多的相同或近似回答；没有可用重复回答时请所选 AI 简短作答。只生成待审草稿，讨论须逐条确认发布。开启后请重新扫描课程以识别讨论。' },
+  { path: 'discussionDrafts', label: '生成讨论草稿', kind: 'bool', help: '优先复制出现最多的相同或近似回答；没有可用重复回答时请所选 AI 简短作答。只生成待审草稿，讨论须逐条确认发布。保存后已有讨论即可勾选；旧清单尚无讨论时需重新扫描。' },
   { path: 'essayPrompt', label: '简答题提问词', kind: 'textarea', advanced: true },
   { path: 'playbackSpeed', label: '优先播放速度', kind: 'select', options: [['1', '1× 正常播放'], ['1.5', '优先 1.5×'], ['2', '优先 2×']], help: '只使用课程播放器自带的倍速；不支持或设置失败时回到 1×。运行中显示实际速度。' },
   { path: 'videoCompletionMode', label: '视频完成检查', kind: 'select', options: [['full', '播到片尾后核对'], ['check90', '90% 时先核对，未完成继续播放']], help: '以学习通实际完成状态为准。90% 检查不会拖动进度；未确认就从当前位置继续播到片尾。' },

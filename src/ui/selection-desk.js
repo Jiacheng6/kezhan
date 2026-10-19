@@ -6,7 +6,7 @@ import { selectOnlyTask, clearRunSelection, selectCourseTasks } from './run-scop
 const node = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const types = { video: '视频', work: '测验', doc: '文档', read: '阅读',discuss:'讨论' };
 
-export function createSelectionDesk({ root, snapshot, change, save, navigate, action }) {
+export function createSelectionDesk({ root, snapshot, change, save, navigate, action, openDiscussionSettings=()=>navigate('settings') }) {
   root.innerHTML = `
     <div class="sd-layout">
       <aside class="sd-courses" aria-label="选择课程">
@@ -161,8 +161,9 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
           choice.append(checkbox(`选择任务 ${t.name || t.sectionName}`, c.enabled !== false && !t.excluded && t.policyHandle !== false,
             checked => edit(() => { if (checked) c.enabled = true; t.excluded = !checked; recalc(c); }), 'task:' + t.key, t.policyHandle === false),
             node('span', 'sd-task-type', types[t.type] || t.typeName || '其他'), node('span', 'sd-task-name', t.name || t.sectionName || '未命名任务'),
-            node('span', 'sd-task-status' + (completion.finished ? ' done' : ''), t.policyHandle === false ? '需人工处理' : completion.label));
+            node('span', 'sd-task-status' + (completion.finished ? ' done' : ''), t.policyHandle === false ? t.blockedReason||'需人工处理' : completion.label));
           row.append(choice);
+          if(t.blockedReason==='需开启讨论草稿')row.append(button('开启讨论草稿 →',openDiscussionSettings,'text-button'));
           if (t.policyHandle !== false) {
             const only = button('仅选此项', () => edit(() => selectOnlyTask(data(),t.key), '已仅选择这一项，其他任务已取消勾选；点击开始后才会运行。'), 'sd-only-task');
             only.disabled=busy();only.setAttribute('aria-label',`仅选择任务 ${t.name || t.sectionName}`);row.append(only);

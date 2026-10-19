@@ -196,7 +196,20 @@ export function parseAnswer(rawAnswer, question) {
 
   /* ---- 判断题 ---- */
   if (qtype === 'judge') {
-    const j = findJudgeAnswer(text);
+    let j = findJudgeAnswer(text);
+    const candidates=[...new Set(extractCandidates(text).map(c=>c.letters))];
+    if(candidates.length){
+      const options=question.options||[],labels=options.map(o=>o.displayLetter);
+      if(candidates.length!==1||candidates[0].length!==1){result.reason='判断题存在多个字母候选';return result;}
+      const canMap=options.length===2&&labels.every(l=>/^[A-Z]$/.test(l||''))&&new Set(labels).size===2&&new Set(options.map(o=>o.letter)).size===2&&options.every(o=>/^(true|false)$/.test(o.letter));
+      if(canMap){
+        const option=options.find(o=>o.displayLetter===candidates[0]);
+        if(!option){result.reason='判断题回答的字母不在实际选项中';return result;}
+        const mapped=option.letter==='true'?'对':'错';
+        if(j&&j!==mapped){result.reason='判断题字母与对错结论相互矛盾';return result;}
+        j=mapped;
+      }else if(!j){result.reason='判断题字母回答缺少唯一的实际选项对应关系';return result;}
+    }
     if (!j) {
       result.reason = '未能从回答中判定对错';
       return result;

@@ -53,7 +53,7 @@ export async function webChatState(page,provider) {
     const beforeAnswer=textUsers.filter(e=>answerRoot&&(root(e).compareDocumentPosition(answerRoot)&Node.DOCUMENT_POSITION_FOLLOWING)).at(-1);
     const generating=last?.getAttribute('data-streaming')==='true'||!![...document.querySelectorAll(ui.stop)].find(visible)||buttons.some(e=>/^(停止生成|停止回答|Stop generating)$/i.test((e.innerText||e.getAttribute('aria-label')||'').trim()))
       ||(id==='deepseek'&&!!document.querySelector('.ds-button--primary.ds-button--circle svg rect'));
-    return {loggedIn:!!editor&&!signedOut,verification,limited,editor:!!editor,editorText:(editor?.value??editor?.innerText??'').trim(),count:answers.length,text:last?.innerText?.trim()||'',generating,
+    return {loggedIn:!!editor&&!signedOut,signedOut,verification,limited,editor:!!editor,editorText:(editor?.value??editor?.innerText??'').trim(),count:answers.length,text:last?.innerText?.trim()||'',generating,
       answerKey:key(answerRoot),hasUserTurns:users.length>0,userKey:key(root(user)),userText:(user?.textContent||'').trim(),imageKey:key(root(imageUser)),replyUserKey:key(root(beforeAnswer)),
       trackedMarker:turn?.marker||'',turnObserved:!!turn?.observed,turnConfirmed:!!turn?.answer&&last===turn.answer,turnInvalidated:!!turn?.invalidated};
   },{ui:WEB_UI[provider.id],id:provider.id});
@@ -159,15 +159,24 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
     }
     return state;
   };
+  const readyState=async()=>{
+    const loadingStarted=Date.now();let state;
+    do{
+      throwIfStopped(shouldStop);state=await readState();
+      if(state.loggedIn||state.verification||state.limited||state.signedOut&&Date.now()-loadingStarted>=1500)return state;
+      await interruptibleSleep(200,shouldStop);
+    }while(Date.now()-loadingStarted<15000);
+    return state;
+  };
   let stage='page',sent=false,turnMarker='';
   try{
     throwIfStopped(shouldStop);
     await dismissWebObstructions(page);
-    let state=await readState(),blocked=webBlock(state,provider);if(blocked)return blocked;
+    let state=await readyState(),blocked=webBlock(state,provider);if(blocked)return blocked;
     if(state.generating)return {ok:false,errorCode:'already-generating',error:`${provider.label}仍在回答上一条消息，请等待结束后再开始`};
     if(state.editorText&&!samePrompt(state.editorText,prompt))return {ok:false,errorCode:'draft-not-empty',error:`${provider.label}输入框已有草稿，请先处理，避免覆盖你的内容`};
     if(!fs.existsSync(imagePath))return {ok:false,errorCode:'image-missing',error:'题目图片不存在'};
-    if(freshChat){await page.goto(provider.url,{waitUntil:'domcontentloaded',timeout:45000});state=await readState();blocked=webBlock(state,provider);if(blocked)return blocked;}
+    if(freshChat){await page.goto(provider.url,{waitUntil:'domcontentloaded',timeout:45000});state=await readyState();blocked=webBlock(state,provider);if(blocked)return blocked;}
     if(state.editorText&&!samePrompt(state.editorText,prompt))return {ok:false,errorCode:'draft-not-empty',error:`${provider.label}输入框已有草稿，请先处理，避免覆盖你的内容`};
     const composer=page.locator(ui.composer).filter({visible:true}).first();
     const inputs=()=>read(()=>composer.locator('input[type="file"]').evaluateAll(inputs=>inputs.map((e,i)=>({i,accept:e.accept,selected:e.files.length,testid:e.getAttribute('data-testid')}))));

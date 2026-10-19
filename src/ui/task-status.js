@@ -75,6 +75,11 @@ export function mergeTaskCompletion(current, fresh) {
     for (const task of course.tasks || []) {
     const next = byKey.get(task.key)||((nextCourse.sections||[]).some(section=>section.knowledgeId===task.knowledgeId&&section.done)?{...task,completion:taskCompletion({...task,sectionDone:true})}:null);
     if (!next) continue;
+    for(const field of ['policyHandle','policy','blockedReason'])if(task[field]!==next[field]){
+      if(field==='policyHandle'&&task.policyHandle===false&&next.policyHandle!==false)task.excluded=true;
+      task[field]=next[field];changed=true;
+      task.willHandle=course.enabled!==false&&task.policyHandle!==false&&!task.excluded;
+    }
     const completion = completionOf(next);
     if (JSON.stringify(completionOf(task)) !== JSON.stringify(completion)) {
       task.completion = completion;

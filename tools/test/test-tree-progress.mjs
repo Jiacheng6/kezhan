@@ -46,4 +46,10 @@ assert.equal(taskCompletion({ finished: true }, { status: 'manual' }).finished, 
 assert.equal(taskCompletion({ finished: false }, { status: 'running' }).finished, false);
 assert.equal(taskCompletion({}).state, 'unknown');
 assert.equal(taskCompletion({ finished: false }, { status: 'skipped' }).finished, false);
+const discussionView={courses:[{courseId:'discussion-course',enabled:true,tasks:[{key:'discussion',type:'discuss',policyHandle:false,blockedReason:'需开启讨论草稿',excluded:false,willHandle:false}]}]};
+const freshDiscussion={courses:[{courseId:'discussion-course',tasks:[{key:'discussion',type:'discuss',policyHandle:true,blockedReason:null}]}]};
+assert.equal(mergeTaskCompletion(discussionView,freshDiscussion),true);
+assert.equal(discussionView.courses[0].tasks[0].policyHandle,true,'保存讨论开关后已有清单即刻解锁');
+assert.equal(discussionView.courses[0].tasks[0].excluded,true,'解锁不自动扩大本次学习范围');
+assert.equal(discussionView.courses[0].tasks[0].willHandle,false);
 console.log('✓ 分任务完成状态、视频完成但答题待审、只选未完成、刷新保留选择和排序、只读展示通过');

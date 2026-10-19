@@ -362,7 +362,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
         domIndex: q.domIndex,
         qtype: q.qtype,
         qtypeRaw: q.qtypeRaw,
-        options: (q.options || []).map((o) => ({ letter: o.letter, text: o.text })),
+        options: (q.options || []).map((o) => ({ letter: o.letter, displayLetter:o.displayLetter, text: o.text })),
         imagePath: solved.imagePath,
         aiAnswer: solved.aiAnswer,
         aiError: solved.aiError,

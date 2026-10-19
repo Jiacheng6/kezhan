@@ -18,7 +18,7 @@ export async function beginWebTurn(page, provider, prompt) {
       const nodes = [...scope.querySelectorAll('[data-testid="receive_message"] [data-testid="message_text_content"]')];
       return nodes.filter(node => !nodes.some(other => other !== node && node.contains(other)));
     };
-    const before = (a, b) => !!(root(a).compareDocumentPosition(root(b)) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const before = (a, b) => {const position=root(a).compareDocumentPosition(root(b));return !(position&Node.DOCUMENT_POSITION_DISCONNECTED)&&!!(position&Node.DOCUMENT_POSITION_FOLLOWING);};
     const knownAnswers = new Set(answers(document).map(messageId).filter(Boolean));
     const turn = {marker, observed: false, answerId: '', answerNode: null, invalidated: false, receipt: false};
     const scan = scope => {
@@ -27,12 +27,12 @@ export async function beginWebTurn(page, provider, prompt) {
       if (!user) return;
       turn.observed = true;
       const laterUsers = users.filter(node => before(user, node));
-      if (laterUsers.length) {turn.invalidated = true; return;}
+      if (laterUsers.length) {turn.invalidated = true;turn.invalidatedReason='later-user'; return;}
       const answer = answers(scope).find(node => before(user, node));
       if (!answer) return;
       const id = messageId(answer);
       if (id && knownAnswers.has(id)) return;
-      if (id && turn.answerId && id !== turn.answerId) {turn.invalidated = true; return;}
+      if (id && turn.answerId && id !== turn.answerId) {turn.invalidated = true;turn.invalidatedReason='answer-id-changed'; return;}
       turn.answerId = id;
       turn.answerNode = answer;
     };
@@ -40,8 +40,8 @@ export async function beginWebTurn(page, provider, prompt) {
       scan(document);
       const answer = turn.answerId ? answers(document).find(node => messageId(node) === turn.answerId)
         : turn.answerNode?.isConnected && [...document.querySelectorAll('[data-testid="send_message"]')].some(node => (node.textContent || '').includes(marker)) ? turn.answerNode : null;
-      if (answer && [...document.querySelectorAll('[data-testid="send_message"]')].some(node => (node.textContent || '').trim() && before(answer, node))) turn.invalidated = true;
-      return {marker, observed: turn.observed, answer: turn.invalidated ? null : answer, answerId: turn.answerId, invalidated: turn.invalidated, receipt: turn.receipt};
+      if (answer && [...document.querySelectorAll('[data-testid="send_message"]')].some(node => (node.textContent || '').trim() && before(answer, node))) {turn.invalidated = true;turn.invalidatedReason='user-after-answer';}
+      return {marker, observed: turn.observed, answer: turn.invalidated ? null : answer, answerId: turn.answerId, invalidated: turn.invalidated, invalidatedReason:turn.invalidatedReason||'', receipt: turn.receipt};
     };
     turn.observer = new MutationObserver(records => {
       // A virtual-list replacement can remove the question and reply together.
@@ -56,10 +56,10 @@ export async function beginWebTurn(page, provider, prompt) {
     ({answerId})=>page.evaluate(({marker,answerId})=>{
       const turn=globalThis[Symbol.for('xxt.web-chat-turn')];
       if(turn?.marker!==marker||turn.invalidated)return;
-      if(turn.answerId&&turn.answerId!==answerId){turn.invalidated=true;return;}
+      if(turn.answerId&&turn.answerId!==answerId){turn.invalidated=true;turn.invalidatedReason='receipt-id-changed';return;}
       turn.observed=true;turn.receipt=true;turn.answerId=answerId;
     },{marker,answerId}),
-    ()=>page.evaluate(marker=>{const turn=globalThis[Symbol.for('xxt.web-chat-turn')];if(turn?.marker===marker)turn.invalidated=true;},marker));
+    ()=>page.evaluate(marker=>{const turn=globalThis[Symbol.for('xxt.web-chat-turn')];if(turn?.marker===marker){turn.invalidated=true;turn.invalidatedReason='superseded-request';}},marker));
   receipts.set(page,{marker,dispose});
   return marker;
 }

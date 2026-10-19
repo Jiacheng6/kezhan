@@ -22,6 +22,7 @@ import { registerKeptPage } from './quizrun.mjs';
 import { cardsUrl, openSectionCard, waitForAttachments } from './section.mjs';
 import { checkTaskTracking, readPointStatusFromPage } from './attach.mjs';
 import { skipDecision, describeSkip } from './skip.mjs';
+import {readDocumentAttachment,openDocumentViewer} from './document.mjs';
 
 /*
  * 转发导出：这两个函数搬去了 `attach.mjs`（为了让 quizrun 也能用而不形成循环依赖），
@@ -141,6 +142,13 @@ export async function checkPointFinished(ctx, task, personId) {
   const page = await newTaskPage(ctx, 'verify-point');
   page.on('dialog', (d) => d.accept().catch(() => {}));
   try {
+    if(['doc','read'].includes(task.type)){
+      await page.goto(cardsUrl({...task,personId,cardNum:task.cardNum??0}),{waitUntil:'domcontentloaded',timeout:60000});
+      await waitForAttachments(page);
+      const deadline=Date.now()+8000;let result;
+      do{result=await readDocumentAttachment(page,task);if(result.finished===true||result.hasTracking===false)break;await page.waitForTimeout(250);}while(Date.now()<deadline);
+      return result;
+    }
     if(task.type==='discuss'){
       const {readDiscussionPointStatus}=await import('./discussion-page.mjs');
       await page.goto(cardsUrl({...task,personId,cardNum:task.cardNum??0}),{waitUntil:'domcontentloaded',timeout:60000});
@@ -301,8 +309,8 @@ export function describeCompletion(verdict, task) {
  *   打开小节 → 确认任务点存在 → 停留若干秒（触发学习通的浏览上报）
  *   → 核对绿点。若没变就多等一轮；仍不变则转「待人工」，不硬刷。
  *
- * 不做的事：不模拟滚动到文末（部分文档有时长/翻页要求，规则不确定，
- * 硬刷容易产生异常记录，交给人工更稳）。
+ * 实际进入文档预览并用原生翻页键浏览正文，由平台自己的规则判定完成。
+ * 不直接调用计分接口或伪造完成事件；预览不支持或无法确认时交给人工。
  */
 export async function runDocTask({ ctx, task, personId, onProgress, shouldStop }) {
   const settings = loadSettings();
@@ -341,6 +349,7 @@ export async function runDocTask({ ctx, task, personId, onProgress, shouldStop }
     log(`    打开小节：${task.secNo} ${task.sectionName}`, 'info');
     const card = await openSectionCard(page, task, personId, { maxCards: settings.maxCardProbe ?? 6 });
     result.cardNum = card.cardNum;
+    const locatedTask={...task,cardNum:card.cardNum};
     // 卡片序号的日志已在 openSectionCard 里打过，这里不重复
     if (card.notFound) {
       log(`    ? 该小节的卡片里没读到任何任务点（试了 ${card.cardsProbed} 张）`, 'warn');
@@ -350,42 +359,17 @@ export async function runDocTask({ ctx, task, personId, onProgress, shouldStop }
     const attachCount = await waitForAttachments(page);
     if (!attachCount) throw new Error('小节里没有渲染出任务点');
 
-    await installDefence(page);
-
-    // 确认这个任务点确实存在（用名称匹配），并读它的类型与状态
-    const info = await page.evaluate((name) => {
-      const list = Array.from(document.querySelectorAll('.ans-attach-ct'));
-      const metaOf = (ct) => {
-        try {
-          return JSON.parse(ct.querySelector('iframe')?.getAttribute('data') || '{}');
-        } catch {
-          return {};
-        }
-      };
-      let hit = list.find((ct) => metaOf(ct).name === name) || (list.length === 1 ? list[0] : null);
-      if (!hit) return { found: false, total: list.length };
-      const icon = hit.querySelector('.ans-job-icon');
-      const ifr = hit.querySelector('iframe');
-      return {
-        found: true,
-        total: list.length,
-        hasJobIcon: !!icon,
-        jobid: metaOf(hit).jobid || null,
-        aria: icon?.getAttribute('aria-label') || null,
-        finished: /ans-job-finished/.test(String(hit.className)) || /已完成/.test(icon?.getAttribute('aria-label') || ''),
-        iframeSrc: (ifr?.getAttribute('src') || '').slice(0, 100),
-      };
-    }, task.name);
+    const info=await readDocumentAttachment(page,task);
 
     result.taskPoint = info;
 
     if (!info.found) {
-      result.phase = 'no-tracking';
-      result.error = `该小节 ${info.total} 个附件中未找到此任务点`;
+      result.phase = 'needs-human';
+      result.error = info.error;
       log(`    ⊘ ${result.error}`, 'warn');
       return result;
     }
-    if (!info.hasJobIcon && !info.jobid) {
+    if (info.hasTracking===false) {
       result.phase = 'no-tracking';
       result.error = '该内容不是任务点（无完成度追踪）';
       log(`    ⊘ ${result.error}`, 'warn');
@@ -401,7 +385,11 @@ export async function runDocTask({ ctx, task, personId, onProgress, shouldStop }
       return result;
     }
 
-    // 停留，触发浏览上报
+    result.phase='open-document';
+    result.viewer=await openDocumentViewer(page,locatedTask,{shouldStop,onProgress});
+    log('    已打开并浏览阅读正文，等待平台原生记录…','info');
+
+    // 正文浏览后停留，给平台自己的阅读记录留出处理时间
     result.phase = 'dwelling';
     const dwellSec = settings.docDwellSec ?? 12;
     log(`    停留 ${dwellSec} 秒以触发完成上报…`, 'info');
@@ -421,12 +409,14 @@ export async function runDocTask({ ctx, task, personId, onProgress, shouldStop }
     releasePage(page);
     const verdict = await verifyTaskCompletion({
       ctx,
-      task,
+      task:locatedTask,
       personId,
       totalBudgetMs: (settings.greenDotRetries ?? 3) * (settings.greenDotWaitMs ?? 8000),
       intervalMs: settings.greenDotWaitMs ?? 8000,
+      shouldStop,
     });
     result.greenDot = verdict.done;
+    if(verdict.stopped){result.phase='stopped';result.error='被用户中止';return result;}
     result.greenVia = verdict.via;
     result.sectionStatus = verdict.section || null;
 
@@ -440,8 +430,9 @@ export async function runDocTask({ ctx, task, personId, onProgress, shouldStop }
     }
     return result;
   } catch (err) {
+    result.phase=err.code==='STOPPED'?'stopped':'needs-human';
     result.error = err.message;
-    log(`    ✗ 失败：${err.message}`, 'error');
+    log(`    阅读未完成：${err.message}`, 'warn');
     return result;
   } finally {
     result.elapsedSec = Math.round((Date.now() - started) / 1000);
@@ -460,6 +451,8 @@ export async function runDocTask({ ctx, task, personId, onProgress, shouldStop }
           secNo: task.secNo,
           finishedAt: prev.finishedAt || new Date().toISOString(),
         });
+      } else if (result.phase === 'needs-human') {
+        writeIfNotDone({status:'manual',note:result.error});
       } else if (result.phase === 'no-tracking') {
         writeIfNotDone({ status: 'done', note: '非任务点（无完成度追踪），无需处理' });
       } else if (result.phase === 'stopped') {

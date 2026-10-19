@@ -136,6 +136,9 @@ tools/test/*
 !tools/test/test-review-recovery.mjs
 !tools/test/test-discussion-consensus.mjs
 !tools/test/test-discussion.mjs
+!tools/test/test-document-and-judge.mjs
+!tools/test/test-discussion-selection-ui.mjs
+!tools/test/test-web-turn-dom.mjs
 !tools/test/test-review-recovery-ui.mjs
 !tools/test/test-selection-plan.mjs
 !tools/test/test-selection-desk-ui.mjs

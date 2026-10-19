@@ -1,6 +1,13 @@
 // Some learning pages draw unlabeled radio circles. Supply only the verified
 // option order/letters, never encrypted DOM text or an assumed correct answer.
 export function questionPrompt(base, question) {
+  if(question?.qtype==='judge'){
+    const options=question.options||[];
+    const valid=options.length===2&&new Set(options.map(o=>o.letter)).size===2&&options.every(o=>/^(?:true|false)$/.test(o.letter));
+    if(!valid)return `${base}\n本题为判断题。请依据截图判断，只输出“答案：对”或“答案：错”；看不清时说明看不清，不要猜测。`;
+    const mapping=options.map((o,i)=>`第${i+1}项${/^[A-Z]$/.test(o.displayLetter||'')?`（${o.displayLetter}）`:''}对应“${o.letter==='true'?'对':'错'}”`).join('，');
+    return `${base}\n\n本题为判断题，${mapping}。对应表仅说明按钮含义，不是本题答案。请依据图片判断，只输出“答案：对”或“答案：错”，不要输出 A/B。看不清时明确说明，不要猜测。`;
+  }
   if (!['single','multiple'].includes(question?.qtype)) return base;
   const letters=(question.options||[]).map(option=>String(option.letter||'').trim().toUpperCase());
   if (letters.length<2||letters.length>26||letters.some(letter=>!/^[A-Z]$/.test(letter))||new Set(letters).size!==letters.length) return base;

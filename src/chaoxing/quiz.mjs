@@ -81,10 +81,11 @@ export async function extractQuestions(workFrame) {
     const t = (el) => (el?.textContent || '').trim().replace(/\s+/g, ' ');
 
     return Array.from(document.querySelectorAll('.TiMu, .newTiMu')).map((q, i) => {
-      const typeRaw = t(q.querySelector('.newZy_TItle, [class*="TItle"] span'));
-      const stemRaw = t(q.querySelector('.Zy_TItle .fontLabel p, .Zy_TItle p'));
+      const heading=t(q.querySelector('.Zy_TItle .fontLabel, .Zy_TItle'));
+      const typeRaw = t(q.querySelector('.newZy_TItle'))||heading.match(/【[^】]+】/)?.[0]||t(q.querySelector('[class*="TItle"] span'));
+      const stemRaw = t(q.querySelector('.Zy_TItle .fontLabel p, .Zy_TItle p'))||heading;
 
-      const options = Array.from(q.querySelectorAll('li[qid][role], li[qid]')).map((li) => {
+      const options = Array.from(q.querySelectorAll('li[qid], li[role="radio"], li[role="checkbox"]')).map((li) => {
         /*
          * 选项字母在 li 内部的 span 上，不在 li 上。
          * 实测 DOM：
@@ -95,23 +96,27 @@ export async function extractQuestions(workFrame) {
          *   </li>
          */
         const letterSpan = li.querySelector('span[data], .num_option_dx, .num_option, span[name^="answer"]');
-        const rawLetter = (letterSpan?.getAttribute('data') || '').trim();
+        const native=li.querySelector('input[type="radio"],input[type="checkbox"]');
+        const rawLetter = (letterSpan?.getAttribute('data') || native?.value || '').trim();
         // 多选题是 A/B/C/D（转大写统一），判断题是 true/false（必须保持小写，
         // 因为 DOM 里就是 data="true"，转成 TRUE 会匹配不上）
         const letter = /^[a-z]$/i.test(rawLetter) ? rawLetter.toUpperCase() : rawLetter;
         const aria = li.getAttribute('aria-label') || '';
+        const visibleLetter=t(letterSpan).normalize('NFKC').toUpperCase();
+        const displayLetter=/^[A-Z]$/.test(visibleLetter)?visibleLetter:(aria.match(/^\s*([A-Z])(?:\s|[.、])/i)?.[1]?.toUpperCase()||null);
         // aria-label 形如 "A 有原创性、有价值的内容选择"（尾部可能带"选择"/"选项"）
         const ariaText = aria.replace(/^\s*[A-Z]\s*/, '').replace(/选择$|选项$/, '').trim();
         const innerText = t(li.querySelector('.after p, .after'));
         return {
           letter,
+          displayLetter,
           text: ariaText || innerText,
           textFromAria: !!ariaText,
           role: li.getAttribute('role') || '',
           onclick: li.getAttribute('onclick') || '',
           qid: li.getAttribute('qid') || '',
           qtype: li.getAttribute('qtype') || '',
-          selected: /check|select|active|cur/i.test(String(li.className)),
+          selected: native?native.checked:!!li.querySelector('.check_answer,.check_answer_dx'),
         };
       });
 
@@ -197,7 +202,7 @@ export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, r
   const fontsStarted = Date.now();
   for (;;) {
     const fonts = await read('检查题目字体', () => el.evaluate((node) => {
-      const roots = [...node.querySelectorAll('.Zy_TItle, .Zy_ulTop')];
+      const roots = [...node.querySelectorAll('.Zy_TItle, .Zy_ulTop, .Zy_ulBottom')];
       const requests = new Map();
       for (const root of roots.length ? roots : [node]) {
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -310,14 +315,18 @@ const SELECTED_CLASSES = ['check_answer', 'check_answer_dx'];
 const LETTER_SRC = `
 function __letterOf(li) {
   const s = li.querySelector('span[data], .num_option_dx, .num_option, span[name^="answer"]');
-  const raw = ((s && s.getAttribute('data')) || '').trim();
+  const native=li.querySelector('input[type="radio"],input[type="checkbox"]');
+  const raw = ((s && s.getAttribute('data')) || (native&&native.value) || '').trim();
   return /^[a-z]$/i.test(raw) ? raw.toUpperCase() : raw;
 }
 function __isSelected(li) {
+  const native=li.querySelector('input[type="radio"],input[type="checkbox"]');
+  if(native)return native.checked;
   const s = li.querySelector('span');
   if (!s) return false;
   return ${JSON.stringify(SELECTED_CLASSES)}.some(function (c) { return s.classList.contains(c); });
 }
+function __clickOption(li){const native=li.querySelector('input[type="radio"],input[type="checkbox"]');if(native)native.click();else li.click();}
 `;
 
 const HELPERS_SRC = LETTER_SRC;
@@ -346,17 +355,17 @@ export async function selectOptions(workFrame, domIndex, letters, { clearFirst =
       const q = document.querySelectorAll('.TiMu, .newTiMu')[idx];
       if (!q) return { ok: false, error: '题目元素不存在' };
 
-      const items = Array.from(q.querySelectorAll('li[qid]'));
+      const items = Array.from(q.querySelectorAll('li[qid],li[role="radio"],li[role="checkbox"]'));
 
       if (clear) {
-        for (const li of items) if (__isSelected(li)) li.click();
+        for (const li of items) if (__isSelected(li)) __clickOption(li);
       }
 
       const clicked = [];
       for (const li of items) {
         const letter = __letterOf(li);
         if (!want.includes(letter)) continue;
-        if (!__isSelected(li)) li.click();
+        if (!__isSelected(li)) __clickOption(li);
         clicked.push(letter);
       }
 
@@ -382,7 +391,7 @@ export async function readSelection(workFrame, domIndex) {
       eval(helpers);
       const q = document.querySelectorAll('.TiMu, .newTiMu')[idx];
       if (!q) return null;
-      const items = Array.from(q.querySelectorAll('li[qid]'));
+      const items = Array.from(q.querySelectorAll('li[qid],li[role="radio"],li[role="checkbox"]'));
       return {
         selected: items.filter(__isSelected).map(__letterOf).filter(Boolean),
         all: items.map(__letterOf).filter(Boolean),
