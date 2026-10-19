@@ -10,6 +10,7 @@ import { loadSettings } from './config.mjs';
 import { log, notifyUser } from './logbus.mjs';
 import { runVideoTask, runDocTask, HANDLED_TYPES } from './chaoxing/runner.mjs';
 import { runQuizTask, recordQuizResult } from './chaoxing/quizrun.mjs';
+import {runDiscussionTask} from './chaoxing/discussion.mjs';
 import { selectedRunTasks } from './ui/run-scope.js';
 import {
   loadState,
@@ -53,8 +54,8 @@ export function classifyTaskResult(r) {
 }
 
 export class BatchRunner {
-  constructor({ runQuiz = runQuizTask, runVideo = runVideoTask, runDoc = runDocTask } = {}) {
-    this.executors = { runQuiz, runVideo, runDoc };
+  constructor({ runQuiz = runQuizTask, runVideo = runVideoTask, runDoc = runDocTask,runDiscussion=runDiscussionTask } = {}) {
+    this.executors = { runQuiz, runVideo, runDoc,runDiscussion };
     this.running = false;
     this.stopRequested = false;
     this.stats = {
@@ -205,6 +206,8 @@ export class BatchRunner {
               shouldStop: stopFn,
             });
             recordQuizResult(r);
+          } else if(task.type==='discuss'){
+            r=await this.executors.runDiscussion({ctx,task,personId:command.personId,onProgress:onProg,shouldStop:stopFn,qianwenPage:this.qianwenPage});
           } else if (task.type === 'video') {
             r = await this.executors.runVideo({
               ctx,

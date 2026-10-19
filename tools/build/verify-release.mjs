@@ -21,7 +21,7 @@ for (const relative of ['src/ui/run-scope.js', 'src/batch.mjs', 'src/chaoxing/qu
   assert.equal(fs.readFileSync(path.join(app, relative)).equals(fs.readFileSync(path.join(ROOT, relative))), true, '打包源码不一致：' + relative);
 }
 for (const file of ['review-recovery.mjs', 'review-lock.mjs']) assert.equal(fs.readFileSync(path.join(app,'src','chaoxing',file)).equals(fs.readFileSync(path.join(ROOT,'src','chaoxing',file))),true,'作业恢复模块缺失或版本不一致：'+file);
-for(const relative of ['src/state.mjs','src/chaoxing/submit-control.mjs','src/atomic-file.cjs','desktop/ai-api.cjs','src/ai/api.mjs','src/ai/resume.mjs','src/chaoxing/submission-state.mjs','src/ui/ai-controls.js','src/ui/ai-controls.css']){
+for(const relative of ['src/chaoxing/discussion.mjs','src/chaoxing/discussion-page.mjs','src/chaoxing/discussion-consensus.mjs','src/chaoxing/runner.mjs','src/chaoxing/recon.mjs','src/chaoxing/checklist.mjs','src/settings.mjs','src/config.mjs','src/ui/task-status.js','src/state.mjs','src/chaoxing/submit-control.mjs','src/atomic-file.cjs','desktop/ai-api.cjs','src/ai/api.mjs','src/ai/resume.mjs','src/chaoxing/submission-state.mjs','src/ui/ai-controls.js','src/ui/ai-controls.css']){
   assert.equal(fs.readFileSync(path.join(app,relative)).equals(fs.readFileSync(path.join(ROOT,relative))),true,'本次答题修复模块缺失或版本不一致：'+relative);
 }
 assert.ok(fs.existsSync(path.join(app, 'node_modules', 'playwright-core', 'package.json')));

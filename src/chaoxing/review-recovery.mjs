@@ -119,6 +119,7 @@ export async function syncSubmittedReviews() {
   for(const record of listKeptPages().filter(r=>!r.closed)){
     try{await withReviewLock(record.key,async()=>{
       const entry=getKeptPage(record.key);if(!entry)return;
+      if(entry.info?.type==='discussion'){if(await (await import('./discussion.mjs')).syncDiscussionReview(record.key,entry))synced++;return;}
       const expected=entry.info?.workIdentity||{};
       const result=await pageSubmissionState(entry.page,findWorkFrame(entry.page));
       if(!result.submitted)return;
@@ -132,6 +133,7 @@ export async function syncSubmittedReviews() {
 }
 
 export async function reopenReviewWork(ctx,key,options={}) {
+  if((await import('./discussion.mjs')).isDiscussionReview(key))return (await import('./discussion.mjs')).reopenDiscussionReview(ctx,key,options);
   const previous=getKeptPage(key)?.page;let result;if(previous)setPageBusy(previous,true);
   try{result=await reopenReviewWorkCore(ctx,key,options);return result;}
   finally{const current=getKeptPage(key)?.page;if(current)markSavedReviewPage(current);else{const page=result?.page||previous;if(page&&!page.isClosed())setPageBusy(page,false);}}
@@ -231,6 +233,7 @@ async function reopenReviewWorkCore(ctx,key,{personId,restoreAnswers=true,waitMs
 
 export async function submitReviewWork(ctx,key,options) {
   return withReviewLock(key,async()=>{
+    if((await import('./discussion.mjs')).isDiscussionReview(key))return (await import('./discussion.mjs')).submitDiscussionReview(ctx,key,options);
     const prepared=await reopenReviewWork(ctx,key,{...options,reconcilePending:false});
     if(prepared.alreadySubmitted){await prepared.page.close().catch(()=>{});releasePage(prepared.page);dropKeptPage(key);return {ok:true,alreadySubmitted:true};}
     if(!prepared.ready)return {ok:false,error:`第 ${prepared.missing.join('、')} 题尚未填写完整，已保留答案，请补全后提交`};
@@ -247,11 +250,14 @@ export async function submitPendingReviews(ctx,scope={},options={}) {
   const details=[];
   for(const target of targets){
     let result;
+    if(scope.all&&target.info?.type==='discussion'){
+      details.push({key:target.key,ok:false,error:'讨论草稿需要逐条核对，点击该条的“确认发布讨论”'});failed++;continue;
+    }
     try{result=await submitReviewWork(ctx,target.key,options);}
     catch(error){result={ok:false,error:error.message};}
     if(result.ok){
       clearReviewByTask(target.key,'submitted');
-      setTaskStatus(target.key,{status:'done',note:result.alreadySubmitted?'已核对平台提交结果':'人工确认后已提交',submittedAt:new Date().toISOString()});
+      if(result.taskFinished!==false)setTaskStatus(target.key,{status:'done',note:result.alreadySubmitted?'已核对平台提交结果':'人工确认后已提交',submittedAt:new Date().toISOString()});
       submitted++;
     }else failed++;
     details.push({key:target.key,ok:result.ok,error:result.error||null});

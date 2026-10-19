@@ -1451,7 +1451,7 @@ async function restoreReviewedAnswers(taskKey) {
   const result=response.result;
   if(response.ok&&result.pendingConfirmation)reviewConfirmationReady.add(taskKey);else reviewConfirmationReady.delete(taskKey);
   const message=response.ok?
-    result.alreadySubmitted?'平台显示该作业已提交，可刷新确认状态':result.pendingConfirmation?'作业页仍有提交确认框，请核对后继续确认；已保存答案保留':`${result.pendingRecovered?'已重新核对平台草稿':'作业页已打开'}，恢复 ${result.restored||0} 题${result.ready?'，请核对后提交':`；第 ${(result.missing||[]).join('、')} 题仍需填写`}`:
+    result.alreadySubmitted?(result.discussion?'平台已显示本人讨论回复，待审记录已同步':'平台显示该作业已提交，可刷新确认状态'):result.pendingConfirmation?'作业页仍有提交确认框，请核对后继续确认；已保存答案保留':result.discussion?'讨论草稿已填入网页，请核对后确认发布':`${result.pendingRecovered?'已重新核对平台草稿':'作业页已打开'}，恢复 ${result.restored||0} 题${result.ready?'，请核对后提交':`；第 ${(result.missing||[]).join('、')} 题仍需填写`}`:
     `恢复失败：${response.error}`;
   reviewFeedback.set(taskKey,message);
   appendLog({t:Date.now(),level:response.ok?'ok':'error',message});
@@ -1464,7 +1464,7 @@ async function submitReviewedAnswers(scope) {
   const current=await fetch('/api/review').then(result=>result.json()).catch(error=>({ok:false,error:error.message}));
   if(!current.ok){appendLog({t:Date.now(),level:'error',message:`未能核对待审状态，未提交：${current.error||'请刷新后重试'}`});return;}
   const active=new Set((current.result?.items||[]).map(item=>item.taskKey));
-  const targets=(current.result?.keptPages||[]).filter(record=>active.has(record.key)&&(scope.all||record.key===scope.taskKey));
+  const targets=(current.result?.keptPages||[]).filter(record=>active.has(record.key)&&(scope.all?record.info?.type!=='discussion':record.key===scope.taskKey));
   const pending=targets.filter(record=>record.info?.submissionPending&&!reviewConfirmationReady.has(record.key));
   if(pending.length){
     for(const record of pending)await restoreReviewedAnswers(record.key);
@@ -1504,7 +1504,7 @@ function renderReview(data) {
   sum.innerHTML =
     `共 <b>${s.total || 0}</b> 题 · 待确认 <b>${s.pending || 0}</b> · 已填入 <b>${s.filled || 0}</b> · ` +
     `已提交 <b>${s.submitted || 0}</b> · 已丢弃 <b>${s.discarded || 0}</b>` +
-    `<br><span class="muted">作业页已打开 ${openWorkPages} 个，可恢复已保存的答案；保留的视频弹窗记录 ${videoPageCount} 条（需在学习通页面手动作答）。</span>`;
+    `<br><span class="muted">待审页面已打开 ${openWorkPages} 个，可恢复已保存的答案；保留的视频弹窗记录 ${videoPageCount} 条（需在学习通页面手动作答）。${(data.items||[]).some(item=>item.qtype==='discussion')?'讨论请逐条核对并点击“确认发布讨论”，不会随顶部批量按钮一起发布。':''}</span>`;
 
   const items = data.items || [];
   bodyEl.innerHTML = '';
@@ -1548,12 +1548,13 @@ function renderReview(data) {
     const g = el('div', 'reviewgroup');
     const head = el('div', 'rghead');
     const k = keptMap.get(taskKey);
+    const discussion=list[0].qtype==='discussion';
     head.appendChild(el('span', 'gname', `${list[0].course || ''} · ${list[0].secNo || ''} ${list[0].sectionName || ''}`));
-    head.appendChild(el('span', 'gmeta', `${list.length} 题`));
+    head.appendChild(el('span', 'gmeta', `${list.length} ${discussion?'条':'题'}`));
     {
       const opened=!!k&&!k.closed&&k.submittable;
-      head.appendChild(el('span',`chip ${opened?'':'skip'}`,opened?'作业页已打开':'作业页已关闭，可恢复'));
-      const needsRecovery=!!k?.info?.submissionPending&&!reviewConfirmationReady.has(taskKey);
+      head.appendChild(el('span',`chip ${opened?'':'skip'}`,discussion?(opened?'讨论页已打开':'讨论页已关闭，可恢复'):(opened?'作业页已打开':'作业页已关闭，可恢复')));
+      const needsRecovery=!discussion&&!!k?.info?.submissionPending&&!reviewConfirmationReady.has(taskKey);
       const open=el('button','ghost',opened?'打开并核对':'重新打开并恢复');
       open.addEventListener('click',async()=>{
         open.disabled=true;open.textContent='正在恢复…';
@@ -1561,7 +1562,7 @@ function renderReview(data) {
         await loadReview();
       });
       head.appendChild(open);
-      const buttonLabel=needsRecovery?'恢复并核对':reviewConfirmationReady.has(taskKey)?'继续确认提交':opened?'✔ 提交这一组':'恢复后提交这一组';
+      const buttonLabel=discussion?(k?.info?.submissionPending?'核对发布结果':'确认发布讨论'):needsRecovery?'恢复并核对':reviewConfirmationReady.has(taskKey)?'继续确认提交':opened?'✔ 提交这一组':'恢复后提交这一组';
       const btn = el('button', 'primary', buttonLabel);
       btn.addEventListener('click', async () => {
         btn.disabled=true;
@@ -1585,16 +1586,17 @@ function renderReview(data) {
 function renderQCard(it, taskKey) {
   const card = el('div', 'qcard');
   if (!it.imagePath) card.classList.add('no-shot');
-  const isEssay = it.qtype === 'essay';
+  const isDiscussion=it.qtype==='discussion';
+  const isEssay = it.qtype === 'essay'||isDiscussion;
 
   const head = el('div', 'qhead');
-  head.appendChild(el('span', 'qno', `第 ${it.questionIndex} 题`));
+  head.appendChild(el('span', 'qno', isDiscussion?'讨论':`第 ${it.questionIndex} 题`));
   head.appendChild(el('span', 'chip', it.qtypeRaw || it.qtype));
   const conf = el('span', `badge ${it.confidence}`, it.confidenceLabel || it.confidence);
-  head.appendChild(conf);
+  if(!isDiscussion)head.appendChild(conf);
   if (it.editedByHuman) head.appendChild(el('span', 'chip', '人工改过'));
-  head.appendChild(el('span', 'chip', it.autoFilled ? '已自动填入' : it.filled?.verified ? '已人工填入' : '未填入'));
-  if (isEssay) head.appendChild(el('span', 'chip', '简答需人工核对'));
+  head.appendChild(el('span', 'chip', isDiscussion?(it.filled?.verified?'已填入讨论页':'待发布草稿'):it.autoFilled ? '已自动填入' : it.filled?.verified ? '已人工填入' : '未填入'));
+  if (isEssay) head.appendChild(el('span', 'chip', isDiscussion?'讨论需逐条确认发布':'简答需人工核对'));
   head.appendChild(el('span', 'chip', it.status === 'submitted' ? '已提交' : '待确认'));
   card.appendChild(head);
 
@@ -1615,13 +1617,14 @@ function renderQCard(it, taskKey) {
   } else {
     shot.innerHTML = '<div class="nolink">无截图</div>';
   }
-  bodyEl.appendChild(shot);
+  if(!isDiscussion||it.imagePath)bodyEl.appendChild(shot);
 
   // 右：AI 答案 + 解析 + 编辑
   const info = el('div', 'qinfo');
+  if(isDiscussion){const topic=el('div','row');topic.appendChild(el('span','lbl','讨论题目'));topic.appendChild(el('div','ai-text',it.archive?.stemTextRaw||it.sectionName||''));info.appendChild(topic);}
 
   const r1 = el('div', 'row');
-  r1.appendChild(el('span', 'lbl', isEssay ? '简答草稿' : 'AI 解析出的答案'));
+  r1.appendChild(el('span', 'lbl', isDiscussion?'讨论草稿':isEssay ? '简答草稿' : 'AI 解析出的答案'));
   r1.appendChild(el(isEssay ? 'div' : 'span', isEssay ? 'ai-text' : null,
     isEssay ? it.textAnswer || '(无可用正文)' : (it.letters || []).join('') || '(无)'));
   info.appendChild(r1);
@@ -1644,23 +1647,23 @@ function renderQCard(it, taskKey) {
     r3.appendChild(el('span', 'reason', `　${isEssay ? '提交提示' : '拦截'}：${it.validation.errors.join('；')}`));
   }
   if (it.fillError) r3.appendChild(el('span', 'reason', `　填写失败：${it.fillError}`));
-  info.appendChild(r3);
+  if(!isDiscussion)info.appendChild(r3);
 
   const r4 = el('div', 'row');
-  r4.appendChild(el('span', 'lbl', 'AI 原始回答'));
-  const ai = el('div', 'ai-text', (it.aiAnswer || it.aiError || '(无)').slice(0, 1500));
+  r4.appendChild(el('span', 'lbl', isDiscussion?'草稿来源':'AI 原始回答'));
+  const ai = el('div', 'ai-text', (isDiscussion?(it.discussion?.source==='popular-copy'?`已有评论原文：近似回答出现 ${it.discussion.matches} 次；已读取 ${it.discussion.scanned} 条${it.discussion.complete?'，已读完':'，未读完全部评论'}`:'所选 AI 生成，待你核对'):(it.aiAnswer || it.aiError || '(无)')).slice(0, 1500));
   r4.appendChild(ai);
   info.appendChild(r4);
 
   // 人工改答案
   const edit = el('div', 'qedit');
   const inp = document.createElement(isEssay ? 'textarea' : 'input');
-  if (isEssay) { inp.rows = 6; inp.maxLength = 10000; } else inp.type = 'text';
+  if (isEssay) { inp.rows = 6; inp.maxLength = isDiscussion?1500:10000; } else inp.type = 'text';
   inp.value = isEssay ? it.textAnswer || '' : (it.letters || []).map((l) => String(l).toUpperCase()).join('');
   inp.dataset.savedValue=inp.value;
-  inp.placeholder = isEssay ? '填写简答正文，支持分段' : '如 AB';
-  inp.title = isEssay ? '保存并填入将替换该题页面上的草稿；不会提交作业' : '人工修改答案（选择题填字母，判断题填 T/F 或 对/错）';
-  const save = el('button', null, '保存并填入');
+  inp.placeholder = isDiscussion?'填写简短讨论回答':isEssay ? '填写简答正文，支持分段' : '如 AB';
+  inp.title = isDiscussion?'仅保存本地讨论草稿；核对后点击该组的确认发布讨论才会发表':isEssay ? '保存并填入将替换该题页面上的草稿；不会提交作业' : '人工修改答案（选择题填字母，判断题填 T/F 或 对/错）';
+  const save = el('button', null, isDiscussion?'保存讨论草稿':'保存并填入');
   save.addEventListener('click', async () => {
     const v = inp.value.trim();
     if (isEssay) {
@@ -1672,7 +1675,7 @@ function renderQCard(it, taskKey) {
       }).then((x) => x.json()).catch((e) => ({ ok: false, error: e.message }));
       save.disabled = false;
       appendLog({ t: Date.now(), level: r.ok ? 'ok' : 'error', message: r.ok
-        ? (r.result?.alreadySubmitted?'平台已提交，待审记录已同步清除':`简答正文已保存并填入（${v.length} 字符），请核对后提交`) : `简答填写失败：${r.error}` });
+        ? (r.result?.alreadySubmitted?'平台已提交，待审记录已同步清除':isDiscussion?'讨论草稿已保存，尚未发布':`简答正文已保存并填入（${v.length} 字符），请核对后提交`) : `正文保存失败：${r.error}` });
       if (r.ok) await loadReview();
       return;
     }

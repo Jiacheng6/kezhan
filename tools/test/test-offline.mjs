@@ -48,6 +48,7 @@ const suite = [
   ['关闭确认 / 更新内容精简', 'tools/test/test-dialogs.mjs'],
   ['选课规则 / 方案保存与账号隔离', 'tools/test/test-selection-plan.mjs'],
   ['作业页面关闭恢复 / 身份核对', 'tools/test/test-review-recovery.mjs'],
+  ['讨论重复回答 / 数学含义隔离', 'tools/test/test-discussion-consensus.mjs'],
   ['课程完成分组 / 旧清单只读恢复', 'tools/test/test-course-groups.mjs'],
   ['课程树分任务完成状态 / 保留选择', 'tools/test/test-tree-progress.mjs'],
   ['更新状态 / 保存退出 / 数据备份', 'tools/test/test-updates.mjs'],

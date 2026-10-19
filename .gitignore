@@ -134,6 +134,8 @@ tools/test/*
 !tools/test/test-tree-progress-ui.mjs
 !tools/test/test-course-groups.mjs
 !tools/test/test-review-recovery.mjs
+!tools/test/test-discussion-consensus.mjs
+!tools/test/test-discussion.mjs
 !tools/test/test-review-recovery-ui.mjs
 !tools/test/test-selection-plan.mjs
 !tools/test/test-selection-desk-ui.mjs

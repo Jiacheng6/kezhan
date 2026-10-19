@@ -15,7 +15,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { PATHS } from '../config.mjs';
+import { PATHS,loadSettings } from '../config.mjs';
 import { loadState } from '../state.mjs';
 import { taskCompletion } from '../ui/task-status.js';
 import {reconMetadata} from './recon-metadata.mjs';
@@ -40,7 +40,7 @@ export const TYPE_POLICY = {
   read: { handle: true, label: '阅读材料', action: '点开停留后关闭，核对绿点' },
   work: { handle: 'quiz-only', label: '测验/作业', action: '章节测验：截图问 AI；独立作业默认不碰' },
   live: { handle: false, label: '直播', action: '跳过 → 记入待人工' },
-  discuss: { handle: false, label: '讨论', action: '跳过 → 记入待人工' },
+  discuss: { handle: 'discussion', label: '讨论', action: '生成讨论草稿 → 待审逐条确认发布' },
   audio: { handle: false, label: '音频', action: '暂不处理' },
   vote: { handle: false, label: '问卷', action: '跳过 → 记入待人工' },
   other: { handle: false, label: '未识别', action: '跳过 → 记入待人工' },
@@ -251,7 +251,14 @@ function toCourseEntry(c, sel, summary, progress) {
 
   for (const s of sections) {
     // 先按小节内原始序号确立稳定 uid，再套用用户排序
-    const withUid = s.tasks.map((t, i) => ({ ...t, seq: i, uid: taskUid(i) }));
+    let legacySeq=0;
+    const withUid = s.tasks.map(t=>{
+      // Newly included optional discussions must not shift saved video/work
+      // identities and accidentally reuse another task's progress or selection.
+      const seq=t.type==='discuss'?`discussion-${t.discussionId||`${t.cardNum??0}-${t.idx}`}`:legacySeq;
+      if(!(t.type==='discuss'&&t.tracking===false))legacySeq++;
+      return {...t,seq,uid:taskUid(seq)};
+    });
 
     const tOrder = sel.taskOrder[s.knowledgeId] || [];
     let ts = withUid;
@@ -267,6 +274,7 @@ function toCourseEntry(c, sel, summary, progress) {
       // work 类要再细分：章节测验 vs 独立作业
       let willHandleBase = policy.handle === true;
       let workKind = null;
+      if(policy.handle==='discussion')willHandleBase=loadSettings().discussionDrafts===true;
       if (policy.handle === 'quiz-only') {
         workKind = classifyWork(t.name);
         willHandleBase = workKind === 'quiz';
@@ -317,6 +325,9 @@ function toCourseEntry(c, sel, summary, progress) {
         sizeBytes: t.sizeBytes ?? null,
         jobid: t.jobid,
         idx: t.idx,
+        cardNum:t.cardNum??0,
+        discussionId:t.discussionId||null,
+        tracking:t.tracking,
         seq: t.seq,
         uid: t.uid,
         finished: t.finished,

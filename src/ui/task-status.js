@@ -1,8 +1,8 @@
 // 任务点完成状态与勾选范围分别计算，小节未完成不代表其中的视频未完成。
 export function taskCompletion(task, progress = null) {
-  if (task.finished === true || task.sectionDone === true || progress?.status === 'done') {
-    return { state: 'done', label: '已完成', finished: true,
-      source: task.finished === true || task.sectionDone === true ? 'platform' : 'local' };
+  if (task.finished === true || (task.sectionDone === true&&task.type!=='discuss') || progress?.status === 'done') {
+    return { state: 'done', label: task.type==='discuss'?'已参与':'已完成', finished: true,
+      source: task.finished === true || task.sectionDone === true&&task.type!=='discuss' ? 'platform' : 'local' };
   }
   const labels = { running: '执行中', manual: task.type === 'work' ? '待你核对' : '待你处理',
     failed: '执行失败', skipped: '已跳过' };

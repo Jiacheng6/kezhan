@@ -153,7 +153,7 @@ async function waitTreeFrame(page, timeoutMs = 25000) {
  *     iframe.ans-attach-online[data]      ← JSON{name,objectid,jobid,hsize,fastforward,doublespeed}
  *     .task-condition                     ← "观看时长需 ≥ 总时长的 90%"
  */
-const EXTRACT_ATTACH = () => {
+export const EXTRACT_ATTACH = () => {
   const t = (el) => (el?.textContent || '').trim().replace(/\s+/g, ' ');
 
   return Array.from(document.querySelectorAll('.ans-attach-ct')).map((ct, idx) => {
@@ -180,7 +180,7 @@ const EXTRACT_ATTACH = () => {
     else if (/modules\/live/.test(src)) type = 'live';
     else if (/modules\/doc|modules\/pdf/.test(src)) type = 'doc';
     else if (/modules\/vote/.test(src)) type = 'vote';
-    else if (/modules\/forum|modules\/bbs/.test(src)) type = 'forum';
+    else if (/modules\/(?:insertbbs|forum|bbs)/.test(src)) type = 'discuss';
 
     const aria = icon?.getAttribute('aria-label') || '';
 
@@ -188,7 +188,7 @@ const EXTRACT_ATTACH = () => {
       idx,
       type,
       // 状态以 aria-label 为主判据（class 会变，无障碍标签更稳），class 作交叉校验
-      finished: /已完成/.test(aria) || /ans-job-finished/.test(String(ct.className)),
+      finished: type==='discuss'?false:/已完成/.test(aria) || /ans-job-finished/.test(String(ct.className)),
       ariaLabel: aria,
       jobid: meta?.jobid || iframe?.getAttribute('jobid') || null,
       objectId: meta?.objectid || iframe?.getAttribute('objectid') || null,
@@ -200,6 +200,8 @@ const EXTRACT_ATTACH = () => {
        */
       name: meta?.name || meta?.title || null,
       workType: meta?.worktype || null,
+      discussionId: type==='discuss'?String(meta?.mid||''):null,
+      tracking:!(type==='discuss'&&meta?.isJob===false)&&(!!meta?.jobid||/任务点|已完成/.test(aria)),
       // 注意字段名统一用 sizeText —— 早期版本这里叫 size，
       // 导致下游按体积排序时读不到、挑"最小视频"完全失效。
       sizeText: meta?.hsize || (meta?.size ? `${(meta.size / 1048576).toFixed(1)}MB` : null),
@@ -653,13 +655,13 @@ export function reconToTaskReport(results) {
          * 是否真任务点：有 jobid（任务点 id）或学习通自己标的 aria-label。
          * 只有 _jobid 的是普通附件（问卷/讨论），不计入完成度。
          */
-        const hasTracking = !!a.jobid || /任务点|已完成/.test(String(a.ariaLabel || ''));
-        if (!hasTracking) {
+        const hasTracking = a.type==='discuss'&&a.tracking===false?false:!!a.jobid || /任务点|已完成/.test(String(a.ariaLabel || ''));
+        if (!hasTracking && a.type!=='discuss') {
           nonTaskPoints[a.type] = (nonTaskPoints[a.type] || 0) + 1;
           continue;
         }
 
-        const key = a.jobid || `${s.knowledgeId}#${a.idx}`;
+        const key = a.type==='discuss'?`${s.knowledgeId}#discussion:${a.discussionId||`${a.cardNum??0}:${a.idx}`}`:a.jobid || `${s.knowledgeId}#${a.idx}`;
         if (seen.has(key)) continue;
         seen.add(key);
 
@@ -678,6 +680,8 @@ export function reconToTaskReport(results) {
           jobid: a.jobid || null,
           idx: a.idx,
           cardNum: a.cardNum ?? 0,
+          discussionId:a.discussionId||null,
+          tracking:hasTracking,
           secNo: s.secNo,
           sectionName: s.name,
           knowledgeId: s.knowledgeId,

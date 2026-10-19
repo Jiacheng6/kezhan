@@ -4,7 +4,7 @@ import { completionOf, courseCompletion, sectionCompletion } from './task-status
 import { selectOnlyTask, clearRunSelection, selectCourseTasks } from './run-scope.js';
 
 const node = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-const types = { video: '视频', work: '测验', doc: '文档', read: '阅读' };
+const types = { video: '视频', work: '测验', doc: '文档', read: '阅读',discuss:'讨论' };
 
 export function createSelectionDesk({ root, snapshot, change, save, navigate, action }) {
   root.innerHTML = `

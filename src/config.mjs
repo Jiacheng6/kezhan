@@ -156,6 +156,7 @@ export const DEFAULT_SETTINGS = {
   /** 提交模式：'manual' = 人工确认（默认） | 'auto' = 高可靠答案自动提交 */
   submitMode: 'manual',
   essayAutoFill: true,
+  discussionDrafts: false,
   essayPrompt: '请阅读截图中的简答题，按题意给出完整、直接可填写的答案。只输出答题正文，可分段或编号；不要重复题干、不要输出选项字母、不要写思考过程或附加说明。图片看不清或信息不足时请明确说明，不要猜测。',
   /**
    * 是否处理课程章节里的「章节测验」。

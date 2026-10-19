@@ -19,7 +19,7 @@ import { newTaskPage, releasePage } from '../browser/pages.mjs';
 import { watchPopups } from './popup.mjs';
 import { watchVideoQuiz } from './videoquiz.mjs';
 import { registerKeptPage } from './quizrun.mjs';
-import { openSectionCard, waitForAttachments } from './section.mjs';
+import { cardsUrl, openSectionCard, waitForAttachments } from './section.mjs';
 import { checkTaskTracking, readPointStatusFromPage } from './attach.mjs';
 import { skipDecision, describeSkip } from './skip.mjs';
 
@@ -49,7 +49,7 @@ import {
  */
 
 /** 任务点类型 → 是否由执行器处理 */
-export const HANDLED_TYPES = new Set(['video', 'doc', 'read', 'work']);
+export const HANDLED_TYPES = new Set(['video', 'doc', 'read', 'work', 'discuss']);
 
 /** 组装章节树页 URL（用于核对绿点） */
 export function treeUrl({ courseId, clazzId, personId }) {
@@ -141,6 +141,14 @@ export async function checkPointFinished(ctx, task, personId) {
   const page = await newTaskPage(ctx, 'verify-point');
   page.on('dialog', (d) => d.accept().catch(() => {}));
   try {
+    if(task.type==='discuss'){
+      const {readDiscussionPointStatus}=await import('./discussion-page.mjs');
+      await page.goto(cardsUrl({...task,personId,cardNum:task.cardNum??0}),{waitUntil:'domcontentloaded',timeout:60000});
+      await waitForAttachments(page);
+      const deadline=Date.now()+8000;let result;
+      do{result=await readDiscussionPointStatus(page,task);if(result.finished===true||result.hasTracking===false)break;await page.waitForTimeout(250);}while(Date.now()<deadline);
+      return result;
+    }
     const card = await openSectionCard(page, task, personId, {
       maxCards: loadSettings().maxCardProbe ?? 6,
       quiet: true,

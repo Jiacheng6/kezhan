@@ -310,7 +310,7 @@ export function updateReviewAnswer(id, answer) {
       it.filled = null;
       it.status = 'pending-review';
     } else {
-      if (it.qtype !== 'essay' || typeof answer?.textAnswer !== 'string' || !answer.textAnswer.trim() || answer.textAnswer.length > 10000) throw new Error('简答正文无效');
+      if (!['essay','discussion'].includes(it.qtype) || typeof answer?.textAnswer !== 'string' || !answer.textAnswer.trim() || answer.textAnswer.length > (it.qtype==='discussion'?1500:10000)) throw new Error('回答正文无效');
       it.textAnswer = answer.textAnswer;
       it.requiresReview = true;
       it.autoFilled = false;

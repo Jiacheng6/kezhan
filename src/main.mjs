@@ -442,6 +442,10 @@ function buildHooks() {
     editReviewAnswer: async (body) => {
       const item = listReviewItems().find((it) => it.id === body.id);
       if (!item) return null;
+      if(item.qtype==='discussion'){
+        if(batchRunner.running||recon.running)throw new Error('请先停止当前任务，再修改讨论草稿');
+        return withReviewLock(item.taskKey,async()=>(await import('./chaoxing/discussion.mjs')).saveDiscussionDraft(body.id,body.textAnswer));
+      }
       if (item.qtype !== 'essay') {
         if (Object.hasOwn(body, 'textAnswer')) throw new Error('此题不是简答题');
         if(batchRunner.running||recon.running)throw new Error('请先停止当前任务，再修改答案');
