@@ -3,23 +3,26 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {chromium} from 'playwright-core';
 fs.mkdirSync('.desktop-test',{recursive:true});
 const data=fs.mkdtempSync(path.resolve('.desktop-test/review-browser-'));
 process.env.XXT_DATA_DIR=data;
-const {ensureDirs}=await import('../../src/config.mjs');ensureDirs();
-const {findEdge}=await import('../../src/browser/launch.mjs');
-const {startServer}=await import('../../src/server.mjs');
-const {mutateState,loadState,listReviewItems,updateReviewAnswer}=await import('../../src/state.mjs');
-const {getKeptPage,listKeptPages,editKeptEssayReviewAnswer}=await import('../../src/chaoxing/quizrun.mjs');
-const {reopenReviewWork,submitPendingReviews,withReviewLock,syncSubmittedReviews}=await import('../../src/chaoxing/review-recovery.mjs');
-const {cardsUrl}=await import('../../src/chaoxing/section.mjs');
-const {readSelection,findWorkFrame}=await import('../../src/chaoxing/quiz.mjs');
-const {readEssayAnswer}=await import('../../src/chaoxing/essay.mjs');
+const moduleRoot=process.env.XXT_TEST_SOURCE_ROOT?pathToFileURL(path.resolve(process.env.XXT_TEST_SOURCE_ROOT)+path.sep):new URL('../../',import.meta.url);
+const runtime=relative=>import(new URL(relative,moduleRoot).href);
+const {ensureDirs}=await runtime('src/config.mjs');ensureDirs();
+const {findEdge}=await runtime('src/browser/launch.mjs');
+const {startServer}=await runtime('src/server.mjs');
+const {mutateState,loadState,listReviewItems,updateReviewAnswer}=await runtime('src/state.mjs');
+const {getKeptPage,listKeptPages,editKeptEssayReviewAnswer}=await runtime('src/chaoxing/quizrun.mjs');
+const {reopenReviewWork,submitPendingReviews,withReviewLock,syncSubmittedReviews}=await runtime('src/chaoxing/review-recovery.mjs');
+const {cardsUrl}=await runtime('src/chaoxing/section.mjs');
+const {readSelection,findWorkFrame}=await runtime('src/chaoxing/quiz.mjs');
+const {readEssayAnswer}=await runtime('src/chaoxing/essay.mjs');
 const personId='fixture-student',draft='示例简答第一段。\n示例简答第二段。';
 const options=[{letter:'A',text:'示例选项甲'},{letter:'B',text:'示例选项乙'}];
 const variants=new Map(),confirmed=[];
-function seed(key,{mode='normal',missing=false,edited=false,append=false}={}){
+function seed(key,{mode='normal',missing=false,edited=false,append=false,pending=false}={}){
   variants.set(key,mode);
   const task={courseId:'fixture-course',clazzId:'fixture-class',knowledgeId:key,cardNum:1,type:'work',name:'章节测验'};
   const items=[
@@ -31,7 +34,7 @@ function seed(key,{mode='normal',missing=false,edited=false,append=false}={}){
     state.onboarding={version:2,completedAt:new Date().toISOString()};
     state.reviewQueue=append?[...state.reviewQueue,...items]:items;
     state.taskPoints[key]={status:'manual'};
-    state.keptPages[key]={savedAt:Date.now(),url:cardsUrl({...task,personId}),info:{task,personId,totalQuestions:2,workIdentity:{workid:key,workanswerid:'answer-'+key}}};
+    state.keptPages[key]={savedAt:Date.now(),url:cardsUrl({...task,personId}),info:{task,personId,totalQuestions:2,submissionPending:pending,workIdentity:{workid:key,workanswerid:'answer-'+key}}};
   });
   return items;
 }
@@ -54,7 +57,7 @@ await context.route('https://mooc1.chaoxing.com/**',async route=>{
 <div class="TiMu" data="essay-demo"><div class="TiMuHead"><span class="newZy_TItle">【简答题】</span></div><div class="Zy_TItle"><p>示例简答题干</p></div><textarea name="answerEditor-${mode==='legacy-essay'?'0':'essay-demo'}"></textarea></div>
 <div class="TiMu"><span class="newZy_TItle">【单选题】</span><div class="Zy_TItle"><p>示例选择题干</p></div><ul class="Zy_ulTop">${options.map(option=>`<li role="radio" qid="${mode==='changed'?'changed-question':'choice-demo'}"><span class="num_option ${mode==='prefilled'&&option.letter==='A'?'check_answer':''}" data="${option.letter}">${option.letter}</span><a class="after"><p>${option.text}</p></a></li>`).join('')}</ul></div>
 ${mode==='pending'?'<p>我的答案：已完成。本次成绩 100 分（这是题目示例，仍未提交）。</p>':''}
-<button class="btnSubmit" onclick="document.querySelector('#popok').hidden=false">提交</button><button id="popok" hidden>确认提交</button>
+<button class="btnSubmit" ${mode==='readonly'?'disabled':''} onclick="document.querySelector('#popok').hidden=false">提交</button><button id="popok" hidden>确认提交</button>
 <script>document.querySelectorAll('li[qid]').forEach(li=>li.onclick=()=>{li.parentElement.querySelectorAll('span[data]').forEach(span=>span.classList.remove('check_answer'));li.querySelector('span').classList.add('check_answer');});
 document.querySelector('#popok').onclick=()=>{window.fixtureSubmitted({key:${JSON.stringify(key)},choice:[...document.querySelectorAll('.check_answer')].map(span=>span.getAttribute('data')),essay:document.querySelector('textarea').value});${mode==='pending'?"document.querySelector('#popok').hidden=true;":"document.body.innerHTML='<p>提交成功，本次成绩 90 分</p>';"}};</script>`});
   }
@@ -127,7 +130,45 @@ try{
   assert.equal(response.ok,false);assert.equal(confirmed.length,3,'提交结果未知时不得重复点击提交');
   assert.equal(loadState().taskPoints['uncertain-demo'].status,'manual');
 
-  seed('already-demo',{mode:'completed'});
+  // A persisted uncertain flag must not permanently block restoring a server
+  // draft after restart. Retrying submission alone remains blocked above.
+  response=await post('open',{taskKey:'uncertain-demo'});
+  assert.equal(response.ok,true,JSON.stringify(response));
+  assert.equal(response.result.pendingRecovered,true);
+  assert.equal(response.result.restored,2,'已有不确定页必须重新读取服务器草稿再恢复');
+  assert.equal(loadState().keptPages['uncertain-demo'].info.submissionPending,false);
+  assert.equal(confirmed.length,3,'恢复平台草稿不会自动提交');
+
+  seed('restart-pending-demo',{pending:true,mode:'legacy-essay'});
+  response=await post('submit',{taskKey:'restart-pending-demo'});
+  assert.equal(response.ok,false);assert.match(response.error,/先点击/);
+  assert.equal(loadState().keptPages['restart-pending-demo'].info.submissionPending,true);
+  assert.equal(confirmed.length,3,'关闭后直接重试提交不能清除未知标记');
+  await getKeptPage('restart-pending-demo').page.close();
+  response=await post('open',{taskKey:'restart-pending-demo'});
+  assert.equal(response.ok,true,JSON.stringify(response));
+  assert.equal(response.result.pendingRecovered,true);assert.equal(response.result.restored,2);
+  assert.equal(loadState().keptPages['restart-pending-demo'].info.submissionPending,false);
+  assert.equal((await readEssayAnswer(findWorkFrame(getKeptPage('restart-pending-demo').page),0)).storedText,draft);
+  assert.equal(confirmed.length,3);
+
+  seed('edit-pending-demo',{pending:true,mode:'legacy-essay'});
+  response=await post('edit',{id:'edit-pending-demo#q2',textAnswer:'重新核对后保存并填入的正文'});
+  assert.equal(response.ok,true,JSON.stringify(response));
+  assert.equal((await readEssayAnswer(findWorkFrame(getKeptPage('edit-pending-demo').page),0)).storedText,'重新核对后保存并填入的正文');
+  assert.equal(loadState().keptPages['edit-pending-demo'].info.submissionPending,false);
+  assert.equal(confirmed.length,3,'保存并填入同样不能提交');
+
+  for(const mode of ['different-attempt','changed','readonly']){
+    const key='unsafe-pending-'+mode;seed(key,{pending:true,mode});
+    response=await post('open',{taskKey:key});
+    assert.equal(response.ok,false,mode+'不能解除提交保护');
+    assert.equal(loadState().keptPages[key].info.submissionPending,true);
+    assert.equal((await readEssayAnswer(findWorkFrame(getKeptPage(key).page),0)).storedText,'','核对失败不能提前回填');
+    assert.equal(confirmed.length,3);
+  }
+
+  seed('already-demo',{mode:'completed',pending:true});
   response=await post('submit',{taskKey:'already-demo'});
   assert.equal(response.ok,true,JSON.stringify(response));assert.equal(confirmed.length,3,'平台已提交时只核对，不重交');
 

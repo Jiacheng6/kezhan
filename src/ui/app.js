@@ -1533,7 +1533,7 @@ function renderReview(data) {
           .then(result=>result.json()).catch(error=>({ok:false,error:error.message}));
         const result=response.result;
         const message=response.ok?
-          result.alreadySubmitted?'平台显示该作业已提交，可刷新确认状态':`作业页已打开，恢复 ${result.restored||0} 题${result.ready?'，请核对后提交':`；第 ${(result.missing||[]).join('、')} 题仍需填写`}`:
+          result.alreadySubmitted?'平台显示该作业已提交，可刷新确认状态':result.pendingConfirmation?'作业页仍有提交确认框，请核对后继续确认；已保存答案保留':`${result.pendingRecovered?'已重新核对平台草稿':'作业页已打开'}，恢复 ${result.restored||0} 题${result.ready?'，请核对后提交':`；第 ${(result.missing||[]).join('、')} 题仍需填写`}`:
           `恢复失败：${response.error}`;
         reviewFeedback.set(taskKey,message);
         appendLog({t:Date.now(),level:response.ok?'ok':'error',message});

@@ -136,7 +136,7 @@ export async function reopenReviewWork(ctx,key,options={}) {
   try{result=await reopenReviewWorkCore(ctx,key,options);return result;}
   finally{const current=getKeptPage(key)?.page;if(current)markSavedReviewPage(current);else{const page=result?.page||previous;if(page&&!page.isClosed())setPageBusy(page,false);}}
 }
-async function reopenReviewWorkCore(ctx,key,{personId,restoreAnswers=true,waitMs=30000}={}) {
+async function reopenReviewWorkCore(ctx,key,{personId,restoreAnswers=true,waitMs=30000,reconcilePending=true}={}) {
   if(!ctx)throw new Error('浏览器未连接，请先打开并登录学习通');
   const items=listReviewItems().filter(item=>item.taskKey===key);
   if(!items.length)throw new Error('此作业没有待审记录，请刷新列表');
@@ -175,9 +175,9 @@ async function reopenReviewWorkCore(ctx,key,{personId,restoreAnswers=true,waitMs
   const detected=await pageSubmissionState(entry.page,findWorkFrame(entry.page));
   const detectedIdentity=detected.frame?workIdentity(detected.frame.url()):{};
   if(detected.submitted&&info.workIdentity?.workid&&detectedIdentity.workid===info.workIdentity.workid&&!Object.entries(info.workIdentity).some(([field,value])=>detectedIdentity[field]&&detectedIdentity[field]!==value)){finishManualReview(key);return {page:entry.page,alreadySubmitted:true,reopened,ready:true,restored:0};}
-  const frame=await waitReviewFrame(entry.page,waitMs)||findWorkFrame(entry.page);
+  let frame=await waitReviewFrame(entry.page,waitMs)||findWorkFrame(entry.page);
   if(!frame)throw new Error('作业页面未加载，请检查登录或验证提示');
-  const actual=workIdentity(frame.url());
+  let actual=workIdentity(frame.url());
   if(Object.entries(info.workIdentity||{}).some(([field,value])=>value&&actual[field]!==value))throw new Error('作业或作答次数已变化，未恢复或提交，请人工核对');
   if((await readSubmissionState(frame)).submitted){
     if(!info.workIdentity?.workid){
@@ -188,21 +188,50 @@ async function reopenReviewWorkCore(ctx,key,{personId,restoreAnswers=true,waitMs
     finishManualReview(key);
     return {page:entry.page,alreadySubmitted:true,reopened,ready:true,restored:0};
   }
+  let pendingRecovered=false;
   if(info.submissionPending){
-    const confirmation=await Promise.all(entry.page.frames().map(f=>f.locator('#popok, #popOk').filter({visible:true}).count().catch(()=>0)));
-    if(!confirmation.some(Boolean))throw new Error('上次提交结果尚未确认，请在页面核对，避免重复提交；待审记录已保留');
-    const result=await restoreReviewAnswers(frame,items,{restoreAnswers:false,expectedCount:info.totalQuestions});
-    return {...result,page:entry.page,reopened,alreadySubmitted:false,pendingConfirmation:true};
+    const hasConfirmation=async()=>{
+      const counts=await Promise.all(entry.page.frames().map(f=>f.locator('#popok, #popOk').filter({visible:true}).count().catch(()=>0)));
+      return counts.some(Boolean);
+    };
+    if(await hasConfirmation()){
+      const result=await restoreReviewAnswers(frame,items,{restoreAnswers:false,expectedCount:info.totalQuestions});
+      return {...result,page:entry.page,reopened,alreadySubmitted:false,pendingConfirmation:true};
+    }
+    // A submission retry must never reset an uncertain request. Only the user's
+    // separate open/restore or edit action may reconcile a fresh server page.
+    if(!reconcilePending)throw new Error('上次提交结果尚未确认，请先点击“打开并核对”恢复平台状态，再决定是否提交；待审记录已保留');
+    if(!reopened){
+      await entry.page.reload({waitUntil:'domcontentloaded',timeout:60000});
+      frame=await waitReviewFrame(entry.page,waitMs)||findWorkFrame(entry.page);
+      if(!frame)throw new Error('未能重新核对平台状态，待审答案已保留，请检查登录或验证提示');
+      actual=workIdentity(frame.url());
+    }
+    if(!info.workIdentity?.workid||!info.workIdentity?.workanswerid||Object.entries(info.workIdentity).some(([field,value])=>value&&actual[field]!==value))throw new Error('无法核对原作业与作答次数，未恢复或提交；待审答案已保留');
+    const refreshed=await pageSubmissionState(entry.page,frame);
+    if(refreshed.submitted){
+      const identity=workIdentity(refreshed.frame.url());
+      if(Object.entries(info.workIdentity).some(([field,value])=>value&&identity[field]!==value))throw new Error('平台结果与原作业不一致，待审答案已保留');
+      finishManualReview(key);
+      return {page:entry.page,alreadySubmitted:true,reopened,ready:true,restored:0};
+    }
+    if(await hasConfirmation())throw new Error('平台仍有提交确认，请先核对确认框；待审答案已保留');
+    const editable=await frame.evaluate(()=>{
+      if(!/\/work\/(?:doHomeWorkNew|selectWorkQuestion)(?:[/?]|$)/i.test(location.pathname))return false;
+      return [...document.querySelectorAll('.btnSubmit')].some(e=>e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})&&!e.matches(':disabled')&&e.getAttribute('aria-disabled')!=='true');
+    });
+    if(!editable)throw new Error('平台尚未显示可编辑的原作业，未恢复或提交；请人工核对，待审答案已保留');
+    pendingRecovered=true;
   }
   const meta=await getWorkMeta(frame);
   const result=await restoreReviewAnswers(frame,items,{restoreAnswers,expectedCount:info.totalQuestions||loadState().quizzes?.[key]?.totalQuestions});
-  registerKeptPage(key,entry.page,{...entry.info,workIdentity:actual,totalQuestions:meta.questionTotal},{busy:true});
-  return {...result,page:entry.page,reopened,alreadySubmitted:false};
+  registerKeptPage(key,entry.page,{...entry.info,workIdentity:actual,totalQuestions:meta.questionTotal,...(pendingRecovered?{submissionPending:false}: {})},{busy:true});
+  return {...result,page:entry.page,reopened,alreadySubmitted:false,pendingRecovered};
 }
 
 export async function submitReviewWork(ctx,key,options) {
   return withReviewLock(key,async()=>{
-    const prepared=await reopenReviewWork(ctx,key,options);
+    const prepared=await reopenReviewWork(ctx,key,{...options,reconcilePending:false});
     if(prepared.alreadySubmitted){await prepared.page.close().catch(()=>{});releasePage(prepared.page);dropKeptPage(key);return {ok:true,alreadySubmitted:true};}
     if(!prepared.ready)return {ok:false,error:`第 ${prepared.missing.join('、')} 题尚未填写完整，已保留答案，请补全后提交`};
     setPageBusy(prepared.page,true);

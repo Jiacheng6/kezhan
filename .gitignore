@@ -119,6 +119,7 @@ tools/test/*
 !tools/test/test-identity.mjs
 !tools/test/test-offline.mjs
 !tools/test/test-packaged-receiver.ps1
+!tools/test/test-installer-launch.ps1
 !tools/test/test-pages.mjs
 !tools/test/test-parse.mjs
 !tools/test/test-privacy-learning.mjs
