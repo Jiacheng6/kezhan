@@ -14,7 +14,7 @@ export class PlatformRuns {
       try {
         for (const task of tasks) {
           if (s.stop) break;
-          s.current = task.name; this.changed(this.snapshot());
+          s.current = task.name; s.progress = null; this.changed(this.snapshot());
           const result = await this.execute({ platform: id, task, context, shouldStop: () => s.stop,
             onProgress: progress => { s.progress = progress; this.changed(this.snapshot()); } });
           if (result?.phase === 'stopped') break;

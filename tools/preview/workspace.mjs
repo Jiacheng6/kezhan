@@ -12,7 +12,8 @@ const fixture=http.createServer((req,res)=>{
 });
 await new Promise(resolve=>fixture.listen(0,'127.0.0.1',resolve));
 const fixtureURL='http://127.0.0.1:'+fixture.address().port;
-const app=await electron.launch({executablePath:path.join(root,'node_modules/electron/dist/electron.exe'),args:[root,'--test-mode'],env:{...process.env,XXT_TEST_DATA_DIR:data}});
+const app=await electron.launch({executablePath:path.join(root,'node_modules/electron/dist/electron.exe'),args:[...(process.argv.includes('--inspect-preview')?['--inspect=0']:[]),root,'--test-mode'],env:{...process.env,XXT_TEST_DATA_DIR:data}});
+if(process.argv.includes('--inspect-preview')){const url=await app.evaluate(()=>process.getBuiltinModule('inspector').url());fs.writeFileSync(path.join(root,'.desktop-test/theme-inspector.json'),JSON.stringify({port:Number(new URL(url).port),pid:app.process().pid}));}
 fs.writeFileSync(path.join(root,'.desktop-test/design-preview-current.json'),JSON.stringify({data,cdpPort:Number(fs.readFileSync(path.join(data,'DevToolsActivePort'),'utf8').split('\n')[0])}));
 try{let page;for(let n=0;n<120;n++){page=app.windows().find(p=>p.url().startsWith('http://127.0.0.1:'));if(page)break;await new Promise(r=>setTimeout(r,250));}if(!page)throw Error('预览工作台未就绪');const initial=await page.evaluate(()=>fetch('/api/status').then(r=>r.json()));
 const owned=await page.evaluate(()=>window.desktopApp.webState());const previewTarget=owned.tabs[0].targetId;

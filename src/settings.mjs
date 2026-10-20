@@ -34,7 +34,7 @@ export const SETTING_SPEC = [
   { path: 'essayPrompt', label: '简答题提问词', kind: 'textarea', advanced: true },
   { path: 'playbackSpeed', label: '优先播放速度', kind: 'select', options: [['1', '1× 正常播放'], ['1.5', '优先 1.5×'], ['2', '优先 2×']], help: '只使用课程播放器自带的倍速；不支持或设置失败时回到 1×。运行中显示实际速度。' },
   { path: 'videoCompletionMode', label: '视频完成检查', kind: 'select', options: [['full', '播到片尾后核对'], ['check90', '90% 时先核对，未完成继续播放']], help: '以学习通实际完成状态为准。90% 检查不会拖动进度；未确认就从当前位置继续播到片尾。' },
-  { path: 'muted', label: '播放时静音', kind: 'bool', help: '关掉会外放声音。' },
+  { path: 'muted', label: '播放时静音', kind: 'bool', help: '控制软件内网页的声音输出；默认静音，保存后立即生效。' },
   { path: 'maxRetries', label: '单个任务点失败重试次数', kind: 'int', min: 1, max: 10 },
   { path: 'maxCardProbe', label: '每个小节最多探几张卡片', kind: 'int', min: 1, max: 12, advanced: true, help: '小节是分卡片的，任务点可能在第 2 张卡上。' },
   {

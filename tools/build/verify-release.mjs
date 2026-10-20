@@ -73,7 +73,7 @@ for (const line of releaseNotes.split(/\r?\n/).filter(line => line.startsWith('-
 }
 const updateConfig = fs.readFileSync(path.join(dist, 'win-unpacked/resources/app-update.yml'), 'utf8');
 assert.match(updateConfig, /owner: Jiacheng6/);
-assert.match(updateConfig, /repo: xuexitong-assistant-releases/);
+assert.match(updateConfig, /repo: kezhan-releases/);
 
 // Inspect the actual packaged application, including files omitted from Git.
 // Dependency contact details are public; personal learning terms are checked everywhere.

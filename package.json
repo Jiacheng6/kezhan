@@ -1,6 +1,6 @@
 {
   "name": "xuexitong-auto",
-  "version": "0.5.17",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "description": "课栈：软件内网页、多平台课程管理与 AI 辅助",
@@ -30,19 +30,19 @@
   },
   "build": {
     "releaseInfo": {
-      "releaseNotesFile": "docs/releases/0.5.17.md"
+      "releaseNotesFile": "docs/releases/0.6.0.md"
     },
     "publish": [
       {
         "provider": "github",
         "owner": "Jiacheng6",
-        "repo": "xuexitong-assistant-releases"
+        "repo": "kezhan-releases"
       }
     ],
     "electronDist": "node_modules/electron/dist",
     "appId": "com.xuexitong.assistant",
     "productName": "学习通助手",
-    "copyright": "学习通助手",
+    "copyright": "课栈",
     "asar": false,
     "npmRebuild": false,
     "directories": {

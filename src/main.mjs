@@ -21,7 +21,7 @@ import { listKeptPages, registerKeptPage, editKeptEssayReviewAnswer } from './ch
 import { reopenReviewWork, submitPendingReviews, withReviewLock, syncSubmittedReviews } from './chaoxing/review-recovery.mjs';
 import { updateReviewAnswer } from './state.mjs';
 import { startServer } from './server.mjs';
-import { embedded } from './browser/embedded.mjs';
+import { embedded, embeddedRequest } from './browser/embedded.mjs';
 import { getOnboarding } from './onboarding.mjs';
 import { startWindowControl, setBrowserVisible, isBrowserVisible, stopWindowControl } from './browser/window-control.mjs';
 import { ownerState, startOwnerMonitor } from './browser/owner-lifecycle.mjs';
@@ -125,6 +125,7 @@ async function waitForRestoredPage(context, urlPart, timeoutMs = 4000) {
 async function boot() {
   ensureDirs();
   const settings = loadSettings();
+  if (embedded) await embeddedRequest('audio-muted', { muted: settings.muted !== false });
   // account 一并带上：local.json 已配置时，控制台一打开就能看到账号 ID
   patchStatus({ settings, phase: 'P4', bootError: null, account: accountStatus(), browserMode: embedded ? 'embedded' : 'external' });
 
@@ -535,6 +536,7 @@ function buildHooks() {
         s.settings = sparse;
       });
       const after = loadSettings();
+      if (embedded) await embeddedRequest('audio-muted', { muted: after.muted !== false });
       const changedKeys = Object.keys(r.applied).filter(
         (k) => JSON.stringify(getByPath(before, k)) !== JSON.stringify(getByPath(after, k)),
       );
@@ -557,7 +559,9 @@ function buildHooks() {
       mutateState((s) => {
         s.settings = {};
       });
-      patchStatus({ settings: loadSettings() });
+      const settings = loadSettings();
+      if (embedded) await embeddedRequest('audio-muted', { muted: settings.muted !== false });
+      patchStatus({ settings });
       await refreshQianwenStatus({create:true}).catch(()=>{});
       log('设置已恢复为默认值', 'ok');
       return { ok: true };

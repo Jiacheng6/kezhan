@@ -32,6 +32,7 @@ class EmbeddedBrowser {
     this.session = session.fromPartition('persist:learning-web');
     this.cookieFile = path.join(dataDir, 'browser-session.bin');
     this.views = new Map(); this.active = null; this.visible = false;
+    this.audioMuted = true;
     this.captureWindow = null; this.captureReady = Promise.resolve();
     this.bounds = null; this.suspended = true; this.closeSuspended = false;
     this.lastContentSize = window.getContentSize();
@@ -119,6 +120,7 @@ class EmbeddedBrowser {
   async register(view) {
     this.ensureCaptureWindow();
     const c = view.webContents;
+    c.setAudioMuted(this.audioMuted !== false);
     const id = c.id;
     const record = { view, host: this.captureWindow, targetId: null, error: '', viewportReady: false, createdAt:Date.now() }; this.views.set(c.id, record);
     this.captureWindow.contentView.addChildView(view); view.setVisible(false);
@@ -239,6 +241,12 @@ class EmbeddedBrowser {
     return this.snapshot();
   }
   async request({ method, ...params } = {}) {
+    if (method === 'audio-muted') {
+      if (typeof params.muted !== 'boolean') throw new Error('网页静音设置无效');
+      this.audioMuted = params.muted;
+      for (const record of this.views.values()) if (!record.view.webContents.isDestroyed()) record.view.webContents.setAudioMuted(this.audioMuted);
+      return { muted: this.audioMuted };
+    }
     if (method === 'list') return this.snapshot();
     if (method === 'create') return this.create(params);
     if (method === 'visible') return this.setVisible(params.visible);

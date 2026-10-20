@@ -5,6 +5,31 @@ const clock = value => {
   return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
 };
 
+// Never use the aggregated current task as the other platform's progress.
+export function platformTaskStatus(status = {}, id) {
+  const run = status.platforms?.[id] || {};
+  const legacy = id === 'chaoxing' && !status.platforms?.chaoxing;
+  const progress = { ...(legacy ? status.progress : run.progress), current: run.current || (legacy ? status.progress?.current : null) };
+  if (id === 'zhihuishu' && progress.taskType === 'work') {
+    const stage = progress.phase;
+    if (finite(progress.questionIndex)) progress.questionIndex = Math.max(0, progress.questionIndex - 1);
+    if (stage === 'save-next') progress.phase = 'done';
+    if (stage === 'ask-ai') progress.phase = 'asking';
+    if (stage === 'filled-all') { progress.questionIndex = Math.max(0, (progress.questionTotal || 1) - 1); progress.phase = 'done'; }
+  }
+  return { running: legacy ? status.running : run.running, progress,
+    runStats: id === 'chaoxing' ? status.runStats : null };
+}
+
+export function totalProgressModel(status = {}) {
+  const runs = status.platforms ? Object.values(status.platforms) : [{ ...status.progress, running: status.running }];
+  const count = value => finite(value) ? Math.max(0, Math.floor(value)) : 0;
+  const total = runs.reduce((n, run) => n + count(run.total), 0);
+  const done = runs.reduce((n, run) => n + Math.min(count(run.done), count(run.total)), 0);
+  const review = runs.reduce((n, run) => n + count(run.review), 0);
+  return { total, done, review, running: runs.some(run => run.running), fraction: total ? done / total : 0 };
+}
+
 export function taskProgressModel(status = {}) {
   const p = status.progress || {}, stats = status.runStats || {}, current = stats.current || {};
   const running = !!status.running, scanning = !!status.reconRunning;

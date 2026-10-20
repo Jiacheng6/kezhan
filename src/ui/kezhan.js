@@ -1,6 +1,7 @@
 import { workspace } from './app.js';
 import { platformOf, platformInfo, PLATFORMS } from './platforms.js';
 import { runScopeRequest } from './run-scope.js';
+import { renderTaskProgress, platformTaskStatus, totalProgressModel } from './task-progress.js';
 const message = document.querySelector('#platformMessage');
 const filters = document.querySelector('#platformFilters'), sessions = document.querySelector('#platformSessions');
 let model = workspace.snapshot(), signature = '', pending = new Set();
@@ -32,7 +33,7 @@ function render(force = false) {
   document.body.dataset.multiPlatform = String(new Set(courses.map(platformOf)).size > 1);
   document.body.dataset.multiRunning = String(Object.values(status.platforms || {}).filter(run => run.running).length > 1);
   const current = model.platformFilter || 'all';
-  const key = JSON.stringify([courses.map(c => [c.courseId, c.tasks?.filter(t => t.willHandle).length]), status.platforms, status.aiQueue, status.zhihuishuScan, status.ready, current, [...pending]]);
+  const key = JSON.stringify([courses.map(c => [c.courseId, c.tasks?.filter(t => t.willHandle).length]), status.platforms, status.progress, status.runStats, status.running, status.aiQueue, status.zhihuishuScan, status.ready, current, [...pending]]);
   if (!force && signature === key) return; signature = key;
   const focused = document.activeElement?.dataset.platformControl;
   filters.replaceChildren(...['all', ...ids].map(id => {
@@ -43,21 +44,38 @@ function render(force = false) {
     });
     b.setAttribute('aria-pressed', String(current === id)); b.dataset.platformControl = 'filter:' + id; return b;
   }));
-  sessions.replaceChildren(...ids.map(id => {
+  let summary = sessions.querySelector('.platform-total');
+  if (!summary) {
+    summary = document.createElement('div'); summary.className = 'platform-total';
+    summary.innerHTML = '<div class="platform-total-caption"><strong>本批任务总进度</strong><span data-total-count></span></div><div class="tp-track" role="progressbar" aria-label="全部平台任务总进度" aria-valuemin="0" aria-valuemax="100"><div class="tp-fill"></div></div><small data-total-detail></small>';
+  }
+  const overall = totalProgressModel(status), percent = +(overall.fraction * 100).toFixed(1);
+  summary.querySelector('[data-total-count]').textContent = `${overall.done} / ${overall.total} 项 · ${percent}%`;
+  summary.querySelector('.tp-fill').style.width = `${percent}%`;
+  summary.querySelector('[role=progressbar]').setAttribute('aria-valuenow', String(percent));
+  const detail = !overall.total ? '开始学习后显示两平台的合计进度' : overall.running ? '两个平台分别运行，完成任务后累计进度' : overall.done === overall.total ? '本批任务已全部完成' : '保留本批进度';
+  summary.querySelector('[data-total-detail]').textContent = detail + (overall.review ? ` · ${overall.review} 份测验待审，未计为完成` : '');
+  const cards = ids.map(id => {
     const info = platformInfo(id), run = status.platforms?.[id] || { running: id === 'chaoxing' && status.running };
     const ownCourses = courses.filter(c => platformOf(c) === id), selected = runScopeRequest(ownCourses).taskKeys.length;
-    const article = document.createElement('article'); article.className = 'platform-session'; article.dataset.platform = id;
-    const title = document.createElement('strong'); title.textContent = info.name;
-    const state = document.createElement('small'); state.textContent = run.error || (run.stopping ? '正在停止…' : run.running ? `学习中 · ${run.done || 0}/${run.total || 0} · ` + (run.current || '准备任务') : run.phase === 'awaiting-review' ? `待你核对 · ${run.review||0} 份测验未提交` : run.phase === 'completed' ? `本批已完成 ${run.done}/${run.total}` : `${ownCourses.length} 门课程 · 已选 ${selected} 项`);
-    const progress = document.createElement('progress'); progress.max = run.total || 1; progress.value = run.done || 0;
+    let article = [...sessions.querySelectorAll('.platform-session')].find(node => node.dataset.platform === id);
+    if (!article) {
+      article = document.createElement('article'); article.className = 'platform-session'; article.dataset.platform = id;
+      article.innerHTML = '<strong class="platform-title"></strong><small class="platform-state"></small><progress></progress><button class="platform-action"></button><div class="platform-task-progress" hidden></div>';
+    }
+    const title = article.querySelector('.platform-title'); title.textContent = info.name;
+    const state = article.querySelector('.platform-state'); state.textContent = run.error || (run.stopping ? '正在停止…' : run.running ? `学习中 · ${run.done || 0}/${run.total || 0} · ` + (run.current || '准备任务') : run.phase === 'awaiting-review' ? `待你核对 · ${run.review||0} 份测验未提交` : run.phase === 'completed' ? `本批已完成 ${run.done}/${run.total}` : `${ownCourses.length} 门课程 · 已选 ${selected} 项`);
+    const progress = article.querySelector('progress'); progress.max = run.total || 1; progress.value = run.done || 0;
     progress.setAttribute('aria-label', `${info.name}本批完成 ${run.done || 0}/${run.total || 0}`); progress.hidden = !run.total;
-    const action = button(run.running ? '停止此平台' : '开始此平台', () => control(id, run.running));
+    const action = article.querySelector('.platform-action'); action.textContent = run.running ? '停止此平台' : '开始此平台'; action.onclick = () => control(id, run.running);
     const queued=(status.aiQueue?.pending||[]).filter(item=>item.platform===id).length;
     if(queued)state.textContent=`等待共用 AI · 排队 ${queued} 题 · `+state.textContent;
     if(id==='zhihuishu'&&status.zhihuishuScan?.running){state.textContent=`正在扫描课程 ${(status.zhihuishuScan.index??0)+1}/${status.zhihuishuScan.total||'—'}`;action.textContent='停止扫描';action.onclick=()=>control(id,true);}
     action.dataset.platformControl = 'run:' + id; action.disabled = pending.has(id) || (!run.running && !(id==='zhihuishu'&&status.zhihuishuScan?.running) && (!status.ready || !selected || !PLATFORMS[id]));
-    article.append(title, state, progress, action); return article;
-  }));
+    renderTaskProgress(article.querySelector('.platform-task-progress'), platformTaskStatus(status, id));
+    return article;
+  });
+  if (sessions.firstElementChild !== summary || cards.some((card, index) => sessions.children[index + 1] !== card)) sessions.replaceChildren(summary, ...cards);
   if (focused) document.querySelector(`[data-platform-control="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
 }
 workspace.subscribe(next => { model = next; render(); });

@@ -20,3 +20,11 @@ body[data-multi-platform=true] .task-sheet{display:none}body[data-multi-running=
 @media(max-width:1180px){.platform-strip{padding-inline:22px}}
 
 .sidebar{background:#e6eeea}.brand-note{font-size:10px;letter-spacing:0;line-height:1.6}
+.platform-sessions{align-items:start;grid-template-columns:repeat(2,minmax(0,1fr))}
+.platform-total{grid-column:1/-1;min-width:0;padding:15px 18px;background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius);--tp-accent:var(--acc);--tp-line:var(--line)}
+.platform-total-caption{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:12px;font-size:12px}.platform-total-caption strong{font-weight:500}.platform-total-caption span{color:var(--acc);font:13px Consolas,monospace;font-variant-numeric:tabular-nums}.platform-total>small{display:block;margin-top:9px;font-size:11px;color:var(--fg2);line-height:1.7}
+.platform-session .platform-task-progress{grid-column:1/-1;margin-top:13px;padding:13px 0 0;--tp-accent:var(--platform-chaoxing)}
+.platform-session[data-platform=zhihuishu] .platform-task-progress{--tp-accent:var(--platform-zhihuishu)}
+.platform-task-progress .tp-reading{margin:9px 0 12px;gap:12px}.platform-task-progress .tp-percent strong{font-size:28px}.platform-task-progress .tp-foot{margin-top:9px}.platform-task-progress .tp-view{display:none}
+@media(max-width:560px){.platform-total-caption{align-items:flex-start;flex-direction:column;gap:6px}}
+@media(max-width:800px){.platform-sessions{grid-template-columns:1fr}}

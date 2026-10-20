@@ -12,3 +12,6 @@ const fail=new PlatformRuns({execute:async({platform})=>{if(platform==='chaoxing
 patchStatus({running:true,progress:{done:1,total:4,current:'学习通任务'},platformRuns:{zhihuishu:{running:true,done:2,total:5,current:'智慧树任务'}}});assert.equal(getStatus().platforms.chaoxing.running,true);patchStatus({running:false});assert.equal(getStatus().running,true);assert.equal(getStatus().platforms.chaoxing.running,false);assert.equal(getStatus().progress.current,'【智慧树】智慧树任务');
 const reviewRun=new PlatformRuns({execute:async()=>({ok:true,phase:'awaiting-review'})});reviewRun.start('zhihuishu',[{key:'review',platform:'zhihuishu'}]);await reviewRun.wait('zhihuishu');assert.equal(reviewRun.snapshot().zhihuishu.done,0);assert.equal(reviewRun.snapshot().zhihuishu.review,1);assert.equal(reviewRun.snapshot().zhihuishu.phase,'awaiting-review');
 console.log('PASS: 合并课程、跨平台身份隔离、旧数据兼容、独立并发/停止/失败与状态聚合');
+const progressTransitions=[];const sequential=new PlatformRuns({execute:async({onProgress})=>{onProgress({percent:1});return {ok:true};},changed:s=>progressTransitions.push(structuredClone(s))});
+sequential.start('zhihuishu',[{key:'one',name:'第一项',platform:'zhihuishu'},{key:'two',name:'第二项',platform:'zhihuishu'}]);await sequential.wait('zhihuishu');
+assert.equal(progressTransitions.find(s=>s.zhihuishu.current==='第二项').zhihuishu.progress,null,'切换下一项不能沿用上一项的100%');

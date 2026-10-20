@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const RELEASE_REPOSITORY = 'Jiacheng6/xuexitong-assistant-releases';
+const RELEASE_REPOSITORY = 'Jiacheng6/kezhan-releases';
 function releaseNotesText(notes) {
   const raw = Array.isArray(notes) ? notes.map(item => [item.version, item.note].filter(Boolean).join('\n')).join('\n\n') : typeof notes === 'string' ? notes : '';
   return raw.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
@@ -124,7 +124,7 @@ class UpdateController {
 
 function createUpdates({ app, dataDir, testMode, onStatus, prepareInstall, recoverInstall }) {
   const { NsisUpdater } = require('electron-updater');
-  let provider = { provider: 'github', owner: 'Jiacheng6', repo: 'xuexitong-assistant-releases' };
+  let provider = { provider: 'github', owner: 'Jiacheng6', repo: 'kezhan-releases' };
   const testFeed = testMode && process.env.XXT_TEST_UPDATE_FEED;
   if (testFeed) {
     const url = new URL(testFeed);

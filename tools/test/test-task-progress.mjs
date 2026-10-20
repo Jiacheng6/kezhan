@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { taskProgressModel } from '../../src/ui/task-progress.js';
+import { taskProgressModel, platformTaskStatus, totalProgressModel } from '../../src/ui/task-progress.js';
 import { currentTaskPage, pageKind, sortedPages } from '../../src/ui/web-pages.js';
 const video = { running: true, progress: { total: 8, done: 2, current: '演示课程 · 视频', taskType: 'video', percent: .642, currentTime: 385, duration: 600, playbackRate: 2 } };
 let model = taskProgressModel(video);
@@ -18,6 +18,17 @@ for (const [phase, expected] of [['asking', '25.0'], ['done', '50.0']]) {
   assert.equal(quiz.percent, expected);assert.match(quiz.detail, /题/);
 }
 assert.equal(taskProgressModel({}).visible, false);
+const dual = { running:true, progress:{current:'aggregate must not leak',percent:.99}, platforms:{
+  chaoxing:{running:true,total:4,done:1,current:'学习通视频',progress:{taskType:'video',percent:.642,currentTime:385,duration:600}},
+  zhihuishu:{running:true,total:3,done:1,review:1,current:'智慧树测验',progress:{taskType:'work',phase:'ask-ai',questionIndex:2,questionTotal:4}}
+}};
+assert.equal(taskProgressModel(platformTaskStatus(dual,'chaoxing')).percent,'64.2');
+assert.equal(taskProgressModel(platformTaskStatus(dual,'zhihuishu')).percent,'25.0');
+assert.equal(taskProgressModel(platformTaskStatus(dual,'zhihuishu')).label,'正在读取 AI 回答');
+assert.deepEqual(totalProgressModel(dual),{total:7,done:2,review:1,running:true,fraction:2/7});
+assert.equal(totalProgressModel({}).fraction,0);
+assert.equal(taskProgressModel(platformTaskStatus({running:true,platforms:{chaoxing:{running:false},zhihuishu:dual.platforms.zhihuishu},progress:dual.progress},'chaoxing')).visible,false);
+assert.equal(totalProgressModel({platforms:{a:{total:2,done:5},b:{total:3,done:-2}}}).fraction,.4);
 const pages = [{ id: 1, role: 'verify-point', busy: true }, { id: 2, role: 'video', busy: false }, { id: 3, role: 'video', busy: true }, { id: 4, url: 'https://chat.deepseek.com/' }];
 assert.equal(currentTaskPage(pages).id, 3);assert.equal(sortedPages(pages)[0].id, 3);
 assert.equal(currentTaskPage(pages.filter(t => t.id !== 3)), null);
