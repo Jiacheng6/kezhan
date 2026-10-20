@@ -6,7 +6,7 @@ dialog.id = 'onboardingPanel';
 dialog.className = 'desktop-dialog onboarding-dialog';
 dialog.setAttribute('aria-labelledby', 'onboardingTitle');
 dialog.innerHTML = `
-  <div class="dialog-heading"><span class="dialog-label">欢迎使用学习通助手</span><span id="onboardingStep" class="dialog-label">1 / 2</span></div>
+  <div class="dialog-heading"><span class="dialog-label">欢迎使用课栈</span><span id="onboardingStep" class="dialog-label">1 / 2</span></div>
   <ol class="onboarding-steps" aria-label="设置步骤"><li id="onboardingLoginStep">登录学习通</li><li id="onboardingAIStep">选择做题 AI</li></ol>
   <section id="onboardingLogin">
     <h2 id="onboardingTitle" tabindex="-1">先连接你的学习通</h2>

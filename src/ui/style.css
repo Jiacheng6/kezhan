@@ -1,7 +1,7 @@
 :root {
   color-scheme: light;
-  --bg:#f7f6f1; --bg2:#fffefa; --bg3:#efeee7; --line:#dedfd5;
-  --fg:#28332d; --fg2:#59645c; --fg3:#636f60; --acc:#af4c35;
+  --bg:#f0f3f2; --bg2:#ffffff; --bg3:#e9eeec; --line:#d4dfda;
+  --fg:#28332d; --fg2:#59645c; --fg3:#636f60; --acc:#286b54;
   --ok:#326a4e; --warn:#8c601c; --err:#aa4038; --radius:12px;
   --sidebar:208px; --serif:"Noto Serif SC","STZhongsong","SimSun",serif;
 }
@@ -14,7 +14,7 @@ button{appearance:none;cursor:pointer;border:1px solid var(--line);border-radius
 button:hover:not(:disabled){background:#eaece3;border-color:#bbc1b3}
 button:disabled{opacity:.4;cursor:not-allowed}
 button.primary{background:var(--acc);color:#fffdf6;border-color:var(--acc);font-weight:600}
-button.primary:hover:not(:disabled){background:#923e2a;border-color:#923e2a}
+button.primary:hover:not(:disabled){background:#174632;border-color:#174632}
 button.ghost{background:transparent}
 button.text-button{border-color:transparent;background:transparent;padding:6px 0;color:var(--fg2);border-radius:3px}
 button.text-button:hover:not(:disabled){background:transparent;color:var(--acc);border-color:transparent}
@@ -26,7 +26,7 @@ input::placeholder,textarea::placeholder{color:var(--fg3)}
 svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
 .hidden{display:none!important}
 h1,h2,h3,p{margin-top:0} h2,h3{font-weight:600}
-.sidebar{position:fixed;inset:0 auto 0 0;width:var(--sidebar);padding:29px 18px 18px;background:#eeeee5;border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:30;overflow-y:auto}
+.sidebar{position:fixed;inset:0 auto 0 0;width:var(--sidebar);padding:29px 18px 18px;background:#e6eeea;border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:30;overflow-y:auto}
 .brand{display:flex;align-items:center;gap:11px;margin:0 6px 37px}
 .logo{display:block;width:32px;height:32px;flex-shrink:0}
 .logo img{display:block;width:100%;height:100%}
@@ -224,7 +224,7 @@ button.primary:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 7px 
 .pill,.chip,.activity-state{transition:background 220ms,color 220ms}
 .progress-track>div,.runbar-fill{transition:width 650ms var(--ease-out)}
 input:not([type=checkbox]),textarea,select{transition:border-color 180ms,box-shadow 180ms,background 180ms}
-input:focus-visible,textarea:focus-visible,select:focus-visible{box-shadow:0 0 0 4px #af4c350c}
+input:focus-visible,textarea:focus-visible,select:focus-visible{box-shadow:0 0 0 4px #286b540c}
 .tprow{transition:background 180ms}.tprow:hover{background:#eeefe3}
 .topright,.selection-drawer,.inline-menu>div,.course-actions>div{border-radius:12px;box-shadow:0 15px 40px #28332d14}
 .settings-details,.reviewgroup{border-radius:12px}

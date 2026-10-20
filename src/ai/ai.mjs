@@ -29,12 +29,14 @@ import { loadSettings } from '../config.mjs';
 import { throwIfStopped, interruptibleSleep, waitForRead } from '../control.mjs';
 import { log } from '../logbus.mjs';
 import { providerForUrl } from './providers.mjs';
-import { askWebImage, webChatState } from './web-chat.mjs';
+import { askWebImage, webChatState, WEB_UI } from './web-chat.mjs';
 import { questionPrompt } from './question-prompt.mjs';
 import {selectedProvider} from './providers.mjs';
 import {apiStatus,askApiImage} from './api.mjs';
 import {embedded,embeddedRequest,targetOf} from '../browser/embedded.mjs';
 import {canPauseAI,waitForAIResume} from './resume.mjs';
+import { aiQueue } from './queue.mjs';
+import { waitTurn, markAsked, reportSuccess, reportFailure } from './throttle.mjs';
 
 const READY_IMG_HOST = 'workspace-zb-cdn.qianwen.com';
 
@@ -412,8 +414,8 @@ export async function waitAnswer(page, { timeoutMs = 240000, stuckMs = 60000, st
 export async function stopGenerating(page) {
   return page
     .evaluate(() => {
-      const btn = Array.from(document.querySelectorAll('button')).find((x) =>
-        /停止|stop/i.test((x.getAttribute('aria-label') || '') + (x.textContent || '')),
+      const btn = Array.from(document.querySelectorAll('button,[role="button"]')).find((x) =>
+        x.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}) && /停止|stop/i.test((x.getAttribute('aria-label') || '') + (x.textContent || '')),
       );
       if (btn) {
         btn.click();
@@ -483,19 +485,37 @@ export async function readVerificationText(page) {
  * @returns {Promise<{ok:boolean, answer?:string, raw?:string, error?:string, errorCode?:string, waitedMs?:number}>}
  */
 export async function askImage(args) {
+  return aiQueue.run(async info => {
+  await waitTurn({ shouldStop: args.shouldStop, onWait: args.onWait });
   const page=args.page;
+  let sentByThisRequest=false;
   const annotate=async busy=>{if(embedded&&page&&!page.isClosed())await targetOf(page).then(targetId=>embeddedRequest('annotate',{targetId,busy})).catch(()=>{});};
   await annotate(true);
-  try{return await askImageCore(args);}finally{await annotate(false);}
+  try{
+    const result = await askImageCore({...args,onSent:()=>{sentByThisRequest=true;}});
+    if (result.ok) reportSuccess(); else reportFailure({ errorCode: result.errorCode, error: result.error });
+    return {...result,requestId:info.requestId,taskKey:args.taskKey||null,platform:info.platform};
+  }catch(error){
+    if(error.code==='STOPPED'&&sentByThisRequest&&page&&!page.isClosed()){
+      const provider=providerForUrl(page.url());
+      if(provider?.id==='qianwen')await stopGenerating(page).catch(()=>{});
+      else if(provider&&WEB_UI[provider.id]){const stop=page.locator(WEB_UI[provider.id].stop).filter({visible:true});if(await stop.count())await stop.first().click({timeout:2000}).catch(()=>{});}
+      const deadline=Date.now()+10000;
+      while(Date.now()<deadline){const state=provider?.id==='qianwen'?await readAnswer(page).catch(()=>({generating:false})):await webChatState(page,provider).catch(()=>({generating:false}));if(!state.generating)break;await page.waitForTimeout(100);}
+    }
+    throw error;
+  }finally{markAsked();await annotate(false);}
+  }, { shouldStop: args.shouldStop, platform: args.platform || (args.taskKey?.startsWith('zhihuishu:') ? 'zhihuishu' : 'chaoxing'),
+    taskKey: args.taskKey || null, questionId: String(args.question?.questionId || args.question?.qid || args.question?.id || ''), provider: selectedProvider(loadSettings()).id });
 }
-async function askImageCore({ page, imagePath, prompt = DEFAULT_PROMPT, freshChat = true, shouldStop, question }) {
+async function askImageCore({ page, imagePath, prompt = DEFAULT_PROMPT, freshChat = true, shouldStop, question, onSent=()=>{} }) {
   throwIfStopped(shouldStop);
   prompt = questionPrompt(prompt, question);
   if(selectedProvider(loadSettings()).id==='api')return askApiImage({imagePath,prompt,shouldStop});
   if(!page)return {ok:false,errorCode:'not-logged-in',error:'没有可用的 AI 网页，请先打开所选平台并登录'};
   const provider=providerForUrl(page.url?.());
   if(typeof page.url==='function'&&!provider)return {ok:false,errorCode:'wrong-ai-page',error:'答题网页不属于所选官方 AI 平台，已停止发送'};
-  if(provider&&provider.id!=='qianwen')return askWebImage({page,imagePath,prompt,freshChat,shouldStop},provider);
+  if(provider&&provider.id!=='qianwen')return askWebImage({page,imagePath,prompt,freshChat,shouldStop,onSent},provider);
   const started = Date.now();
   const cfg = loadSettings().ai || {};
   const retries = Math.max(0, Math.min(4, Number(cfg.askRetries ?? 2)));
@@ -588,6 +608,7 @@ async function askImageCore({ page, imagePath, prompt = DEFAULT_PROMPT, freshCha
             lastFail = { errorCode: 'send-failed', error: `发送失败：${sent.error}` };
             log(`    千问图片题发送失败：${sent.error}`, 'warn');
           } else {
+            onSent();
             log('    千问已发送图片题，等待回答', 'info');
             // 等回答时输出心跳 + 中途检测验证弹窗
             let lastTick = 0;

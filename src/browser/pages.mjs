@@ -120,6 +120,7 @@ export function pageIdentity(u) {
   const s = String(u || '');
   try {
     const url = new URL(s);
+    if(url.hostname==='onlineexamh5new.zhihuishu.com'&&url.hash.startsWith('#/webExamList/dohomework/'))return `${url.origin}${url.pathname}${url.hash.split('?')[0]}`;
     const parts = [];
     for (const k of IDENTITY_KEYS) {
       const v = url.searchParams.get(k);

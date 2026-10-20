@@ -144,7 +144,7 @@ export async function writeWebPrompt(page,provider,prompt,{shouldStop}={}) {
   const state=await webChatState(page,provider);
   if(!samePrompt(state.editorText,prompt))throw new Error('题干写入后回读不一致，已停止上传和发送');
 }
-export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=false},provider) {
+export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=false,onSent=()=>{}},provider) {
   // A unique user-turn marker also rejects remounted historical bubbles when
   // the virtual list recycles every DOM node. The model need not echo it.
   if(provider.id==='doubao')prompt+=`\n\n本次提问标记：${randomUUID()}。标记仅用于区分本次提问，答案中不要重复标记。`;
@@ -229,7 +229,7 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
     stage='send';
     await dismissWebObstructions(page);
     throwIfStopped(shouldStop);await page.locator(ui.send).filter({visible:true}).last().click({timeout:10000});
-    sent=true;stage='answer';
+    sent=true;onSent();stage='answer';
     log(`    ${provider.label}已发送图片题，等待回答`, 'info');
     let last='',stable=0,lastProgress=Date.now();
     const timeout=Math.max(60000,Number(settings.answerTimeoutMs)||240000),stuck=Math.max(15000,Number(settings.answerStuckMs)||60000);

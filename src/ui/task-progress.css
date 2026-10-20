@@ -1,5 +1,5 @@
 /* A precise amber signal on the archive's dark instrument surface. */
-.task-progress{--tp-ink:var(--fg);--tp-muted:var(--fg2);--tp-line:var(--line);--tp-accent:#9b6a2b;color:var(--tp-ink);padding:21px 0 5px;border-top:1px solid var(--tp-line);margin-top:23px;min-width:0}
+.task-progress{--tp-ink:var(--fg);--tp-muted:var(--fg2);--tp-line:var(--line);--tp-accent:var(--acc);color:var(--tp-ink);padding:21px 0 5px;border-top:1px solid var(--tp-line);margin-top:23px;min-width:0}
 .task-progress[hidden]{display:none!important}
 .tp-caption{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:10px;letter-spacing:.6px;color:var(--tp-muted)}
 .tp-state{display:inline-flex;align-items:center;gap:8px}.tp-state i{width:5px;height:5px;background:var(--tp-accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--tp-accent) 12%,transparent)}

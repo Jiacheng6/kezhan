@@ -7,7 +7,8 @@
  *   连续 N 个失败或登录失效则全局暂停告警。
  */
 import { loadSettings } from './config.mjs';
-import { log, notifyUser } from './logbus.mjs';
+import { log as writeLog, notifyUser } from './logbus.mjs';
+const log = (message, level) => writeLog(message, level, { platform: 'chaoxing' });
 import { runVideoTask, runDocTask, HANDLED_TYPES } from './chaoxing/runner.mjs';
 import { runQuizTask, recordQuizResult } from './chaoxing/quizrun.mjs';
 import {runDiscussionTask} from './chaoxing/discussion.mjs';

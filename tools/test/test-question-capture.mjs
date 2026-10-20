@@ -33,6 +33,11 @@ try {
   console.log('✓ 题干本身的字体未就绪时明确报错，不产生可能乱码的图片');
   await frame.addStyleTag({content:'.Zy_TItle{font-family:Arial}'});
 
+  let nativeCopies=0;
+  const nativeFile=await shootQuestion(frame,0,output,{allowCDPFallback:false,nativeCapture:async(p,rect)=>{const data=(await p.screenshot({clip:rect})).toString('base64');if(++nativeCopies===1)await frame.locator('.TiMu').evaluate(e=>e.style.transform='translateY(30px)');return {data};}});
+  assert.equal(nativeCopies,2,'布局变化时丢弃旧坐标截图并重新成像');assert.ok(fs.statSync(nativeFile).size>1000);
+  await frame.locator('.TiMu').evaluate(e=>e.style.transform='');
+  await assert.rejects(shootQuestion(frame,0,output,{allowCDPFallback:false,nativeCapture:async()=>{throw Error('native unavailable')}}),/native unavailable/);
   let captures=0,sessions=0,recovered=0;const commands=[];
   const proxiedPage=new Proxy(page,{get(target,key){
     if(key==='context')return()=>({newCDPSession:async()=>{

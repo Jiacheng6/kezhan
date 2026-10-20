@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="light" />
-<title>学习通助手</title>
+<title>课栈 · 学习工作台</title>
 <link rel="stylesheet" href="/style.css" />
 <link rel="stylesheet" href="/workspace-design.css" id="workspaceDesign" />
 <link rel="stylesheet" href="/selection-desk.css" />
@@ -15,11 +15,13 @@
 <link rel="stylesheet" href="/workbench-restore.css" />
 <link rel="stylesheet" href="/task-progress.css" />
 <link rel="stylesheet" href="/notifications.css" />
+<link rel="stylesheet" href="/kezhan.css" id="kezhanDesign" />
+<link rel="stylesheet" href="/platforms.css" />
 <link rel="icon" href="/icon.svg" type="image/svg+xml" />
 </head>
 <body data-panel="overview">
 <aside class="sidebar">
-  <div class="brand"><span class="logo" aria-hidden="true"><img src="/icon.svg" alt="" width="32" height="32" /></span><div><h1>学习通助手</h1><span class="brand-note">课程 · 任务 · 进度</span></div></div>
+  <div class="brand"><span class="logo" aria-hidden="true"><img src="/icon.svg" alt="" width="32" height="32" /></span><div><h1>课栈<span class="brand-en">KEZHAN</span></h1><span class="brand-note">把学习，接着往下做。</span></div></div>
   <p class="nav-label">学习空间</p>
   <nav class="tabs" aria-label="主导航">
     <button class="tab active" aria-current="page" data-tab="overview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10H3Z"/><path d="M9 20v-7h6v7"/></svg><span>学习工作台</span></button>
@@ -46,22 +48,24 @@
     <div class="breadcrumb"><span>学习空间</span><span class="breadcrumb-slash">/</span><strong id="pageTitle">学习工作台</strong></div>
     <div class="header-right"><button id="viewWebPages" class="web-pages-entry" hidden aria-haspopup="dialog" title="查看软件内已打开的网页"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M7 6.5h.1m3 0h.1"/></svg><span>查看网页</span><small id="webPageCount" aria-hidden="true">0</small></button><span id="phaseLine" class="sub">正在连接后台服务…</span><details class="connection-menu"><summary>连接状态 <span aria-hidden="true">⌄</span></summary><div class="topright"><span class="pill" id="pillEdge">浏览器未连接</span><span class="pill" id="pillLogin">登录未知</span><span class="pill" id="pillRecon">提交模式未知</span><span class="pill" id="pillQuiz">答题通道未知</span></div></details></div>
   </header>
+  <div class="platform-strip" aria-label="学习平台"><span class="platform-label">课程来源</span><div id="platformFilters" role="group" aria-label="筛选课程平台"></div><div class="platform-web-actions"><button id="openZhihuishu">智慧树网页 ↗</button><button id="readZhihuishu">扫描智慧树课程</button></div><span id="platformMessage" role="status"></span></div>
+  <section id="platformSessions" class="platform-sessions" aria-label="各平台独立运行状态"></section>
   <div id="bootError" class="banner error hidden" role="alert"></div>
   <main>
     <section class="panel active" id="panel-overview" aria-label="学习概览">
-      <div class="page-heading"><div><p class="eyebrow">WORKSPACE / 学习工作台</p><h2>学习概览<span class="heading-period">.</span></h2></div><span class="page-note">课程与进度，接着上次继续</span></div>
+      <div class="page-heading"><div><p class="eyebrow">YOUR LEARNING DESK</p><h2>接着学<span class="heading-period">.</span></h2></div><button class="text-button" data-navigate="courses">打开三列选课台 ↗</button></div>
       <div class="overview-grid">
         <div class="overview-primary">
           <article class="task-sheet">
             <div class="sheet-top"><span class="eyebrow">本次学习</span><span class="activity-state" id="overviewActivity">尚未开始</span></div>
             <h3 id="overviewHeadline">准备开始学习</h3><p id="overviewSubtitle" class="hero-description">确认课程和任务范围，然后开始。</p><p id="overviewSelectedNames" class="hero-course-names"></p>
-            <div class="hero-actions"><button id="overviewStart" data-action="startRun" class="primary" disabled>开始学习 <span aria-hidden="true">↗</span></button><button class="text-button" data-navigate="courses">选择课程 <span aria-hidden="true">→</span></button><button data-action="stopRun" class="stop-button" disabled>停止任务</button></div>
+            <div class="hero-actions"><button id="overviewStart" data-action="startRun" class="primary" disabled>开始学习 <span aria-hidden="true">↗</span></button><button class="text-button" data-navigate="courses">选择课程 <span aria-hidden="true">→</span></button><button data-action="stopRun" class="stop-button" disabled>停止全部任务</button></div>
             <div id="overviewTaskProgress" hidden></div>
             <div class="session-progress hidden" id="overviewSessionProgress"><div class="progress-caption"><span id="overviewProgressTitle">本次任务进度</span><span><b id="kDone">0</b><span class="progress-separator">/</span><span id="kTotal">0</span></span></div><div class="progress-track"><div id="overviewProgressFill"></div></div><p id="kCurrent">尚未开始执行</p></div>
             <details class="session-details hidden" id="overviewSessionDetails"><summary>运行详情 <span>⌄</span></summary><dl class="session-meta"><dt>当前状态</dt><dd id="kRunning">未运行</dd><dt>执行范围</dt><dd id="kScope">尚未选择</dd></dl></details>
           </article>
           <div class="overview-metrics"><div><span>清单内任务</span><b id="overviewTaskCount">—</b></div><div><span>已完成</span><b id="overviewDoneCount">—</b></div><button data-navigate="review"><span>待审答案 <span aria-hidden="true">↗</span></span><b id="overviewReviewCount">0</b></button></div>
-          <section class="course-ledger"><div class="section-title"><h3>课程一览</h3><button class="text-button" data-navigate="courses">查看全部 <span aria-hidden="true">→</span></button></div><div id="overviewCourses"><p class="placeholder">正在读取课程清单…</p></div></section>
+          <section class="course-ledger"><div class="section-title"><h3>我的课程 <small>COURSE INDEX</small></h3><button class="text-button" data-navigate="courses">选课与任务 <span aria-hidden="true">→</span></button></div><div id="overviewCourses"><p class="placeholder">正在读取课程清单…</p></div></section>
         </div>
         <aside class="overview-rail">
           <section class="readiness"><details id="readinessDetails" open><summary class="section-title"><h3 id="readinessTitle">开始前，确认一下</h3><span class="rail-index" id="readinessIndex">01—03</span></summary>
@@ -74,7 +78,7 @@
       </div>
     </section>
     <section class="panel" id="panel-courses" aria-label="课程清单">
-      <div class="page-heading"><div><p class="eyebrow">COURSES / 选课与学习</p><h2>课程清单<span class="heading-period">.</span></h2></div><div class="actions"><button data-action="startRun" class="primary">开始学习 ↗</button><button data-action="stopRun" class="stop-button">停止任务</button></div></div>
+      <div class="page-heading"><div><p class="eyebrow">COURSES / 选课与学习</p><h2>课程清单<span class="heading-period">.</span></h2></div><div class="actions"><button data-action="startRun" class="primary">开始学习 ↗</button><button data-action="stopRun" class="stop-button">停止全部任务</button></div></div>
       <div class="course-toolbar"><div class="course-view-switch" role="group" aria-label="选课视图"><button id="viewColumns" aria-pressed="true">三列选课</button><button id="viewTree" aria-pressed="false">树状列表</button></div><details class="course-info"><summary>课程与完成情况 ⌄</summary><div><span class="pill" id="treeSource">未加载</span><p id="treeSummary">正在读取课程清单…</p></div></details><details class="inline-menu"><summary>更新课程 ⌄</summary><div><button data-action="startRecon">重新扫描课程</button><button data-action="loadChecklist">读取已有清单</button></div></details></div>
       <div id="runBar" class="runbar hidden"><div id="runTaskProgress" hidden></div><div class="runbar-main"><span class="runlabel" id="runLabel">执行中…</span><span class="runprog" id="runProg"></span></div><div class="runbar-track"><div class="runbar-fill" id="runFill"></div></div><div class="runbar-sub" id="runSub"></div></div>
       <section id="selectionDesk" aria-label="三栏选课台"></section>
@@ -123,6 +127,6 @@
   <p class="hint">下载不影响任务；确认安装时会保存、备份数据并退出。</p>
 </dialog>
 <script src="/close-dialog.js"></script><script type="module" src="/app.js"></script><script type="module" src="/onboarding.js"></script><script type="module" src="/embedded-browser.js"></script><script type="module" src="/desktop.js"></script><script type="module" src="/notifications.js"></script><script type="module" src="/workspace-design.js"></script><script type="module" src="/library/home.js"></script>
-<link rel="stylesheet" href="/ai-controls.css"><script type="module" src="/ai-controls.js"></script>
+<link rel="stylesheet" href="/ai-controls.css"><script type="module" src="/ai-controls.js"></script><script type="module" src="/kezhan.js"></script>
 </body>
 </html>

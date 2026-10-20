@@ -107,6 +107,10 @@ export function getStatus() {
   } catch {
     /* 读取失败就用缓存值 */
   }
-  return { ...status, reviewCount };
+  const platforms = { chaoxing: { running: status.running, progress: status.progress, done: status.progress?.done || 0,
+    total: status.progress?.total || 0, current: status.progress?.current, phase: status.running ? 'running' : 'idle' }, ...(status.platformRuns || {}) };
+  const zhs = platforms.zhihuishu;
+  return { ...status, reviewCount, platforms, running: status.running || !!zhs?.running,
+    ...(!status.running && zhs?.running ? { progress: { ...zhs.progress, done: zhs.done, total: zhs.total, current: '【智慧树】' + (zhs.current || '准备任务') } } : {}) };
 }
 

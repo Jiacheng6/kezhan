@@ -20,6 +20,7 @@ import { loadState } from '../state.mjs';
 import { taskCompletion } from '../ui/task-status.js';
 import {reconMetadata} from './recon-metadata.mjs';
 import { readSelectionDocument, writeSelectionDocument } from './selection-presets.mjs';
+import { readPlatformCatalog, mergeCourseReports } from '../platforms/catalog.mjs';
 
 /** 执行清单的输入：侦察报告（路径由 config 唯一决定） */
 const REPORT_FILE = PATHS.taskReport;
@@ -181,7 +182,7 @@ export function taskKey(courseId, knowledgeId, seq) {
  * @returns {{courses:Array, summary:object}}
  */
 export function buildChecklist({ includeProgress = false } = {}) {
-  const report = loadReconReport();
+  const report = mergeCourseReports(loadReconReport(), readPlatformCatalog());
   if (!report) return null;
 
   const sel = loadSelection();
@@ -215,7 +216,7 @@ export function buildChecklist({ includeProgress = false } = {}) {
 
 function toCourseEntry(c, sel, summary, progress) {
   if (c.empty) {
-    return { courseId: c.courseId, name: c.name, empty: true, sections: [], tasks: [], counts: {} };
+    return { courseId: c.courseId, platform: c.platform || 'chaoxing', name: c.name, empty: true, sections: [], tasks: [], counts: {} };
   }
 
   const cs = sel.courses[c.courseId] || {};
@@ -279,6 +280,7 @@ function toCourseEntry(c, sel, summary, progress) {
         workKind = classifyWork(t.name);
         willHandleBase = workKind === 'quiz';
       }
+      if (c.platform === 'zhihuishu' && !['video','work'].includes(t.type)) willHandleBase = false;
 
       const isExcluded = excluded.has(key);
       const blockedReason=t.type==='discuss'&&!willHandleBase?'需开启讨论草稿':null;
@@ -314,6 +316,12 @@ function toCourseEntry(c, sel, summary, progress) {
 
       tasks.push({
         key,
+        platform: c.platform || 'chaoxing',
+        studyUrl: c.studyUrl || null,
+        platformTaskKey: t.platformTaskKey || null,
+        platformNumber: t.platformNumber || null,
+        platformTestName: t.platformTestName || null,
+        platformTestIndex: t.platformTestIndex ?? null,
         courseId: c.courseId,
         clazzId: c.clazzId,
         knowledgeId: s.knowledgeId,
@@ -348,6 +356,8 @@ function toCourseEntry(c, sel, summary, progress) {
 
   return {
     courseId: c.courseId,
+    platform: c.platform || 'chaoxing',
+    studyUrl: c.studyUrl || null,
     clazzId: c.clazzId,
     name: c.name,
     empty: false,

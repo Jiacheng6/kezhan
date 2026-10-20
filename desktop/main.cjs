@@ -8,7 +8,7 @@ const { EmbeddedBrowser } = require('./embedded-browser.cjs');
 const { NotificationCenter } = require('./notifications.cjs');
 const {createApiService}=require('./ai-api.cjs');
 
-const title = '学习通助手';
+const title = '课栈';
 const smokeTest = process.argv.includes('--smoke-test');
 const embeddedTest = process.argv.includes('--embedded-test');
 const testMode = smokeTest || process.argv.includes('--test-mode') || embeddedTest;
@@ -283,7 +283,7 @@ else {
     notifications.publish();
     tray.on('double-click', showMain);
     tray.setContextMenu(Menu.buildFromTemplate([
-      { label: '打开学习通助手', click: showMain },
+      { label: '打开课栈', click: showMain },
       { label: '通知与待处理', click: () => { showMain(); mainWindow.webContents.send('desktop:notice-open', {action:'notices'}); } },
       { label: '打开内置网页', click: () => { showMain(); internalBrowser.setVisible(true); } },
       { label: '返回工作台（任务继续运行）', click: () => internalBrowser.setVisible(false) },

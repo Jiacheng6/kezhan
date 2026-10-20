@@ -1,10 +1,10 @@
 :root {
   color-scheme: light;
   --ink: #20231f;
-  --muted: #686b61;
-  --line: #b0afa2;
-  --paper: #eae5e1;
-  --accent: #6a879a;
+  --muted: #60746c;
+  --line: #c5d3cb;
+  --paper: #eef1ef;
+  --accent: #286b54;
   font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
   color: var(--ink);
   background: var(--paper);

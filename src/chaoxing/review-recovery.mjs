@@ -116,7 +116,7 @@ function finishManualReview(key) {
 
 export async function syncSubmittedReviews() {
   let synced=0;
-  for(const record of listKeptPages().filter(r=>!r.closed)){
+  for(const record of listKeptPages().filter(r=>!r.closed&&!r.key.startsWith('zhihuishu:'))){
     try{await withReviewLock(record.key,async()=>{
       const entry=getKeptPage(record.key);if(!entry)return;
       if(entry.info?.type==='discussion'){if(await (await import('./discussion.mjs')).syncDiscussionReview(record.key,entry))synced++;return;}
@@ -244,7 +244,7 @@ export async function submitReviewWork(ctx,key,options) {
 
 export async function submitPendingReviews(ctx,scope={},options={}) {
   const active=new Set(listReviewItems().map(item=>item.taskKey));
-  const targets=listKeptPages().filter(record=>active.has(record.key)&&(scope.all||record.key===scope.taskKey));
+  const targets=listKeptPages().filter(record=>!record.key.startsWith('zhihuishu:')&&active.has(record.key)&&(scope.all||record.key===scope.taskKey));
   if(!targets.length)return {submitted:0,failed:0,note:'没有匹配的待审作业，请刷新列表'};
   let submitted=0,failed=0;
   const details=[];

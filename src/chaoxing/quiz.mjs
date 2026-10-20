@@ -177,7 +177,7 @@ export async function getWorkMeta(workFrame) {
  * 截取单道题的图片（精确裁剪）。
  * @returns {Promise<string>} 图片文件路径
  */
-export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, readTimeoutMs = 8000, onRecovery, selector = '.TiMu, .newTiMu', nativeCapture = embedded ? captureEmbeddedPage : null } = {}) {
+export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, readTimeoutMs = 8000, onRecovery, selector = '.TiMu, .newTiMu', nativeCapture = embedded ? captureEmbeddedPage : null, allowCDPFallback = true } = {}) {
   throwIfStopped(shouldStop);
   fs.mkdirSync(outDir, { recursive: true });
   const read = async (stage, operation) => {
@@ -241,13 +241,23 @@ export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, r
   const file = path.join(outDir, `q${String(domIndex + 1).padStart(2, '0')}-${Date.now()}.png`);
   if (nativeCapture) {
     try {
-      const rect = { x: Math.max(0, Math.floor(box.x)), y: Math.max(0, Math.floor(box.y)), width: Math.ceil(box.width), height: Math.ceil(box.height) };
-      const result = await read('软件内成像', () => nativeCapture(page, rect));
-      const image = Buffer.from(result.data, 'base64');
-      if (image.length < 24 || image.readUInt32BE(0) !== 0x89504e47 || image.readUInt32BE(16) !== rect.width || image.readUInt32BE(20) !== rect.height) throw new Error('软件内题目截图尺寸不完整');
-      throwIfStopped(shouldStop); fs.writeFileSync(file, image); return file;
+      let currentBox=box;
+      for(let attempt=0;attempt<3;attempt++){
+        const rect = { x: Math.max(0, Math.floor(currentBox.x)), y: Math.max(0, Math.floor(currentBox.y)), width: Math.ceil(currentBox.width), height: Math.ceil(currentBox.height) };
+        const result = await read('软件内成像', () => nativeCapture(page, rect));
+        const after=await read('核对截图位置',()=>el.boundingBox());
+        // A native copy/viewport update may reflow or finish scrolling the page.
+        // Discard pixels from the previous position rather than sending a header.
+        if(!after)throw Error('截图后题目已不可见');
+        if(['x','y','width','height'].some(key=>Math.abs(after[key]-currentBox[key])>1)){currentBox=after;continue;}
+        const image = Buffer.from(result.data, 'base64');
+        if (image.length < 24 || image.readUInt32BE(0) !== 0x89504e47 || image.readUInt32BE(16) !== rect.width || image.readUInt32BE(20) !== rect.height) throw new Error('软件内题目截图尺寸不完整');
+        throwIfStopped(shouldStop); fs.writeFileSync(file, image); return file;
+      }
+      throw Error('题目位置持续变化，未发送不完整截图，请重试');
     } catch (error) {
       if (error.code === 'STOPPED') throw error;
+      if(!allowCDPFallback)throw error;
       onRecovery?.('正在尝试另一种题目成像方式');
     }
   }

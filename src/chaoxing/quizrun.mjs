@@ -28,7 +28,7 @@ import {
 } from './quiz.mjs';
 import { parseAnswer, validateBeforeSubmit, buildArchive, confidenceLabel, normalizeEssayText, MAX_ESSAY_LENGTH } from '../ai/parse.mjs';
 import { addHandbook, loadState, saveState, mutateState, listReviewItems, updateReviewAnswer } from '../state.mjs';
-import { waitTurn, markAsked, reportSuccess, reportFailure, throttleState } from '../ai/throttle.mjs';
+import { throttleState } from '../ai/throttle.mjs';
 import { throwIfStopped } from '../control.mjs';
 import { fillEssayAnswer } from './essay.mjs';
 /*
@@ -68,7 +68,7 @@ function sleep(ms) {
  *
  * @returns {Promise<object>} 含 question / imagePath / aiAnswer / parsed / validation
  */
-async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, shouldStop }) {
+async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, shouldStop, taskKey }) {
   const dir = archiveDir();
 
   // 截图（唯一可靠输入 —— 题干是自定义字体加密的）
@@ -76,11 +76,11 @@ async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, sh
   log('        题目截图已就绪，准备发送给AI', 'info');
 
   // 节流：保护AI账号不被风控（踩过坑）
-  await waitTurn({ shouldStop });
   throwIfStopped(shouldStop);
 
   const settings = loadSettings();
   const ai = await askImage({
+    taskKey, platform:'chaoxing',
     question,
     page: qianwenPage,
     imagePath,
@@ -88,12 +88,9 @@ async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, sh
     freshChat: settings.ai?.freshChatPerQuestion ?? false,
     shouldStop,
   });
-  markAsked();
   throwIfStopped(shouldStop);
 
-  if (ai.ok) reportSuccess();
-  else {
-    reportFailure({ errorCode: ai.errorCode, error: ai.error });
+  if (!ai.ok) {
     log(`        AI请求失败（${ai.errorCode || 'unknown'}）：${ai.error || '无错误详情'}`, 'error');
   }
 
@@ -260,6 +257,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
       if (onProgress) onProgress({ index: i, total: questions.length, phase: 'asking' });
 
       const solved = await solveOne({
+        taskKey:task.key,
         workFrame,
         domIndex: q.domIndex,
         qianwenPage,

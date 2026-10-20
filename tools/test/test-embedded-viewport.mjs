@@ -16,3 +16,9 @@ setViewBounds(record,{x:210,y:174,width:1004,height:627});
 assert.equal(bounds.length,4);assert.equal(emulations.length,2);
 assert.deepEqual(emulations[1].viewSize,{width:1004,height:627},'resizing must keep native and renderer bounds aligned');
 console.log('✓ hidden viewport initialization, desktop dimensions and resize alignment');
+
+const {EmbeddedBrowser}=createRequire(import.meta.url)('../../desktop/embedded-browser.cjs');
+const newlyCreated={viewportReady:true,view:{setBounds:value=>bounds.push(value),setVisible(){},webContents:{isDestroyed:()=>false,enableDeviceEmulation:value=>emulations.push(value)}}};
+const captureHost={setContentSize(){},contentView:{addChildView(){}}};newlyCreated.host=captureHost;
+EmbeddedBrowser.prototype.applyBounds.call({disposed:false,window:{isDestroyed:()=>false,getContentSize:()=>[0,0]},lastContentSize:[1240,840],captureWindow:captureHost,bounds:{x:200,y:174,width:1040,height:666},views:new Map([[1,newlyCreated]]),visible:false});
+assert.deepEqual(emulations.at(-1).viewSize,{width:1040,height:666},'最小化时新建后台页仍初始化正常视口');

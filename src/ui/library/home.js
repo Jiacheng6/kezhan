@@ -1,6 +1,7 @@
 import { workspace } from "../app.js";
 import { completionOf, courseCompletion, sectionCompletion } from "../task-status.js";
 import { animate } from "../motion.js";
+import { platformOf, platformInfo } from '../platforms.js';
 
 const preferences = {
   read(key, fallback = null) {
@@ -43,10 +44,12 @@ let model = workspace.snapshot(),
 const $ = (selector) => root.querySelector(selector);
 function courses() {
   return (model.checklist?.courses || [])
-    .filter((c) => !c.empty)
+    .filter((c) => !c.empty && (!model.platformFilter || model.platformFilter === 'all' || platformOf(c) === model.platformFilter))
     .map((c) => ({
       id: c.courseId,
       title: c.name,
+      platform: platformOf(c),
+      platformLabel: platformInfo(c).name,
       enabled: !!c.enabled,
       ...courseCompletion(c),
       sections:(c.sections||[]).filter(s=>!(c.tasks||[]).some(t=>t.knowledgeId===s.knowledgeId)).map(s=>({

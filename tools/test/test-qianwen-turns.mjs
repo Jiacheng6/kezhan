@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {chromium} from 'playwright-core';
 import {fixturePng} from './fixture-png.mjs';
 fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/qianwen-turns-'));
+fs.writeFileSync(path.join(process.env.XXT_DATA_DIR,'state.json'),JSON.stringify({settings:{ai:{minIntervalMs:0,jitterMs:0}}}));
 const {findEdge}=await import('../../src/browser/launch.mjs');const {askImage,readEditor}=await import('../../src/ai/ai.mjs');
 const browser=await chromium.launch({executablePath:findEdge(),headless:true});
 try{

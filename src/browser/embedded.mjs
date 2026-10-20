@@ -50,7 +50,12 @@ export async function embeddedContext(browser) {
     while (Date.now() < deadline) {
       await Promise.all(raw.pages().filter(p => !pages.has(p)).map(discover));
       const page = [...pages].find(([page, id]) => !page.isClosed() && id === result.targetId)?.[0];
-      if (page) return page;
+      if (page) {
+        // The native tab is registered before its initial blank document is
+        // ready. Initialize that viewport before a course runs startup scripts.
+        await page.waitForFunction(()=>innerWidth>0&&innerHeight>0&&document.readyState!=='loading',null,{timeout:10000});
+        return page;
+      }
       await new Promise(resolve => setTimeout(resolve, 25));
     }
     throw new Error('内置网页创建失败，请重启服务后重试');

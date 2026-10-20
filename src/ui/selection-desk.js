@@ -1,4 +1,5 @@
 import { capturePlan, applyPlan, QUICK_RULES, planRule, applyRule } from './selection-plan.js';
+import { platformOf, platformBadge, platformInfo } from './platforms.js';
 import { recalc, willSummary, matchesQuery, courseVisible } from './selection.js';
 import { completionOf, courseCompletion, sectionCompletion } from './task-status.js';
 import { selectOnlyTask, clearRunSelection, selectCourseTasks } from './run-scope.js';
@@ -33,7 +34,7 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
         <div id="deskTasks" class="sd-task-list"></div>
       </section>
       <aside class="sd-selection" aria-label="本次已选范围与方案">
-        <div class="sd-column-title"><b><span>本次学习</span></b><span id="deskRunState">尚未开始</span></div>
+        <div class="sd-column-title"><b><span>全部已选范围</span></b><span id="deskRunState">尚未开始</span></div>
         <div class="sd-total"><strong id="deskTotal">0</strong><span>个任务 <small id="deskTotalCourses"></small></span></div>
         <p id="deskPendingCounts" class="sd-micro"></p>
         <details class="sd-selected-details"><summary>查看已选范围</summary><p id="deskTypeCounts" class="sd-micro"></p><div id="deskSelected" class="sd-selected-list"></div></details>
@@ -65,6 +66,7 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
   };
   let active = '', rule = 'unfinished', previous = null, presets = [], presetBusy = false, locked = false, account, loaded = false, requestId = 0, completedOpen = false;
   const data = () => snapshot().checklist?.courses || [];
+  const visibleCourses = () => data().filter(c => snapshot().platformFilter === 'all' || !snapshot().platformFilter || platformOf(c) === snapshot().platformFilter);
   const busy = () => !!snapshot().status?.running || !!snapshot().status?.reconRunning;
   const feedback = (message, error = false) => { $('deskFeedback').textContent = message; $('deskFeedback').classList.toggle('error', error); };
   document.addEventListener('workspace-action-result', ({ detail }) => {
@@ -97,7 +99,7 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
     active = id; $('deskCourseSearch').value = ''; $('deskTaskSearch').value = ''; $('deskTasks').scrollTop = 0; render();
   }
   function drawCourses() {
-    const courses = data(), q = $('deskCourseSearch').value;
+    const courses = visibleCourses(), q = $('deskCourseSearch').value;
     $('deskCourseCount').textContent = `${courses.length} 门`;
     keepPosition($('deskCourses'), () => {
       $('deskCourses').replaceChildren();
@@ -123,6 +125,7 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
           title.dataset.sdFocus = 'focus:' + c.courseId; title.setAttribute('aria-pressed', String(active === c.courseId));
           const completion = courseCompletion(c), finished = c.tasks.filter(t => completionOf(t).finished).length;
           title.append(node('b', null, c.name), node('small', null, c.tasks.length ? `完成 ${finished}/${c.tasks.length} 项 · 已选 ${c.tasks.filter(t => t.willHandle).length}` : completion.finished ? '已完成' : completion.label));
+          title.prepend(platformBadge(c));
           if (c.tasks.length || completion.finished) {
             const progress = node('progress', 'sd-course-progress'); progress.max = c.tasks.length || 1; progress.value = c.tasks.length ? finished : 1;
             progress.setAttribute('aria-label', `${c.name}：${c.tasks.length ? `已读取任务完成 ${finished}/${c.tasks.length}` : '已完成'}`); title.append(progress);
@@ -136,7 +139,7 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
   function drawTasks() {
     const c = data().find(c => c.courseId === active), q = $('deskTaskSearch').value, mode = $('deskTaskStatus').value;
     $('deskCourseTitle').textContent = c?.name || '还没有课程清单';
-    $('deskCourseMeta').textContent = c ? `${c.sections.length} 个小节 · ${c.tasks.length} 个已读取任务${c.enabled === false ? ' · 当前未纳入学习范围' : ''}` : '扫描课程后，即可在这里选择章节与任务。';
+    $('deskCourseMeta').textContent = c ? `${platformInfo(c).name} · ${c.sections.length} 个小节 · ${c.tasks.length} 个已读取任务${c.enabled === false ? ' · 当前未纳入学习范围' : ''}` : '扫描课程后，即可在这里选择章节与任务。';
     $('deskCourseState').textContent = c ? courseCompletion(c).label : '';
     keepPosition($('deskTasks'), () => {
       const list = $('deskTasks'); list.replaceChildren(); if (!c) return;
@@ -299,7 +302,7 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
   document.getElementById('viewColumns')?.addEventListener('click', () => setView('columns'));
   document.getElementById('viewTree')?.addEventListener('click', () => setView('tree'));
   function render() {
-    const courses = data(); root.classList.toggle('sd-no-courses', !courses.length);
+    const courses = visibleCourses(); root.classList.toggle('sd-no-courses', !courses.length);
     if (!courses.some(c => c.courseId === active)) active = courses.find(c => c.enabled !== false && !courseCompletion(c).finished)?.courseId || courses[0]?.courseId || '';
     drawCourses(); drawTasks(); drawSummary(); drawRule(); lockControls();
   }

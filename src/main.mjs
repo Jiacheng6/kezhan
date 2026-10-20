@@ -28,6 +28,25 @@ import { ownerState, startOwnerMonitor } from './browser/owner-lifecycle.mjs';
 import {selectedProvider, ensureProviderPage} from './ai/providers.mjs';
 import {aiResumeStatus,continueAI,onAIResumeChange} from './ai/resume.mjs';
 import {apiStatus} from './ai/api.mjs';
+import { PlatformRuns } from './platforms/runs.mjs';
+import { scanZhihuishuCourses } from './platforms/zhihuishu/scan.mjs';
+import { runZhihuishuVideo } from './platforms/zhihuishu/runner.mjs';
+import { runZhihuishuQuiz, restoreZhihuishuReview, submitZhihuishuReview, editZhihuishuReview, syncZhihuishuReviews } from './platforms/zhihuishu/quiz-task.mjs';
+import { platformOf } from './ui/platforms.js';
+import { onAIQueueChange } from './ai/queue.mjs';
+onAIQueueChange(aiQueue => patchStatus({ aiQueue }));
+const extraRuns = new PlatformRuns({ execute: args => args.task.type==='work'?runZhihuishuQuiz(args):runZhihuishuVideo(args), changed: sessions => patchStatus({ platformRuns: sessions }) });
+const startingPlatforms = new Set();
+const zhsScan = { running: false, stop: false };
+function startZhihuishuTasks(tasks) {
+  const result = extraRuns.start('zhihuishu', tasks, ctx());
+  log(`【智慧树】开始 ${tasks.length} 个任务；学习通队列独立运行，AI逐题排队`, 'info');
+  void extraRuns.wait('zhihuishu').then(session => {
+    if (session.error) notifyUser('batch-error', { key: `zhihuishu:${Date.now()}`, detail: '智慧树：' + session.error });
+    else notifyUser(session.phase === 'stopped' ? 'batch-stopped' : session.review ? 'batch-review' : 'batch-complete', { key: `zhihuishu:${Date.now()}`, detail: `智慧树：完成 ${session.done}/${session.total} 个任务，待审 ${session.review||0} 份` });
+  });
+  return result;
+}
 onAIResumeChange(wait=>{patchStatus({aiWaiting:wait});if(wait.waiting)notifyUser('ai-verification',{provider:wait.provider,key:wait.provider+'-verification',detail:`${wait.label}需要人工验证；完成后点击“验证已完成，继续本题”。`});});
 
 /*
@@ -149,6 +168,7 @@ async function boot() {
   browser.on('disconnected', () => {
     if (shuttingDown) return;
     batchRunner.requestStop();
+    extraRuns.stopAll();
     patchStatus({ ready: false, edge: { connected: false }, bootError: '网页连接已中断，请在软件中重启服务。已保存的进度仍然保留。' });
   });
   await startWindowControl(browser);
@@ -389,6 +409,7 @@ async function readoptKeptPages() {
   let n = 0;
   const live = ctxNow.pages();
   for (const rec of listKeptPages()) {
+    if(rec.key.startsWith('zhihuishu:'))continue;
     if (rec.submittable || !rec.url) continue;
     const hit = live.find((p) => isSamePageUrl(p.url(), rec.url));
     if (hit) {
@@ -442,6 +463,10 @@ function buildHooks() {
     editReviewAnswer: async (body) => {
       const item = listReviewItems().find((it) => it.id === body.id);
       if (!item) return null;
+      if(platformOf(item)==='zhihuishu'){
+        if(getStatus().platforms?.zhihuishu?.running)throw Error('请先停止智慧树任务再修改答案');
+        return withReviewLock(item.taskKey,()=>editZhihuishuReview(ctx(),item,body.letters));
+      }
       if(item.qtype==='discussion'){
         if(batchRunner.running||recon.running)throw new Error('请先停止当前任务，再修改讨论草稿');
         return withReviewLock(item.taskKey,async()=>(await import('./chaoxing/discussion.mjs')).saveDiscussionDraft(body.id,body.textAnswer));
@@ -496,7 +521,7 @@ function buildHooks() {
       const before = loadSettings();
       const r = normalizeSettings(patch, before);
       const providerChanged=selectedProvider(r.settings).id!==selectedProvider(before).id;
-      if(providerChanged&&batchRunner.running)throw new Error('请先停止当前任务，再切换 AI 网页版通道');
+      if(providerChanged&&(getStatus().running||getStatus().aiQueue?.active))throw new Error('请先停止各平台任务，再切换 AI 答题通道');
       if (r.rejected.length) {
         log(`设置未保存：无法识别的项 ${r.rejected.join('、')}`, 'error');
         return { ok: false, error: `无法识别的设置项：${r.rejected.join('、')}`, ...r };
@@ -566,6 +591,18 @@ function buildHooks() {
       await bringToFront(page);
       log(`已在${embedded ? '软件内' : '受控浏览器中'}打开学习通首页`, 'info');
       return { ok: true };
+    },
+    readZhihuishu: async () => {
+      if (!ctx()) throw Error('内置网页尚未就绪');
+      if (zhsScan.running) throw Error('智慧树正在扫描');
+      if (extraRuns.snapshot().zhihuishu?.running) throw Error('请先停止智慧树任务再读取课程');
+      zhsScan.running = true; zhsScan.stop = false;
+      try {
+        const result = await scanZhihuishuCourses(ctx(), { shouldStop: () => zhsScan.stop || shuttingDown,
+          onProgress: progress => patchStatus({ zhihuishuScan: { running: true, ...progress } }) });
+        log(`【智慧树】扫描完成：${result.courses} 门课程、${result.videos} 个视频`, 'ok'); return result;
+      } catch(error){notifyUser('batch-error',{key:'zhihuishu-scan',detail:error.message});throw error;}
+      finally { zhsScan.running = false; patchStatus({ zhihuishuScan: { running: false } }); }
     },
 
     focusEdge: async () => {
@@ -664,16 +701,28 @@ function buildHooks() {
     startRun: async (req) => {
       if (recon.running) throw new Error('正在读取课程清单，请等待完成或先停止');
       if (!runtime.context || !getStatus().ready) throw new Error('浏览器尚未就绪');
-      if (batchRunner.running) {
-        log('执行已在进行中', 'warn');
-        return { running: true };
-      }
       const cl = buildChecklist();
       if (!cl) {
         log('没有任务点清单，请先侦察', 'error');
         return { ok: false, error: 'no-checklist' };
       }
-      const tasks = assertRunScope(cl.courses, await readJson(req, 2 * 1024 * 1024));
+      const request = await readJson(req, 2 * 1024 * 1024);
+      if (request.platform && !['chaoxing', 'zhihuishu'].includes(request.platform)) throw Error('此平台暂未接入执行');
+      const selected = assertRunScope(request.platform ? cl.courses.filter(c => platformOf(c) === request.platform) : cl.courses, request);
+      const zhsTasks = selected.filter(t => platformOf(t) === 'zhihuishu');
+      const tasks = selected.filter(t => platformOf(t) === 'chaoxing');
+      if (tasks.length + zhsTasks.length !== selected.length) throw Error('选择中包含尚未接入执行的平台');
+      const starting = [...new Set(selected.map(platformOf))];
+      if (starting.some(id => startingPlatforms.has(id))) throw Error('此平台正在启动，请稍候');
+      if (zhsTasks.length && extraRuns.snapshot().zhihuishu?.running) throw Error('智慧树已在运行，请使用独立停止按钮');
+      if (zhsTasks.length && zhsScan.running) throw Error('请等待智慧树扫描完成');
+      if (tasks.length && batchRunner.running) throw Error('学习通已在运行，请使用独立停止按钮');
+      starting.forEach(id => startingPlatforms.add(id));
+      try {
+      if (!tasks.length) {
+        if (!zhsTasks.length) throw Error('没有可执行任务');
+        return startZhihuishuTasks(zhsTasks);
+      }
 
       /*
        * 开跑前确保有账号 ID：正常情况启动/登录时就自动识别过；
@@ -700,7 +749,7 @@ function buildHooks() {
       for (const t of runnable) byType[t.type] = (byType[t.type] || 0) + 1;
 
       // 明确播报"这次要刷哪些课"，避免用户以为只刷某一门却被全量刷了
-      const enabledCourses = cl.courses.filter((c) => !c.empty && c.enabled !== false);
+      const enabledCourses = cl.courses.filter((c) => platformOf(c) === 'chaoxing' && !c.empty && c.enabled !== false);
       const courseNames = enabledCourses.map((c) => c.name);
       patchStatus({
         running: true,
@@ -726,6 +775,7 @@ function buildHooks() {
         log(`    · ${c.name}  (${n} 个)`, 'info');
       }
       log(`类型分布 ${JSON.stringify(byType)}`, 'info');
+      if (zhsTasks.length) startZhihuishuTasks(zhsTasks);
 
       (async () => {
         try {
@@ -771,9 +821,15 @@ function buildHooks() {
       })();
 
       return { started: true, count: runnable.length };
+      } finally { starting.forEach(id => startingPlatforms.delete(id)); }
     },
 
-    stopRun: async () => {
+    stopRun: async (req) => {
+      const { platform } = req ? await readJson(req, 4096) : {};
+      if (platform && !['chaoxing', 'zhihuishu'].includes(platform)) throw Error('平台标识无效');
+      if (!platform || platform === 'zhihuishu') extraRuns.stop('zhihuishu');
+      if (!platform || platform === 'zhihuishu') zhsScan.stop = true;
+      if (platform === 'zhihuishu') return { stopping: true, platform };
       if (recon.running) {
         recon.stopRequested = true;
         log('收到停止请求，当前页面读取结束后停止；原有课程清单保留', 'warn');
@@ -781,7 +837,7 @@ function buildHooks() {
       return batchRunner.requestStop();
     },
 
-    runStatus: async () => batchRunner.snapshot(),
+    runStatus: async () => ({ ...batchRunner.snapshot(), platforms: getStatus().platforms }),
 
     /** 查看断点续跑状态 */
     stateInfo: async () => {
@@ -801,7 +857,7 @@ function buildHooks() {
 
     /** 清空运行记录（慎用：会重刷已完成的） */
     resetState: async () => {
-      if (batchRunner.running) {
+      if (getStatus().running) {
         log('执行中不能重置状态', 'error');
         return { ok: false, error: 'running' };
       }
@@ -823,10 +879,15 @@ function buildHooks() {
     listKeptPages: async () => {
       await readoptKeptPages();
       if(!batchRunner.running&&!recon.running)await syncSubmittedReviews();
+      if(!extraRuns.snapshot().zhihuishu?.running)await syncZhihuishuReviews(ctx());
       return listKeptPages();
     },
 
     openReview: async ({taskKey}={}) => {
+      if(taskKey?.startsWith('zhihuishu:'))return withReviewLock(taskKey,async()=>{
+        if(getStatus().platforms?.zhihuishu?.running)throw Error('请先停止智慧树任务再恢复草稿');
+        const {page,...result}=await restoreZhihuishuReview(ctx(),taskKey);await bringToFront(page);if(embedded)await setBrowserVisible(true);return result;
+      });
       if(batchRunner.running||recon.running)throw new Error('请先停止当前任务，再恢复待审作业');
       return withReviewLock(taskKey,async()=>{
         await readoptKeptPages();
@@ -845,11 +906,21 @@ function buildHooks() {
      *   { all: true } 提交所有"保持打开"的作业页
      */
     submitReviews: async (opts = {}) => {
-      if(batchRunner.running||recon.running)throw new Error('请先停止当前任务，再提交待审作业');
+      if(getStatus().running||recon.running)throw new Error('请先停止任务，再提交待审作业');
       // 先做一次"重新认领"，确保重启后仍能提交（保持打开的页面还在 Edge 里）
       await readoptKeptPages();
       let result;
-      try { result=await submitPendingReviews(ctx(),opts,{personId:PERSON_ID}); }
+      try {
+        if(opts.taskKey?.startsWith('zhihuishu:'))result=await withReviewLock(opts.taskKey,()=>submitZhihuishuReview(ctx(),opts.taskKey));
+        else {
+          result=await submitPendingReviews(ctx(),opts,{personId:PERSON_ID});
+          result.details||=[];
+          if(opts.all)for(const key of new Set(listReviewItems().filter(i=>platformOf(i)==='zhihuishu').map(i=>i.taskKey))){
+            const zhs=await withReviewLock(key,()=>submitZhihuishuReview(ctx(),key)).catch(error=>({submitted:0,failed:1,details:[{key,ok:false,error:error.message}]}));
+            result.submitted+=zhs.submitted;result.failed+=zhs.failed;result.details.push(...zhs.details);
+          }
+        }
+      }
       catch(error) { notifyUser('submit-failed',{key:`submit-failed:${Date.now()}`,detail:error.message}); throw error; }
       for(const item of result.details||[])log(item.ok?'待审作业已确认提交':`待审提交未完成：${item.error}`,item.ok?'ok':'error');
       if(result.failed)notifyUser('submit-failed',{key:`submit-failed:${Date.now()}`,detail:`本次已确认 ${result.submitted||0} 组，未成功 ${result.failed} 组；失败的作业仍在待审中。`});
@@ -896,8 +967,10 @@ async function gracefulShutdown(signal) {
   shuttingDown = true;
   recon.stopRequested = true;
   batchRunner.requestStop();
+  extraRuns.stopAll();
+  zhsScan.stop = true;
   const stopDeadline = Date.now() + 6000;
-  while (batchRunner.running && Date.now() < stopDeadline) {
+  while ((batchRunner.running || extraRuns.snapshot().zhihuishu?.running) && Date.now() < stopDeadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   log(`收到 ${signal}，正在收摊（关闭刷课临时页，保留待人工页面）…`, 'warn');

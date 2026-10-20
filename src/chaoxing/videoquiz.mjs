@@ -42,7 +42,6 @@ import { PATHS, loadSettings } from '../config.mjs';
 import { log } from '../logbus.mjs';
 import { askImage } from '../ai/ai.mjs';
 import { parseAnswer, validateBeforeSubmit, buildArchive, confidenceLabel } from '../ai/parse.mjs';
-import { waitTurn, markAsked, reportSuccess, reportFailure } from '../ai/throttle.mjs';
 import { throwIfStopped } from '../control.mjs';
 import { shootQuestion } from './quiz.mjs';
 import { AI_BLOCK_CODES } from './quiz-outcome.mjs';
@@ -358,7 +357,6 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent,
     return { ok: false, needsHuman: true, aiErrorCode:'not-logged-in', error: '没有可用的AI页面，无法自动作答', question: q, imagePath };
   }
 
-  await waitTurn({ shouldStop });
   const ai = await askImage({
     question: q,
     page: qianwenPage,
@@ -367,9 +365,6 @@ export async function handleVideoQuiz({ page, frame, qianwenPage, task, onEvent,
     freshChat: settings.ai?.freshChatPerQuestion ?? false,
     shouldStop,
   });
-  markAsked();
-  if (ai.ok) reportSuccess();
-  else reportFailure({ errorCode: ai.errorCode, error: ai.error });
 
   const parsed = parseAnswer(ai.ok ? ai.answer : '', q);
   const validation = validateBeforeSubmit(parsed, q);

@@ -36,9 +36,11 @@ const state = {
   autoScroll: true,
   filter: '',
 };
+import { platformOf, platformBadge } from './platforms.js';
 const workspaceListeners = new Set();
+let platformFilter = 'all';
 let checklistLoading = true;
-const workspaceSnapshot = () => ({ status: state.status, checklist: tree.data, dirty: tree.dirty, loading: checklistLoading });
+const workspaceSnapshot = () => ({ status: state.status, checklist: tree.data, dirty: tree.dirty, loading: checklistLoading, platformFilter });
 function emitWorkspace() {
   for (const callback of workspaceListeners) {
     try { callback(workspaceSnapshot()); } catch (error) { console.warn('首页更新失败', error); }
@@ -51,6 +53,9 @@ export const workspace = Object.freeze({
   navigate: switchTab,
   action: runAction,
   reload: loadChecklist,
+  setPlatformFilter(id) {
+    platformFilter = id; renderTree(); selectionDesk.render(); emitWorkspace();
+  },
   save: saveSelection,
   refresh: refreshTreeProgress,
   selectCourse(courseId, enabled) {
@@ -524,7 +529,7 @@ function logLine(entry) {
   div.className = `logline ${entry.level}`;
   const t = new Date(entry.t).toLocaleTimeString('zh-CN', { hour12: false });
   div.innerHTML = `<span class="ts">${t}</span><span class="msg"></span>`;
-  div.querySelector('.msg').textContent = entry.message;
+  div.querySelector('.msg').textContent = (entry.platform ? `【${entry.platform === 'zhihuishu' ? '智慧树' : '学习通'}】` : '') + entry.message;
   div.dataset.raw = entry.message.toLowerCase();
   return div;
 }
@@ -802,7 +807,7 @@ function renderOverviewCourses() {
   $('#overviewDoneCount').textContent = progress.done;
   const box = $('#overviewCourses');
   box.innerHTML = '';
-  const visible = courses.filter((c) => !c.empty).slice(0, 3);
+  const visible = courses.filter((c) => !c.empty && (platformFilter === 'all' || platformOf(c) === platformFilter));
   if (!visible.length) {
     box.appendChild(el('p', 'placeholder', '还没有课程清单。首次使用先扫描课程，之后会自动读取。'));
     const scan = el('button', 'text-button', '扫描课程 →');
@@ -817,6 +822,7 @@ function renderOverviewCourses() {
     row.appendChild(el('span', 'ledger-number', String(index + 1).padStart(2, '0')));
     const name = el('span', 'ledger-name');
     name.appendChild(el('b', null, course.name));
+    name.appendChild(platformBadge(course));
     name.appendChild(el('small', null, `${course.sections.length} 个小节 · 清单内 ${progress.total} 个任务`));
     row.appendChild(name);
     const completion=courseCompletion(course);
@@ -874,6 +880,7 @@ function renderTree() {
   preserveTreeFocus(body, () => {
   const grouped={pending:[],completed:[]};
   for (const c of tree.data.courses) {
+    if (platformFilter !== 'all' && platformOf(c) !== platformFilter) continue;
     if (!courseVisible(c, q)) continue;
     const signature = JSON.stringify([q, c, tree.expanded.has(c.courseId),tree.completedSectionsOpen.get(c.courseId)]);
     let cached = courseViews.get(c);
@@ -1116,6 +1123,7 @@ function renderCourse(c, q = '') {
   head.appendChild(el('span', 'cname', c.name));
 
   const meta = el('span', 'cmeta');
+  meta.appendChild(platformBadge(c));
   if (c.empty) {
     meta.appendChild(el('span', 'chip skip', '无章节内容'));
   } else {
@@ -1556,6 +1564,7 @@ function renderReview(data) {
     const head = el('div', 'rghead');
     const k = keptMap.get(taskKey);
     const discussion=list[0].qtype==='discussion';
+    head.appendChild(platformBadge(list[0]));
     head.appendChild(el('span', 'gname', `${list[0].course || ''} · ${list[0].secNo || ''} ${list[0].sectionName || ''}`));
     head.appendChild(el('span', 'gmeta', `${list.length} ${discussion?'条':'题'}`));
     {

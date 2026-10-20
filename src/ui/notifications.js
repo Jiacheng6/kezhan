@@ -25,7 +25,13 @@ if (app?.notifications) {
     document.dispatchEvent(new Event('assistant-open-workspace'));
     try {
       if(item.action==='notices'){openCenter();return;}
-      if(item.action==='ai'||item.action==='login'){
+      if(item.action==='zhihuishu'){
+        const web=await app.webState();
+        const isSite=tab=>{try{const u=new URL(tab.url);return u.protocol==='https:'&&(u.hostname==='zhihuishu.com'||u.hostname.endsWith('.zhihuishu.com'));}catch{return false;}};
+        const existing=web.tabs.filter(isSite).find(tab=>['login.zhihuishu.com','passport.zhihuishu.com'].includes(new URL(tab.url).hostname))||web.tabs.filter(isSite).at(-1);
+        if(existing)await app.webCommand({action:'select',id:existing.id});
+        else await app.webCommand({action:'open-zhihuishu'});
+      } else if(item.action==='ai'||item.action==='login'){
         const web=await app.webState();
         const provider=item.provider||workspace.snapshot().status?.settings?.ai?.provider||'qianwen';
         const hosts=item.action==='login'?['chaoxing.com']:({qianwen:['qianwen.com','tongyi.com'],doubao:['doubao.com'],deepseek:['chat.deepseek.com']})[provider]||[];

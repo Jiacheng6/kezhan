@@ -7,7 +7,6 @@ import {registerKeptPage,getKeptPage,dropKeptPage} from './quizrun.mjs';
 import {cardsUrl} from './section.mjs';
 import {selectedProvider,ensureProviderPage} from '../ai/providers.mjs';
 import {askImage} from '../ai/ai.mjs';
-import {waitTurn,markAsked,reportSuccess,reportFailure} from '../ai/throttle.mjs';
 import {embedded,captureEmbeddedPage} from '../browser/embedded.mjs';
 import {readDiscussionPage,readDiscussionComments,discussionIdentity,validateDiscussionIdentity,fillDiscussionEditor,publishDiscussionPage} from './discussion-page.mjs';
 import {repeatedDiscussionAnswer,discussionText,MAX_DISCUSSION_ANSWER} from './discussion-consensus.mjs';
@@ -69,9 +68,8 @@ export async function runDiscussionTask({ctx,task,personId,qianwenPage=null,shou
    const provider=selectedProvider(loadSettings()),aiPage=qianwenPage||await ensureProviderPage(ctx,provider);
    imagePath=await topicImage(page,task.key);
    const prompt=`请简短回答这道课程讨论题。题目：${topic.title}\n${topic.body}\n只输出可直接发表的回答正文，建议1到3句话、150字以内，不要重复题干，不要自报AI身份，不要附加说明。数学结论应准确，不确定时明确说明。`;
-   await waitTurn({shouldStop,onWait:()=>onProgress({phase:'等待 AI 提问间隔'})});markAsked();
    const answer=await askAI({page:aiPage,imagePath,prompt,shouldStop,freshChat:true});
-   if(!answer.ok){reportFailure(answer);throw Object.assign(new Error(answer.error||'AI 未返回讨论回答'),{aiErrorCode:answer.errorCode});}reportSuccess();
+   if(!answer.ok){throw Object.assign(new Error(answer.error||'AI 未返回讨论回答'),{aiErrorCode:answer.errorCode});}
    text=discussionText(answer.answer||answer.raw).replace(/^(?:答案|回答|答)[:：]\s*/,'');aiAnswer=answer.raw||answer.answer||'';
    if(!text||text.length>400)throw new Error('AI 讨论回答为空或过长，未加入可发布草稿，请人工处理');
    selected={source:'ai',matches:0,scanned:topic.comments.length};

@@ -1,0 +1,6 @@
+import assert from 'node:assert/strict';import {AIQueue} from '../../src/ai/queue.mjs';
+const queue=new AIQueue(),events=[];let release;
+const first=queue.run(async()=>{events.push('first-send');await new Promise(r=>release=r);events.push('first-read');return 'A'},{platform:'chaoxing',taskKey:'c',questionId:'q1'});
+const second=queue.run(async()=>{events.push('second-send');return 'B'},{platform:'zhihuishu',taskKey:'z',questionId:'q1'});assert.deepEqual(events,['first-send']);assert.equal(queue.snapshot().pending.length,1);assert.notEqual(queue.snapshot().active.requestId,queue.snapshot().pending[0].requestId);release();assert.deepEqual(await Promise.all([first,second]),['A','B']);assert.deepEqual(events,['first-send','first-read','second-send']);
+let unlock,stop=false;const active=queue.run(()=>new Promise(r=>unlock=r));let invoked=false;const canceled=queue.run(()=>{invoked=true},{shouldStop:()=>stop});const rejected=assert.rejects(canceled,e=>e.code==='STOPPED');stop=true;await rejected;assert.equal(invoked,false);assert.ok(queue.snapshot().active);unlock('done');await active;
+await assert.rejects(queue.run(async()=>{throw Error('broken')}),/broken/);assert.equal(await queue.run(async()=>42),42);assert.equal(queue.snapshot().active,null);console.log('PASS: AI事务整段串行、跨平台题目隔离、取消排队不影响当前题、异常释放');

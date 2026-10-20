@@ -34,6 +34,7 @@ class EmbeddedBrowser {
     this.views = new Map(); this.active = null; this.visible = false;
     this.captureWindow = null; this.captureReady = Promise.resolve();
     this.bounds = null; this.suspended = true; this.closeSuspended = false;
+    this.lastContentSize = window.getContentSize();
     this.disposed = false; this.timer = null;
     this.session.setUserAgent(this.session.getUserAgent().replace(/\sElectron\/\S+/g, '').replace(/\sxuexitong-auto\/\S+/g, ''));
     this.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
@@ -174,9 +175,10 @@ class EmbeddedBrowser {
   }
   applyBounds() {
     if (this.disposed || this.window.isDestroyed() || !this.captureWindow) return;
-    const [w, h] = this.window.getContentSize();
+    const currentSize = this.window.getContentSize();
     // Windows 最小化时可能临时返回 0×0，不能据此把后台网页缩成 1×1。
-    if (w < 1 || h < 1) return;
+    if(currentSize[0]>0&&currentSize[1]>0)this.lastContentSize=currentSize;
+    const [w,h]=this.lastContentSize?.every(value=>value>0)?this.lastContentSize:[1240,840];
     const b = this.bounds || { x: 210, y: 174, width: w - 210, height: h - 174 };
     const x = Math.min(w - 1, Math.max(0, Math.round(b.x))), y = Math.min(h - 1, Math.max(0, Math.round(b.y)));
     const bounds = { x, y, width: Math.max(1, Math.min(w - x, Math.round(b.width))), height: Math.max(1, Math.min(h - y, Math.round(b.height))) };
@@ -210,6 +212,14 @@ class EmbeddedBrowser {
     });
   }
   async command({ action, id } = {}) {
+    if (action === 'open-zhihuishu') {
+      const existing = [...this.views.values()].find(record => {
+        try { return new URL(record.view.webContents.getURL()).hostname === 'onlineweb.zhihuishu.com'; } catch { return false; }
+      });
+      if (existing) return this.activate(existing.view.webContents.id, true);
+      await this.create({ url: 'https://onlineweb.zhihuishu.com/onlinestuh5', show: true });
+      return this.snapshot();
+    }
     if (action === 'hide') return this.setVisible(false);
     if (action === 'show') return this.setVisible(true);
     if (action === 'select') return this.activate(id, true);

@@ -8,6 +8,8 @@ export interface CourseTask {
   finished: boolean;
 }
 export interface Course {
+  platform?: string;
+  platformLabel?: string;
   id: string;
   title: string;
   tasks: CourseTask[];
@@ -68,7 +70,7 @@ export function updateCourses(courses: Course[]) {
         id: `X-${String(lane * list.length + i + 1).padStart(3, "0")}`,
         title: c.title,
         en: "COURSE ARCHIVE",
-        department: "学习通课程",
+        department: c.platformLabel || "学习通",
         category: "课程档案",
         date: "本机清单",
         lead: "",

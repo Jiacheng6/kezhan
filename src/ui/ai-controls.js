@@ -22,7 +22,7 @@ if(desktop){
   banner.innerHTML='<div><b id="aiResumeTitle">需要人工验证</b><p>请在软件内 AI 网页完成验证，然后继续当前题目。</p><span id="aiResumeError" role="status"></span></div><div class="actions"><button id="aiResumeOpen">打开 AI 网页</button><button id="aiResumeContinue" class="primary">验证已完成，继续本题</button><button id="aiResumeStop">停止任务</button></div>';
   document.querySelector('main').prepend(banner);
   $('aiResumeOpen').onclick=()=>workspace.action('openAI');
-  $('aiResumeStop').onclick=()=>workspace.action('stopRun');
+  $('aiResumeStop').onclick=async()=>{const platform=workspace.snapshot().status?.aiQueue?.active?.platform;await fetch('/api/action/stopRun',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(platform?{platform}:{})});};
   $('aiResumeContinue').onclick=async()=>{
     $('aiResumeContinue').disabled=true;$('aiResumeError').textContent='';
     try{const response=await fetch('/api/action/continueAI',{method:'POST'}).then(r=>r.json());if(!response.ok)throw Error(response.error);}

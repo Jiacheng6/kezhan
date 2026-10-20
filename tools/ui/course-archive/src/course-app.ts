@@ -15,14 +15,14 @@ import { courseMarkSvg } from "./brand";
 import { loadArchiveStudio, createStudioTexture } from "./archive-lighting";
 const root = document.querySelector<HTMLElement>("#archive-app")!;
 root.innerHTML = `<div id="scene" class="three-scene"></div>
-<header class="archive-brand"><span class="brand-index">XXT / 01</span><h1>学习通助手</h1><p>课程档案 <i>／</i> LEARNING ARCHIVE</p></header>
+<header class="archive-brand"><span class="brand-index">KEZHAN / 01</span><h1>课栈</h1><p>课程档案 <i>／</i> LEARNING ARCHIVE</p></header>
 <section id="array-copy" class="array-copy"><p class="overline">你的课程，随时继续</p><h2 id="selected-title">正在读取课程…</h2><div class="copy-rule"></div><div class="course-meta"><span id="selected-progress"></span><span id="selected-count"></span></div><button id="open-course" class="text-action">预览这门课程 <span>↗</span></button></section>
 <div id="hover-label" class="hover-label" hidden></div>
 <nav id="array-nav" class="array-nav" aria-label="课程导航"><span>课程索引</span><button id="previous" aria-label="上一门课程">↑</button><b id="course-number">01</b><i>/</i><span id="course-total">00</span><button id="next" aria-label="下一门课程">↓</button><small>拖动浏览 · 点击抽取</small></nav>
 <section id="preview" class="course-surface" hidden tabindex="-1" aria-label="课程预览"><button class="back" data-back>← 返回课程阵列 <kbd>ESC</kbd></button><div class="surface-copy"><div id="archive-boot" class="archive-boot" data-step="extracting" role="status"><div class="boot-mark" aria-hidden="true">${courseMarkSvg}<b></b></div><div><span class="boot-caption">COURSE ACCESS</span><strong id="archive-boot-status">正在抽取课程档案</strong></div><span class="boot-state">01 / 03</span></div><p class="overline">已选课程 <span id="preview-code"></span></p><h2 id="preview-title"></h2><div class="copy-rule"></div><p id="preview-progress" class="muted"></p><button id="confirm-course" class="primary" disabled>查看课程详情 <span>→</span></button><small>确认后查看章节及各项任务的完成状态</small></div></section>
 <section id="detail" class="course-surface" hidden aria-label="课程详情"><button class="back" data-back>← 返回课程阵列 <kbd>ESC</kbd></button><div class="surface-copy detail-copy"><p class="overline">课程详情 <span id="detail-code"></span></p><h2 id="detail-title"></h2><div class="detail-progress"><span id="detail-progress"></span><span id="detail-selection"></span></div><div class="progress-track"><i id="progress-fill"></i></div><h3>章节与任务 <span id="detail-total"></span></h3><div id="task-list" class="task-list" tabindex="0" aria-label="章节任务完成状态"></div><button id="choose-scope" class="primary">选择学习范围 <span>→</span></button><p class="detail-note">在工作台确认任务范围后，再开始学习。</p></div></section>
 <div id="empty" class="empty" hidden><p class="overline">从这里开始</p><h2>把课程带进来。</h2><p id="empty-message">先在工作台登录学习通，再扫描课程。已有的清单和进度会自动显示在这里。</p><button data-workspace class="primary">进入工作台 <span>→</span></button></div>
-<section id="loading" class="loading-screen" role="status"><div class="loading-content"><div class="boot-mark large" aria-hidden="true">${courseMarkSvg}<b></b></div><span class="boot-caption">学习通助手 / LEARNING SPACE</span><h2>正在打开课程档案</h2><p id="loading-phase">准备本地视图</p><div class="loading-track"><i></i></div><button data-workspace>直接进入工作台 →</button></div></section><div id="notice" class="notice" hidden role="status">三维画面暂不可用，可进入工作台继续使用。<button data-workspace>进入工作台 →</button><button id="retry-scene">重试画面</button></div>
+<section id="loading" class="loading-screen" role="status"><div class="loading-content"><div class="boot-mark large" aria-hidden="true">${courseMarkSvg}<b></b></div><span class="boot-caption">课栈 / LEARNING SPACE</span><h2>正在打开课程档案</h2><p id="loading-phase">准备本地视图</p><div class="loading-track"><i></i></div><button data-workspace>直接进入工作台 →</button></div></section><div id="notice" class="notice" hidden role="status">三维画面暂不可用，可进入工作台继续使用。<button data-workspace>进入工作台 →</button><button id="retry-scene">重试画面</button></div>
 <footer><span><i></i><span id="session-state">进度保存在本机</span></span><small>3D BASE / RHINELABUI · MIT</small></footer>`;
 const $ = <T extends HTMLElement = HTMLElement>(s: string) =>
   root.querySelector<T>(s)!;
@@ -75,6 +75,7 @@ function copySelection() {
   const r = current(),
     index = selected % Math.max(1, courseList.length);
   $("#selected-title").textContent = r.title;
+  $("#array-copy .overline").textContent = r.department + ' / 课程档案';
   $("#selected-progress").textContent = progressText(r);
   $("#selected-count").textContent = r.course.finished ? '课程已完成' : r.total-r.completed ? `${r.total - r.completed} 项待完成` : r.course.label || '待确认';
   $("#course-number").textContent = String(index + 1).padStart(2, "0");
@@ -113,7 +114,7 @@ function extract() {
   $("#array-copy").inert = $("#array-nav").inert = true;
   const r = current();
   $("#preview-title").textContent = r.title;
-  $("#preview-code").textContent = "课程 " + r.courseCode;
+  $("#preview-code").textContent = r.department + ' · 课程 ' + r.courseCode;
   $("#preview-progress").textContent =
     progressText(r);
   $<HTMLButtonElement>("#confirm-course").disabled = true;
@@ -149,7 +150,7 @@ function back() {
 function renderDetails() {
   const r = current();
   $("#detail-title").textContent = r.title;
-  $("#detail-code").textContent = "课程 " + r.courseCode;
+  $("#detail-code").textContent = r.department + ' · 课程 ' + r.courseCode;
   $("#detail-progress").textContent = progressText(r);
   $("#detail-selection").textContent = r.course.enabled
     ? "已纳入学习范围"
