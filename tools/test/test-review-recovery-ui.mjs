@@ -34,6 +34,7 @@ function seed(key,{mode='normal',missing=false,edited=false,append=false,pending
     state.onboarding={version:2,completedAt:new Date().toISOString()};
     state.reviewQueue=append?[...state.reviewQueue,...items]:items;
     state.taskPoints[key]={status:'manual'};
+    state.quizzes[key]={phase:'awaiting-review',submitted:false};
     state.keptPages[key]={savedAt:Date.now(),url:cardsUrl({...task,personId}),info:{task,personId,totalQuestions:2,submissionPending:pending,workIdentity:{workid:key,workanswerid:'answer-'+key}}};
   });
   return items;
@@ -95,7 +96,12 @@ try{
   await ui.locator('#reviewBody .placeholder').waitFor();
   assert.equal(confirmed.length,1);
   assert.equal(loadState().taskPoints['closed-demo'].status,'done');
+  assert.equal(loadState().quizzes['closed-demo'].submitted,true,'待审确认提交后不能遗留未提交摘要');
+  assert.equal(loadState().quizzes['closed-demo'].phase,'submitted');
+  assert.equal(loadState().keptPages['closed-demo'],undefined);
   assert.equal(listReviewItems().length,0);
+  assert.match(await ui.locator('#reviewSummary').innerText(),/待处理 0 题/);
+  assert.match(await ui.locator('#reviewSummary').innerText(),/历史记录：已提交 2 题/);
 
   seed('incomplete-demo',{missing:true});
   await ui.locator('#panel-review [data-action="loadReview"]').click();
@@ -220,6 +226,9 @@ try{
   const manualFrame=findWorkFrame(manual.page);await manualFrame.locator('.btnSubmit').click();await manualFrame.locator('#popok').click();
   assert.equal((await syncSubmittedReviews()).synced,1);assert.equal(listReviewItems().length,0,'手动提交应清除待审');
   assert.equal(loadState().taskPoints['manual-demo'].status,'done');
+  assert.equal(loadState().quizzes['manual-demo'].phase,'submitted','手动提交后摘要也要同步');
+  assert.equal(loadState().quizzes['manual-demo'].submitted,true);
+  assert.equal(loadState().keptPages['manual-demo'],undefined,'已确认提交后移除持久化恢复入口');
   console.log('✓ 真实隔离页面：关闭/重启记录恢复、题序变化、选择与简答回填、人工修改、缺题/错题/换次拦截、提交结果核实、未知结果不重交、并发和批量部分失败通过');
   console.log(`截图：${path.join(data,'restored-review.png')}`);
 }finally{

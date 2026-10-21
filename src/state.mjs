@@ -273,6 +273,28 @@ export function listReviewItems() {
   return (s.reviewQueue || []).filter((x) => x.status !== 'submitted' && x.status !== 'discarded');
 }
 
+/** Repair stale bookkeeping only when durable completion evidence already exists.
+ * Never infer submission from missing pages, empty answers or discarded drafts.
+ */
+export function repairCompletedReviewRecords() {
+  const candidates = s => ({
+    videos: Object.keys(s.keptPages || {}).filter(key => s.keptPages[key]?.info?.type === 'video-quiz' && s.taskPoints?.[key]?.status === 'done'),
+    quizzes: Object.keys(s.quizzes || {}).filter(key => {
+      const items = (s.reviewQueue || []).filter(item => item.taskKey === key);
+      return s.taskPoints?.[key]?.status === 'done' && items.length > 0 && items.every(item => item.status === 'submitted')
+        && (s.quizzes[key].submitted !== true || s.quizzes[key].phase !== 'submitted');
+    }),
+  });
+  const pending = candidates(loadState());
+  if (!pending.videos.length && !pending.quizzes.length) return { videoPages: 0, quizzes: 0 };
+  return mutateState(s => {
+    const { videos, quizzes } = candidates(s);
+    for (const key of videos) delete s.keptPages[key];
+    for (const key of quizzes) Object.assign(s.quizzes[key], { submitted: true, phase: 'submitted', reviewReconciledAt: new Date().toISOString() });
+    return { videoPages: videos.length, quizzes: quizzes.length };
+  });
+}
+
 /** 标记某题已提交 / 已丢弃 */
 export function markReviewItem(id, patch) {
   return mutateState((s) => {

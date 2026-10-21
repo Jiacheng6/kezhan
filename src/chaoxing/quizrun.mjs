@@ -529,7 +529,10 @@ export function getKeptPage(key) {
  */
 export function listKeptPages() {
   const out = [];
+  const state = loadState();
+  const completedVideo = (key, info) => info?.type === 'video-quiz' && state.taskPoints?.[key]?.status === 'done';
   for (const [k, v] of keptWorkPages.entries()) {
+    if (completedVideo(k, v.info)) continue;
     out.push({
       key: k,
       savedAt: v.savedAt,
@@ -543,6 +546,7 @@ export function listKeptPages() {
   try {
     const disk = loadState().keptPages || {};
     for (const [k, v] of Object.entries(disk)) {
+        if (completedVideo(k, v.info)) continue;
       if (out.some((x) => x.key === k)) continue;
       out.push({
         key: k,

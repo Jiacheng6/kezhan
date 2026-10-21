@@ -5,6 +5,7 @@ import { newTaskPage, releasePage } from '../../browser/pages.mjs';
 import { throwIfStopped } from '../../control.mjs';
 function checkBlockers(state) {
   if(state.blockers.includes('user-consent'))throw Object.assign(Error('智慧树首次进入此课要求本人确认在线学习诚信承诺书，请在保留的网页自行阅读处理后重新扫描'),{code:'USER_CONSENT_REQUIRED'});
+  if(state.blockers.includes('progress-save-failed'))throw Object.assign(Error('智慧树提示学习进度提交失败，请按平台提示返回学堂重新进入后再扫描；原课程清单保留'),{code:'PROGRESS_SAVE_FAILED'});
   if(state.blockers.length)throw Object.assign(Error('智慧树需要人工验证，请完成验证后重新扫描；原课程清单保留'),{code:'VERIFICATION_REQUIRED'});
 }
 export function scanGuard() {

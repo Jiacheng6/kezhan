@@ -1517,8 +1517,8 @@ function renderReview(data) {
   const openWorkPages = kept.filter(record => record.info?.type !== 'video-quiz' && !record.closed && record.submittable).length;
   const videoPageCount = kept.filter(record => record.info?.type === 'video-quiz').length;
   sum.innerHTML =
-    `共 <b>${s.total || 0}</b> 题 · 待确认 <b>${s.pending || 0}</b> · 已填入 <b>${s.filled || 0}</b> · ` +
-    `已提交 <b>${s.submitted || 0}</b> · 已丢弃 <b>${s.discarded || 0}</b>` +
+    `待处理 <b>${(data.items || []).length}</b> 题 · 待确认 <b>${s.pending || 0}</b> · 已填入 <b>${s.filled || 0}</b>` +
+    `<br><span class="muted">历史记录：已提交 ${s.submitted || 0} 题 · 已丢弃 ${s.discarded || 0} 题</span>` +
     `<br><span class="muted">待审页面已打开 ${openWorkPages} 个，可恢复已保存的答案；保留的视频弹窗记录 ${videoPageCount} 条（需在学习通页面手动作答）。${(data.items||[]).some(item=>item.qtype==='discussion')?'讨论请逐条核对并点击“确认发布讨论”，不会随顶部批量按钮一起发布。':''}</span>`;
 
   const items = data.items || [];

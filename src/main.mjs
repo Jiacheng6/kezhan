@@ -16,7 +16,7 @@ import { autoConfigurePersonId } from './chaoxing/identity.mjs';
 import { buildChecklist, loadSelection, invalidateReconCache } from './chaoxing/checklist.mjs';
 import { batchRunner, buildRunTasks } from './batch.mjs';
 import { assertRunScope } from './ui/run-scope.js';
-import { loadState, resetState, statePath, setTaskStatus, listReviewItems, markReviewItem, healStaleRunning, reconcile, mutateState } from './state.mjs';
+import { loadState, resetState, statePath, setTaskStatus, listReviewItems, markReviewItem, healStaleRunning, reconcile, mutateState, repairCompletedReviewRecords } from './state.mjs';
 import { listKeptPages, registerKeptPage, editKeptEssayReviewAnswer } from './chaoxing/quizrun.mjs';
 import { reopenReviewWork, submitPendingReviews, withReviewLock, syncSubmittedReviews } from './chaoxing/review-recovery.mjs';
 import { updateReviewAnswer } from './state.mjs';
@@ -42,7 +42,7 @@ function startZhihuishuTasks(tasks) {
   const result = extraRuns.start('zhihuishu', tasks, ctx());
   log(`【智慧树】开始 ${tasks.length} 个任务；学习通队列独立运行，AI逐题排队`, 'info');
   void extraRuns.wait('zhihuishu').then(session => {
-    if (session.error) notifyUser('batch-error', { key: `zhihuishu:${Date.now()}`, detail: '智慧树：' + session.error });
+    if (session.error) { log('【智慧树】任务中断：' + session.error, 'error'); notifyUser('batch-error', { key: `zhihuishu:${Date.now()}`, detail: '智慧树：' + session.error }); }
     else notifyUser(session.phase === 'stopped' ? 'batch-stopped' : session.review ? 'batch-review' : 'batch-complete', { key: `zhihuishu:${Date.now()}`, detail: `智慧树：完成 ${session.done}/${session.total} 个任务，待审 ${session.review||0} 份` });
   });
   return result;
@@ -124,6 +124,8 @@ async function waitForRestoredPage(context, urlPart, timeoutMs = 4000) {
 
 async function boot() {
   ensureDirs();
+  const repairedReviews = repairCompletedReviewRecords();
+  if (repairedReviews.videoPages || repairedReviews.quizzes) log(`待审记录对账：移除 ${repairedReviews.videoPages} 条已完成视频弹窗记录，同步 ${repairedReviews.quizzes} 份已提交测验摘要`, 'info');
   const settings = loadSettings();
   if (embedded) await embeddedRequest('audio-muted', { muted: settings.muted !== false });
   // account 一并带上：local.json 已配置时，控制台一打开就能看到账号 ID

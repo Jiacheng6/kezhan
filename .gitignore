@@ -199,3 +199,5 @@ api-config.bin*
 !tools/test/test-zhihuishu-scan.mjs
 !tools/test/test-zhihuishu-quiz-entry.mjs
 !tools/test/test-zhihuishu-notices.mjs
+!tools/test/test-zhihuishu-network.mjs
+!tools/test/test-zhihuishu-video-multiple.mjs

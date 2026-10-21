@@ -5,7 +5,7 @@ import { cardsUrl } from './section.mjs';
 import { extractQuestions, waitWorkFrame, findWorkFrame, getWorkMeta, selectOptions, readSelection } from './quiz.mjs';
 import { fillEssayAnswer, readEssayAnswer } from './essay.mjs';
 import { getKeptPage, registerKeptPage, dropKeptPage, submitKeptWork, workIdentity } from './quizrun.mjs';
-import { loadState, listReviewItems, markReviewItem, clearReviewByTask, setTaskStatus } from '../state.mjs';
+import { loadState, listReviewItems, markReviewItem, clearReviewByTask, setTaskStatus, mutateState } from '../state.mjs';
 import { listKeptPages } from './quizrun.mjs';
 import { normalizeEssayText } from '../ai/parse.mjs';
 import { newTaskPage, releasePage, setPageBusy, markSavedReviewPage } from '../browser/pages.mjs';
@@ -108,9 +108,14 @@ export async function readSubmissionState(frame) {
   return submissionState(frame);
 }
 
-function finishManualReview(key) {
-  clearReviewByTask(key,'submitted');
-  setTaskStatus(key,{status:'done',note:'已核对平台手动提交结果',submittedAt:new Date().toISOString()});
+function finishManualReview(key, note = '已核对平台手动提交结果') {
+  mutateState(s => {
+    const at = new Date().toISOString();
+    for (const item of s.reviewQueue || []) if (item.taskKey === key && !['submitted','discarded'].includes(item.status)) Object.assign(item,{status:'submitted',updatedAt:at});
+    if (s.quizzes?.[key]) Object.assign(s.quizzes[key],{phase:'submitted',submitted:true,submittedAt:at});
+    s.taskPoints[key] = {...s.taskPoints[key],status:'done',submitted:true,progress:1,note,submittedAt:at,updatedAt:at};
+    if (s.keptPages) delete s.keptPages[key];
+  });
   dropKeptPage(key);
 }
 
@@ -256,8 +261,12 @@ export async function submitPendingReviews(ctx,scope={},options={}) {
     try{result=await submitReviewWork(ctx,target.key,options);}
     catch(error){result={ok:false,error:error.message};}
     if(result.ok){
-      clearReviewByTask(target.key,'submitted');
-      if(result.taskFinished!==false)setTaskStatus(target.key,{status:'done',note:result.alreadySubmitted?'已核对平台提交结果':'人工确认后已提交',submittedAt:new Date().toISOString()});
+      const note=result.alreadySubmitted?'已核对平台提交结果':'人工确认后已提交';
+      if(result.taskFinished!==false&&target.info?.type!=='discussion')finishManualReview(target.key,note);
+      else {
+        clearReviewByTask(target.key,'submitted');
+        if(result.taskFinished!==false)setTaskStatus(target.key,{status:'done',note,submittedAt:new Date().toISOString()});
+      }
       submitted++;
     }else failed++;
     details.push({key:target.key,ok:result.ok,error:result.error||null});

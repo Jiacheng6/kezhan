@@ -1,5 +1,6 @@
 import {readZhihuishuPage} from './read-page.mjs';
-const popup=page=>page.getByRole('dialog',{name:'弹题测验',exact:true});
+// The SPA can keep hidden copies of old dialogs in the DOM.
+const popup=page=>page.getByRole('dialog',{name:'弹题测验',exact:true}).filter({visible:true});
 /** Only the observed, non-graded in-video dialog. Never handles coursework/exams. */
 export async function readZhihuishuVideoPrompt(page){
  const state=await readZhihuishuPage(page);if(state.pageKind!=='study')return null;
@@ -10,9 +11,13 @@ export async function readZhihuishuVideoPrompt(page){
   copy?.querySelectorAll('.right,.wrong,.title-tit').forEach(e=>e.remove());
   const options=[...root.querySelectorAll('.topic-list .topic-item')].map((e,index)=>({index,letter:text(e.querySelector('.topic-option-item')).replace(/[.．、]$/,''),text:text(e.querySelector('.item-topic')),selected:!!e.querySelector('.topic-option-item.active')}));
   const type=text(root.querySelector('.title-tit'));
+  const multiple=/多选题/.test(type);
   const feedback=root.querySelector('.answer'),rect=feedback?.getBoundingClientRect();
   const feedbackShown=!!(rect?.width&&rect?.height)&&getComputedStyle(feedback).visibility!=='hidden';
-  return {nonGraded:/不会影响.*作业.*考试.*成绩/.test(text(root.querySelector('.el-dialog__header'))),type,stem:text(copy),options,answered:feedbackShown&&options.some(o=>o.selected),page:text(root.querySelector('.el-pager .active')),pages:[...root.querySelectorAll('.el-pager .number')].map(text),supported:/判断题|单选题/.test(type)&&!!root.querySelector('.radio')};
+  // The observed multi-select UI records a selection without showing .answer
+  // when it is only part of the correct set. It still permits closing. This is
+  // selection evidence only; task completion remains the platform's marker.
+  return {nonGraded:/不会影响.*作业.*考试.*成绩/.test(text(root.querySelector('.el-dialog__header'))),type,multiple,feedbackShown,stem:text(copy),options,answered:(multiple||feedbackShown)&&options.some(o=>o.selected),page:text(root.querySelector('.el-pager .active')),pages:[...root.querySelectorAll('.el-pager .number')].map(text),supported:/判断题|单选题|多选题/.test(type)&&!!root.querySelector('.radio')};
  });
 }
 export async function resumeZhihuishuVideo(page,{expectedKey,timeoutMs=10000}={}){
@@ -37,15 +42,41 @@ export async function handleZhihuishuVideoPrompt(page,{expectedKey,choose=questi
  for(const number of pages){
   if(number&&current.page!==number){await popup(page).locator('.el-pager .number').filter({hasText:new RegExp('^'+number+'$')}).click();current=await readZhihuishuVideoPrompt(page);}
   if(!current?.nonGraded||!current.supported)return {ok:false,phase:'needs-human',reason:'unsupported-question-type',answered};
-  if(!current.answered){const selected=await choose(current),option=current.options.find(o=>o.letter===selected);if(!option)return {ok:false,phase:'needs-human',reason:'invalid-option',answered};
-   const check=await readZhihuishuVideoPrompt(page);if(check?.stem!==current.stem||check?.page!==current.page)throw Error('弹题内容变化，未继续点击');
-   await popup(page).locator('.topic-list .topic-item').nth(option.index).click();
-   const deadline=Date.now()+5000;let confirmed=false;while(Date.now()<deadline){const r=await readZhihuishuVideoPrompt(page);if(r?.answered&&r.options.some(o=>o.letter===selected&&o.selected)){current=r;confirmed=true;break;}await page.waitForTimeout(100);}
-   if(!confirmed)return {ok:false,phase:'needs-human',reason:'answer-not-confirmed',answered};
+  if(!current.answered){
+   const selected=await choose(current),letters=Array.isArray(selected)?[...new Set(selected)]:[selected];
+   const options=letters.map(letter=>current.options.find(o=>o.letter===letter));
+   if(!letters.length||options.some(o=>!o)||(!current.multiple&&letters.length!==1))return {ok:false,phase:'needs-human',reason:'invalid-option',answered};
+   const signature=q=>q?JSON.stringify([q.type,q.stem,q.page,q.options.map(o=>[o.letter,o.text])]):null;
+   const expected=signature(current);
+   for(const option of options){
+    const check=await readZhihuishuVideoPrompt(page);if(signature(check)!==expected)throw Error('弹题内容变化，未继续点击');
+    if(check.options.find(o=>o.letter===option.letter)?.selected)continue;
+    const active=await readZhihuishuPage(page);
+    if(active.blockers.length)return {ok:false,phase:'needs-human',reason:'human-verification',answered};
+    if(active.videos.find(v=>v.active)?.key!==expectedKey)throw Error('弹题不属于当前指定视频');
+    await popup(page).locator('.topic-list .topic-item').nth(option.index).click();
+    const deadline=Date.now()+5000;let confirmed=false;
+    while(Date.now()<deadline){
+     const r=await readZhihuishuVideoPrompt(page);if(signature(r)!==expected)throw Error('弹题内容变化，未继续点击');
+     if(r.answered&&r.options.some(o=>o.letter===option.letter&&o.selected)){current=r;confirmed=true;break;}
+     await page.waitForTimeout(100);
+    }
+    if(!confirmed)return {ok:false,phase:'needs-human',reason:'answer-not-confirmed',answered};
+   }
   }
   answered.push({page:current.page,letters:current.options.filter(o=>o.selected).map(o=>o.letter)});
  }
  const close=popup(page).locator('.el-dialog__footer .btn').filter({hasText:/^关闭$/});if(await close.count()!==1)return {ok:false,phase:'needs-human',reason:'close-button-missing',answered};
- await close.click();await popup(page).waitFor({state:'hidden',timeout:5000});
+ try { await close.click({timeout:1500}); }
+ catch(error){
+  // A fixed-height dialog footer may fall below the embedded viewport. Only
+  // activate this exact non-graded close control after all answers are confirmed.
+  const check=await readZhihuishuVideoPrompt(page);
+  if(!check?.nonGraded||!check.answered||await close.count()!==1||!await close.isVisible())throw error;
+  const refreshed=await readZhihuishuPage(page);
+  if(refreshed.blockers.length||refreshed.videos.find(v=>v.active)?.key!==expectedKey)throw error;
+  await close.evaluate(element=>element.click());
+ }
+ await popup(page).waitFor({state:'hidden',timeout:5000});
  const resumed=await resumeZhihuishuVideo(page,{expectedKey});return {...resumed,answered};
 }

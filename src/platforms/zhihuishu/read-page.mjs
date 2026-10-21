@@ -13,6 +13,7 @@ export function readZhihuishuDocument() {
   const blockers=[];
   if([...document.querySelectorAll('div,h1,h2,h3,span')].some(e=>text(e)==='在线学习诚信承诺书'&&visible(e)))blockers.push('user-consent');
   if([...document.querySelectorAll('iframe')].some(e=>/captcha/i.test(e.src)&&inViewport(e)))blockers.push('human-verification');
+  if([...document.querySelectorAll('[role="dialog"]')].some(e=>visible(e)&&e.getAttribute('aria-label')==='温馨提示'&&/网络连接问题/.test(text(e))&&/学习进度提交失败/.test(text(e))))blockers.push('progress-save-failed');
   const courses=[...document.querySelectorAll('#sharingClassed dl,#flipLessoned dl')].filter(e=>e.querySelector('.courseName')).map(e=>{
     const id=identity(e),raw=text(e.querySelector('.processNum')),n=/^(\d+(?:\.\d+)?)%$/.exec(raw);
     return {platform:'zhihuishu',key:key(id),...id,name:text(e.querySelector('.courseName')),kind:e.closest('#sharingClassed')?'shared':'flipped',progress:n&&Number(n[1])<=100?Number(n[1]):null};

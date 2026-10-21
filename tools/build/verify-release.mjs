@@ -8,7 +8,7 @@ import { loadLearningTerms, containsLearningTerms } from '../test/privacy-learni
 import { isPublicNumericAsset } from '../test/privacy-public-assets.mjs';
 const dist = path.join(ROOT, 'dist');
 const app = path.join(dist, 'win-unpacked', 'resources', 'app');
-for(const relative of ['src/ui/platforms.css','src/ui/platforms.js','src/ui/kezhan.css','src/ui/kezhan.js','src/ai/queue.mjs','src/platforms/catalog.mjs','src/platforms/runs.mjs','src/platforms/zhihuishu/scan.mjs','src/platforms/zhihuishu/runner.mjs','src/platforms/zhihuishu/quiz-task.mjs','src/platforms/zhihuishu/quiz-run.mjs']){
+for(const relative of ['src/ui/platforms.css','src/ui/platforms.js','src/ui/kezhan.css','src/ui/kezhan.js','src/ai/queue.mjs','src/platforms/catalog.mjs','src/platforms/runs.mjs','src/platforms/zhihuishu/scan.mjs','src/platforms/zhihuishu/runner.mjs','src/platforms/zhihuishu/read-page.mjs','src/platforms/zhihuishu/video.mjs','src/platforms/zhihuishu/quiz-task.mjs','src/platforms/zhihuishu/quiz-run.mjs']){
   assert.equal(fs.readFileSync(path.join(app,relative)).equals(fs.readFileSync(path.join(ROOT,relative))),true,'多平台更新模块缺失或版本不一致：'+relative);
 }
 for (const excluded of ['edge-profile', 'Partitions', 'browser-session.bin', 'api-config.bin', 'notifications.json', 'logs', 'data', 'local.json', 'state.json', 'recon-selection.json', '.git', 'tools', 'docs']) {
