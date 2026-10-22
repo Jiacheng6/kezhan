@@ -48,3 +48,5 @@ assert.equal(currentTaskPage(pages.filter(t => t.id !== 3)), null);
 assert.equal(pageKind(pages[3]), 'AI 网页');assert.equal(pageKind({ url: 'https://deepseek.com.evil.example/' }), '网页');
 assert.equal(pageKind(pages[0]), '课程检查');
 console.log('✓ 当前任务真实进度、题数、核对/停止/未知状态、网页分类与当前任务定位通过');
+const scan=taskProgressModel({reconRunning:true,reconProgress:{index:6,total:15,course:'示例扫描课程',section:2,sections:8},progress:{taskType:'video',current:'旧视频',currentTime:12,duration:60,playbackRate:2,playbackPhase:'旧播放阶段'},runStats:{paused:true}});
+assert.equal(scan.label,'正在读取课程');assert.equal(scan.title,'示例扫描课程');assert.equal(scan.fraction,null);assert.match(scan.detail,/课程 6\/15 · 小节 2\/8/);assert.doesNotMatch(scan.detail,/实际|旧播放阶段|00:12/,'扫描不能沿用上次视频的进度、速度或暂停提示');

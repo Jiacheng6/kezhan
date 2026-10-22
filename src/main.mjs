@@ -9,7 +9,7 @@ import { ensureDirs, loadSettings, PATHS, TARGETS, DEBUG_PORT, DEFAULT_SETTINGS,
 import { describeSettings, normalizeSettings, diffFromDefault, getByPath, toSparseSettings, READONLY_SPEC } from './settings.mjs';
 import { log, patchStatus, getStatus, notifyUser } from './logbus.mjs';
 import { ensureEdge, connect, contextOf, getPage, bringToFront, findPage, waitForPage, waitForAnyPage, stopOwnedEdge } from './browser/launch.mjs';
-import { waitForPagesSettled, cleanupPages, closeTrackedPages, isSamePageUrl } from './browser/pages.mjs';
+import { waitForPagesSettled, cleanupPages, closeTrackedPages, isSamePageUrl, newTaskPage, releasePage } from './browser/pages.mjs';
 import { gotoChaoxingHome } from './browser/login.mjs';
 import { listCourses, reconAll, saveReconReport, writeTaskReport } from './chaoxing/recon.mjs';
 import { autoConfigurePersonId } from './chaoxing/identity.mjs';
@@ -647,14 +647,20 @@ function buildHooks() {
       log('=== 开始侦察（只读：不播视频、不答题、不提交）===', 'info');
 
       (async () => {
+        let entryPage,keepEntry=false;
         try {
-          const courses = await listCourses(runtime.coursePage);
+          // Use our own fresh entry, never a user-owned course/quiz tab whose
+          // current view may no longer contain the personal-space course list.
+          entryPage=await newTaskPage(ctx(),'recon-entry');
+          const login=await gotoChaoxingHome(entryPage);
+          if(!login.loggedIn)throw Error('学习通扫描入口需要登录，请在保留的软件内页面登录后重试');
+          const courses = await listCourses(entryPage,{shouldStop:()=>recon.stopRequested||shuttingDown});
           const results = await reconAll(ctx(), courses, {
             deep: true,
             maxSections: 300,
             shouldStop: () => recon.stopRequested || shuttingDown,
             onProgress: (p) =>
-              patchStatus({ reconProgress: { index: p.index + 1, total: p.total, course: p.course.name } }),
+              patchStatus({ reconProgress: { index: p.index + 1, total: p.total, course: p.course.name, section:p.section??null, sections:p.sections??null } }),
           });
           const file = saveReconReport({ at: new Date().toISOString(), courses: results });
           log(`侦察完成，报告已存: ${file}`, 'ok');
@@ -669,9 +675,11 @@ function buildHooks() {
           log(`执行清单已同步（${wr.courses} 门课 · ${wr.total} 个任务点），到「课程树」点「读取清单」即可`, 'ok');
           notifyUser('scan-complete', {key:`scan:${Date.now()}`});
         } catch (err) {
+          keepEntry=err.code!=='STOPPED';
           log(err.code === 'STOPPED' ? '已停止读取课程，原有清单保留' : `侦察失败: ${err.message}`, err.code === 'STOPPED' ? 'info' : 'error');
           notifyUser(err.code === 'STOPPED' ? 'scan-stopped' : 'scan-failed', {key:`scan:${Date.now()}`,detail:err.code === 'STOPPED' ? '' : err.message});
         } finally {
+          if(entryPage){releasePage(entryPage);if(!keepEntry)await entryPage.close().catch(()=>{});}
           recon.running = false;
           patchStatus({ reconRunning: false, reconProgress: null });
         }

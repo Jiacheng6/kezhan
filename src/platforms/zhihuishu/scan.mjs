@@ -3,6 +3,13 @@ import { studyCourse } from './catalog.mjs';
 import { savePlatformCourses } from '../catalog.mjs';
 import { newTaskPage, releasePage } from '../../browser/pages.mjs';
 import { throwIfStopped } from '../../control.mjs';
+async function readScanPage(page){
+  try{return await readZhihuishuPage(page);}
+  catch(error){
+    if(!page.isClosed()&&/Execution context was destroyed|Cannot find context with specified id|most likely because of a navigation/.test(error.message))return null;
+    throw error;
+  }
+}
 function checkBlockers(state) {
   if(state.blockers.includes('user-consent'))throw Object.assign(Error('智慧树首次进入此课要求本人确认在线学习诚信承诺书，请在保留的网页自行阅读处理后重新扫描'),{code:'USER_CONSENT_REQUIRED'});
   if(state.blockers.includes('progress-save-failed'))throw Object.assign(Error('智慧树提示学习进度提交失败，请按平台提示返回学堂重新进入后再扫描；原课程清单保留'),{code:'PROGRESS_SAVE_FAILED'});
@@ -23,7 +30,8 @@ export async function waitScanPage(page, predicate, { shouldStop, timeoutMs = 25
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     throwIfStopped(shouldStop);
-    const state = await readZhihuishuPage(page);
+    const state = await readScanPage(page);
+    if(!state){await page.waitForTimeout(150);continue;}
     checkBlockers(state);
     if (state.loginState === 'signed-out') throw Error('智慧树尚未登录，请在软件内登录');
     if (predicate(state)) return state;
@@ -32,7 +40,7 @@ export async function waitScanPage(page, predicate, { shouldStop, timeoutMs = 25
   throw Error('智慧树课程页面读取超时，原清单保留');
 }
 export async function openScannedCourse(page, expected, { shouldStop } = {}) {
-  const state = await readZhihuishuPage(page), index = state.courses.findIndex(c => c.key === expected.key);
+  const state = await waitScanPage(page,s=>s.pageKind==='home'&&s.courses.length,{shouldStop}), index = state.courses.findIndex(c => c.key === expected.key);
   if (index < 0 || state.courses.filter(c => c.key === expected.key).length !== 1) throw Error('课程列表变化，无法唯一定位课程');
   await page.evaluate(() => { window.__scanDestinations = []; });
   const home = page.url();
@@ -47,7 +55,7 @@ export async function openScannedCourse(page, expected, { shouldStop } = {}) {
       await page.goto(url.href, { waitUntil: 'domcontentloaded', timeout: 45000 }); break;
     }
     if (page.url() !== home) break;
-    checkBlockers(await readZhihuishuPage(page));
+    const current=await readScanPage(page);if(current)checkBlockers(current);
     await page.waitForTimeout(100);
   }
   // Progress markers arrive after the directory. Don't snapshot every video as

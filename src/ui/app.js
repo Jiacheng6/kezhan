@@ -208,7 +208,7 @@ function renderStatus(s) {
   activity.textContent = paused ? '已暂停 · 待处理' : s.reconRunning ? '正在扫描' : s.running ? '学习进行中' : !loggedIn ? '等待登录' : '已就绪';
   activity.classList.toggle('running', !!s.running || !!s.reconRunning);
   $('#overviewHeadline').textContent = paused ? '任务尚未完成，需要你处理' : s.reconRunning ? '正在整理课程清单' : s.running ? '学习任务运行中' : !loggedIn ? '先登录学习通' : '准备开始学习';
-  $('#overviewSubtitle').textContent = s.reconRunning ? '正在读取课程与章节任务，原有进度会保留。' : s.running ? '你可以返回工作台，任务会继续运行。' : !loggedIn ? '在软件内打开学习通登录，再检测登录状态。' : '选择课程与任务范围，再开始这一次学习。';
+  $('#overviewSubtitle').textContent = s.reconRunning ? s.reconProgress?.total ? `正在扫描第 ${s.reconProgress.index}/${s.reconProgress.total} 门课程${s.reconProgress.sections?` · 小节 ${s.reconProgress.section}/${s.reconProgress.sections}`:''}，原有进度保留。` : '正在读取课程与章节任务，原有进度会保留。' : s.running ? '你可以返回工作台，任务会继续运行。' : !loggedIn ? '在软件内打开学习通登录，再检测登录状态。' : '选择课程与任务范围，再开始这一次学习。';
   if (paused) $('#overviewSubtitle').textContent = s.runStats.pauseReason || '请查看通知与待审答案，处理后重新开始。';
   const sessionPercent = p.total ? Math.min(100, ((p.done || 0) / p.total) * 100) : 0;
   $('#overviewProgressFill').style.width = `${sessionPercent}%`;

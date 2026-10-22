@@ -27,6 +27,7 @@ import { PATHS } from '../config.mjs';
 import { log } from '../logbus.mjs';
 import { bringToFront } from '../browser/launch.mjs';
 import { newTaskPage, releasePage } from '../browser/pages.mjs';
+import {throwIfStopped} from '../control.mjs';
 
 /* ---------------- 从页面里抽章节树的注入函数 ---------------- */
 
@@ -570,32 +571,50 @@ const EXTRACT_COURSES = () => {
  * 读取课程清单（12 门课）。
  * @param {import('playwright-core').Page} mainPage 个人空间页面
  */
-export async function listCourses(mainPage) {
+export async function listCourses(mainPage,{shouldStop,initialWaitMs=6000,timeoutMs=20000,pollMs=600}={}) {
+  if(!mainPage||mainPage.isClosed())throw Error('课程入口页面已关闭，请重新打开学习通后扫描');
   const tryFind = async (timeoutMs) => {
     const t0 = Date.now();
     while (Date.now() - t0 < timeoutMs) {
+      throwIfStopped(shouldStop);
       for (const fr of mainPage.frames()) {
         if (!fr.url().includes('mooc2-ans.chaoxing.com')) continue;
         const n = await fr.evaluate(() => document.querySelectorAll('.course.learnCourse').length).catch(() => 0);
         if (n > 0) return fr;
       }
-      await mainPage.waitForTimeout(600);
+      await mainPage.waitForTimeout(pollMs);
     }
     return null;
   };
 
   log('读取课程清单…', 'info');
-  let frame = await tryFind(6000);
+  let frame = await tryFind(initialWaitMs);
 
   if (!frame) {
     log('课程列表未加载，点击「全部课程」标签', 'debug');
-    const oldTab = mainPage.locator('.label-item', { hasText: '全部课程' }).first();
-    if (await oldTab.count()) await oldTab.evaluate(element => element.click()).catch(() => {});
-    else await mainPage.evaluate(() => {
-      const entry = [...document.querySelectorAll('.menu-list-ul li')].find(element => element.textContent.trim() === '全部课程');
-      (entry?.querySelector('h3') || entry)?.click();
-    }).catch(() => {});
-    frame = await tryFind(20000);
+    const activateAll=async()=>{
+      for(const fr of mainPage.frames()){
+        let host;try{host=new URL(fr.url()).hostname;}catch{continue;}
+        if(host!=='mooc2-ans.chaoxing.com')continue;
+        const tab=fr.getByText('全部课程',{exact:true}).filter({visible:true});
+        if(await tab.count()===1){await tab.click({timeout:3000});return true;}
+      }
+      return false;
+    };
+    // Current personal space uses “课程”; “全部课程” is inside its iframe.
+    // Open that exact navigation item, then select All inside the loaded frame.
+    const menuActivated=await mainPage.evaluate(()=>{
+      const entries=[...document.querySelectorAll('.menu-list-ul li')].filter(e=>['课程','全部课程'].includes(e.textContent.trim()));
+      if(entries.length!==1)return false;
+      (entries[0].querySelector('h3')||entries[0]).click();return true;
+    });
+    if(!menuActivated){const oldTab=mainPage.locator('.label-item').filter({hasText:/^全部课程$/}).filter({visible:true});if(await oldTab.count()===1)await oldTab.click({timeout:3000});}
+    const deadline=Date.now()+timeoutMs;let allActivated=false;
+    while(Date.now()<deadline&&!frame){
+      throwIfStopped(shouldStop);
+      if(!allActivated)allActivated=await activateAll();
+      frame=await tryFind(Math.min(pollMs,Math.max(1,deadline-Date.now())));
+    }
   }
   if (!frame) throw new Error('找不到课程列表（可能登录态失效或页面改版）');
 

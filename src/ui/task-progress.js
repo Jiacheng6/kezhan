@@ -60,15 +60,16 @@ export function taskProgressModel(status = {}) {
   } else if (finite(currentTime) && duration > 0) detail = `${clock(currentTime)} / ${clock(duration)}`;
   const completed=status.completed===true&&!running&&!scanning;
   if(completed){fraction=1;kind='任务完成进度';if(type==='video'&&detail)detail='播放记录 '+detail;}
-  if (scanning) { fraction = null; kind = '课程扫描'; }
+  const scan=status.reconProgress||{};
+  if (scanning) { fraction = null; kind = '课程扫描';detail=scan.total?`课程 ${scan.index}/${scan.total}${scan.sections?` · 小节 ${scan.section}/${scan.sections}`:''}`:''; }
   const verifying = phase === 'verifying';
-  const label = completed?'平台已确认完成':stats.paused ? '已暂停 · 需要处理' : scanning ? '正在读取课程' : !running ? status.outcomePhase==='awaiting-review'?'待你核对 · 尚未提交':['needs-human','failed'].includes(status.outcomePhase)?'需要处理后继续':'已停止' : verifying ? '核对平台状态' : phase === 'quiz' ? '处理视频弹题' : phase === 'asking' ? '正在读取 AI 回答' : fraction === null ? '正在准备任务' : '任务进行中';
+  const label = completed?'平台已确认完成':scanning ? '正在读取课程' : stats.paused ? '已暂停 · 需要处理' : !running ? status.outcomePhase==='awaiting-review'?'待你核对 · 尚未提交':['needs-human','failed'].includes(status.outcomePhase)?'需要处理后继续':'已停止' : verifying ? '核对平台状态' : phase === 'quiz' ? '处理视频弹题' : phase === 'asking' ? '正在读取 AI 回答' : fraction === null ? '正在准备任务' : '任务进行中';
   const rate = p.playbackRate ?? current.playbackRate;
-  const hint = completed?'以平台任务点完成标记为准':p.playbackPhase || current.playbackPhase || (verifying ? '以平台确认结果为准' : !running ? '保留当前进度，可继续学习' : fraction === null ? '页面就绪后显示实际进度' : '');
+  const hint = scanning?'只读扫描，原有进度保留':completed?'以平台任务点完成标记为准':p.playbackPhase || current.playbackPhase || (verifying ? '以平台确认结果为准' : !running ? '保留当前进度，可继续学习' : fraction === null ? '页面就绪后显示实际进度' : '');
   return { visible: running || scanning || !!p.current || !!stats.current, running: running || scanning, verifying, fraction,
     percent: fraction === null ? '—' : (fraction * 100).toFixed(1), kind, label,
-    title: scanning ? '正在整理课程与章节任务' : p.current || [current.courseName, current.secNo, current.name].filter(Boolean).join(' · ') || '等待当前任务页面就绪',
-    detail: [detail, type === 'video' && rate ? `实际 ${rate}×` : '', hint].filter(Boolean).join(' · ') };
+    title: scanning ? scan.course||'正在整理课程与章节任务' : p.current || [current.courseName, current.secNo, current.name].filter(Boolean).join(' · ') || '等待当前任务页面就绪',
+    detail: [detail, !scanning&&type === 'video' && rate ? `实际 ${rate}×` : '', hint].filter(Boolean).join(' · ') };
 }
 
 export function renderTaskProgress(root, status) {
