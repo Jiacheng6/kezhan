@@ -5,10 +5,15 @@ import { releasePage, adoptTaskPage } from '../../browser/pages.mjs';
 import { setTaskStatus } from '../../state.mjs';
 import { log, notifyUser } from '../../logbus.mjs';
 import {openZhihuishuStudy} from './entry.mjs';
+import {syncZhihuishuVideoCompletions} from './catalog.mjs';
 let retainedVideo=null;
 export async function runZhihuishuVideo({ task, context, shouldStop=()=>false, onProgress=()=>{} },{openStudy=openZhihuishuStudy}={}) {
   if (task.platform !== 'zhihuishu' || task.type !== 'video' || !isZhihuishuUrl(task.studyUrl) || !task.platformTaskKey) throw Error('智慧树视频身份不完整');
-  let page,entryPage,completed = false;
+  let page,entryPage,completed = false,completionSignature='';
+  const recordCompletions=state=>{
+    const signature=JSON.stringify(state.videos.filter(v=>v.completion==='completed').map(v=>v.key).sort());
+    if(signature!==completionSignature){syncZhihuishuVideoCompletions(task,state);completionSignature=signature;}
+  };
   try {
     if(retainedVideo&&!retainedVideo.page.isClosed()){
       const old=retainedVideo;retainedVideo=null;
@@ -28,6 +33,7 @@ export async function runZhihuishuVideo({ task, context, shouldStop=()=>false, o
     await page.locator('li.video').first().waitFor({ timeout: 20000 });
     let state = await readZhihuishuPage(page);
     if (state.course?.key !== task.courseId) throw Error('打开的智慧树课程与选择不一致');
+    recordCompletions(state);
     await dismissZhihuishuNotices(page);
     const index = state.videos.findIndex(v => v.key === task.platformTaskKey);
     if (index < 0) throw Error('课程目录变化，请重新读取智慧树课程');
@@ -47,6 +53,7 @@ export async function runZhihuishuVideo({ task, context, shouldStop=()=>false, o
       await dismissZhihuishuNotices(page);
       state = await readZhihuishuPage(page);
       if (state.course?.key !== task.courseId) throw Error('智慧树课程页面已改变');
+      recordCompletions(state);
       if (state.blockers.length) {
         if (state.blockers.includes('progress-save-failed')) {
           const error = '智慧树提示学习进度提交失败，请在软件内按平台提示返回学堂重新进入；未确认任务完成';

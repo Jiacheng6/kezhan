@@ -1,4 +1,8 @@
 // Separate controllers: stopping/failing one platform cannot cancel another.
+export function planPlatformRun(tasks, progress={}) {
+  const pending=tasks.filter(t=>t.finished!==true&&t.completion?.finished!==true&&progress[t.key]?.status!=='done');
+  return {tasks:pending,skipped:tasks.length-pending.length,selected:tasks.length};
+}
 export class PlatformRuns {
   constructor({ execute, changed = () => {} }) { this.execute = execute; this.changed = changed; this.sessions = new Map(); }
   snapshot() { return Object.fromEntries([...this.sessions].map(([id, s]) => [id, { running: s.running, stopping: s.stop,

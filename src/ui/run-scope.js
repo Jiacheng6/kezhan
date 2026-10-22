@@ -1,5 +1,8 @@
 // Shared by the UI and service: a run is bound to explicit task identities,
 // never to the course currently in focus or to whatever was saved later.
+export function pendingRunTasks(courses=[]) {
+  return selectedRunTasks(courses).filter(t=>t.finished!==true&&t.completion?.finished!==true);
+}
 export function selectedRunTasks(courses = []) {
   return courses.filter(c => !c.empty && c.enabled !== false).flatMap(c =>
     (c.tasks || []).filter(t => t.willHandle === true && !t.excluded && t.policyHandle !== false)

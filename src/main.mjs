@@ -28,7 +28,7 @@ import { ownerState, startOwnerMonitor } from './browser/owner-lifecycle.mjs';
 import {selectedProvider, ensureProviderPage} from './ai/providers.mjs';
 import {aiResumeStatus,continueAI,onAIResumeChange} from './ai/resume.mjs';
 import {apiStatus} from './ai/api.mjs';
-import { PlatformRuns } from './platforms/runs.mjs';
+import { PlatformRuns, planPlatformRun } from './platforms/runs.mjs';
 import { scanZhihuishuCourses } from './platforms/zhihuishu/scan.mjs';
 import { runZhihuishuVideo } from './platforms/zhihuishu/runner.mjs';
 import { runZhihuishuQuiz, restoreZhihuishuReview, submitZhihuishuReview, editZhihuishuReview, syncZhihuishuReviews } from './platforms/zhihuishu/quiz-task.mjs';
@@ -40,13 +40,16 @@ const startingPlatforms = new Set();
 const retryingReviews = new Set();
 const zhsScan = { running: false, stop: false };
 function startZhihuishuTasks(tasks) {
-  const result = extraRuns.start('zhihuishu', tasks, ctx());
-  log(`【智慧树】开始 ${tasks.length} 个任务；学习通队列独立运行，AI逐题排队`, 'info');
+  const plan=planPlatformRun(tasks,loadState().taskPoints);
+  if(plan.skipped)log(`【智慧树】保留并跳过 ${plan.skipped} 个已完成任务，本次待完成 ${plan.tasks.length} 个`, 'info');
+  if(!plan.tasks.length)return {started:false,platform:'zhihuishu',count:0,skipped:plan.skipped,message:'所选任务均已完成，无需重复执行'};
+  const result = extraRuns.start('zhihuishu', plan.tasks, ctx());
+  log(`【智慧树】开始 ${plan.tasks.length} 个任务；学习通队列独立运行，AI逐题排队`, 'info');
   void extraRuns.wait('zhihuishu').then(session => {
     if (session.error) { log('【智慧树】任务中断：' + session.error, 'error'); notifyUser('batch-error', { key: `zhihuishu:${Date.now()}`, detail: '智慧树：' + session.error }); }
     else notifyUser(session.phase === 'stopped' ? 'batch-stopped' : session.review ? 'batch-review' : 'batch-complete', { key: `zhihuishu:${Date.now()}`, detail: `智慧树：完成 ${session.done}/${session.total} 个任务，待审 ${session.review||0} 份` });
   });
-  return result;
+  return {...result,skipped:plan.skipped,selected:plan.selected};
 }
 onAIResumeChange(wait=>{patchStatus({aiWaiting:wait});if(wait.waiting)notifyUser('ai-verification',{provider:wait.provider,key:wait.provider+'-verification',detail:`${wait.label}需要人工验证；完成后点击“验证已完成，继续本题”。`});});
 

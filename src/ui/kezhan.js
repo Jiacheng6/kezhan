@@ -1,6 +1,6 @@
 import { workspace } from './app.js';
 import { platformOf, platformInfo, PLATFORMS } from './platforms.js';
-import { runScopeRequest } from './run-scope.js';
+import { runScopeRequest, pendingRunTasks } from './run-scope.js';
 import { renderTaskProgress, platformTaskStatus, totalProgressModel } from './task-progress.js';
 const message = document.querySelector('#platformMessage');
 const filters = document.querySelector('#platformFilters'), sessions = document.querySelector('#platformSessions');
@@ -20,6 +20,7 @@ async function control(id, stop) {
       const courses = model.checklist?.courses.filter(c => platformOf(c) === id) || [];
       const scope = runScopeRequest(courses);
       if (!scope.taskKeys.length) throw Error('请先勾选这个平台的任务');
+      if(!pendingRunTasks(courses).length)throw Error('所选任务均已完成，无需重复执行');
       const saved = await workspace.save(); if (!saved?.ok) throw Error('选课范围保存失败');
       await post('startRun', { ...scope, platform: id });
     }
@@ -33,7 +34,7 @@ function render(force = false) {
   document.body.dataset.multiPlatform = String(new Set(courses.map(platformOf)).size > 1);
   document.body.dataset.multiRunning = String(Object.values(status.platforms || {}).filter(run => run.running).length > 1);
   const current = model.platformFilter || 'all';
-  const key = JSON.stringify([courses.map(c => [c.courseId, c.tasks?.filter(t => t.willHandle).length]), status.platforms, status.progress, status.runStats, status.running, status.aiQueue, status.zhihuishuScan, status.ready, current, [...pending]]);
+  const key = JSON.stringify([courses.map(c => [c.courseId, pendingRunTasks([c]).length]), status.platforms, status.progress, status.runStats, status.running, status.aiQueue, status.zhihuishuScan, status.ready, current, [...pending]]);
   if (!force && signature === key) return; signature = key;
   const focused = document.activeElement?.dataset.platformControl;
   filters.replaceChildren(...['all', ...ids].map(id => {
@@ -57,7 +58,7 @@ function render(force = false) {
   summary.querySelector('[data-total-detail]').textContent = detail + (overall.review ? ` · ${overall.review} 份测验待审，未计为完成` : '');
   const cards = ids.map(id => {
     const info = platformInfo(id), run = status.platforms?.[id] || { running: id === 'chaoxing' && status.running };
-    const ownCourses = courses.filter(c => platformOf(c) === id), selected = runScopeRequest(ownCourses).taskKeys.length;
+    const ownCourses = courses.filter(c => platformOf(c) === id), selected = pendingRunTasks(ownCourses).length;
     let article = [...sessions.querySelectorAll('.platform-session')].find(node => node.dataset.platform === id);
     if (!article) {
       article = document.createElement('article'); article.className = 'platform-session'; article.dataset.platform = id;

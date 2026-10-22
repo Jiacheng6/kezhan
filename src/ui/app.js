@@ -28,7 +28,7 @@ import { renderTaskProgress } from './task-progress.js';
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-import { runScopeRequest } from './run-scope.js';
+import { runScopeRequest, pendingRunTasks } from './run-scope.js';
 
 const state = {
   status: null,
@@ -297,7 +297,8 @@ function renderRunBar(s) {
    */
   $$('[data-action="startRun"]').forEach((runBtn) => {
     runBtn.disabled = running || !s.ready || !s.edge?.connected || !s.login?.loggedIn || !hasSelectedTasks;
-    const count = tree.data ? runScopeRequest(tree.data.courses).taskKeys.length : 0;
+    const count = tree.data ? pendingRunTasks(tree.data.courses).length : 0;
+    if(!count)runBtn.disabled=true;
     runBtn.textContent = s.reconRunning ? '正在扫描课程…' : running ? '学习进行中…' : `开始学习（${count} 项）↗`;
   });
   $$('[data-action="stopRun"]').forEach((stopBtn) => { stopBtn.disabled = !running; });
@@ -593,6 +594,7 @@ async function runAction(name, btn) {
     if (!tree.data) return {ok:false,error:'请先读取清单并选择任务'};
     runRequest = runScopeRequest(tree.data.courses);
     if (!runRequest.taskKeys.length) return {ok:false,error:'请先选择至少一个任务'};
+    if(!pendingRunTasks(tree.data.courses).length)return {ok:false,error:'所选任务均已完成，无需重复执行'};
     try {
       const r = await saveSelection();
       if (r && r.ok) {

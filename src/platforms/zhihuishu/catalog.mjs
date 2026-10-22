@@ -1,5 +1,21 @@
 import { readZhihuishuPage, isZhihuishuUrl } from './read-page.mjs';
 import { savePlatformCourses, readPlatformCatalog } from '../catalog.mjs';
+// Persist only positive video markers from the matching real course page.
+// A partial render or a failed task must never clear previously confirmed work.
+export function syncZhihuishuVideoCompletions(task, snapshot) {
+  if(snapshot?.pageKind!=='study'||snapshot.course?.key!==task.courseId)return 0;
+  const done=new Set((snapshot.videos||[]).filter(v=>v.completion==='completed').map(v=>v.key));
+  if(!done.size)return 0;
+  const course=readPlatformCatalog().courses.find(c=>c.platform==='zhihuishu'&&c.courseId===task.courseId);
+  if(!course)return 0;
+  let changed=0;
+  const taskPoints=(course.taskPoints||[]).map(t=>{
+    if(t.type==='video'&&!t.finished&&done.has(t.platformTaskKey)){changed++;return {...t,finished:true};}
+    return t;
+  });
+  if(changed)savePlatformCourses('zhihuishu',[{...course,taskPoints}]);
+  return changed;
+}
 export function studyCourse(snapshot, url, known = []) {
   if (snapshot.pageKind !== 'study' || !snapshot.course?.key || !isZhihuishuUrl(url)) return null;
   const id = snapshot.course.key, name = known.find(c => c.courseId === id)?.name || '智慧树课程';

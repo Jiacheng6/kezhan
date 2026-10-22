@@ -78,7 +78,11 @@ class EmbeddedBrowser {
       for (const c of cookies) {
         if (c.expirationDate && c.expirationDate <= Date.now() / 1000) continue;
         if(existing.has(key(c)))continue;
-        const url = `${c.secure ? 'https' : 'http'}://${c.domain.replace(/^\./, '')}${c.path || '/'}`;
+        // Secure controls where a cookie may be sent, not the origin that set it.
+        // Zhihuishu sets some authentication cookies without Secure over HTTPS.
+        // Restoring them through HTTP changes Chromium's source scheme/port.
+        const httpsOrigin = c.secure || /(^|\.)zhihuishu\.com$/i.test(c.domain);
+        const url = `${httpsOrigin ? 'https' : 'http'}://${c.domain.replace(/^\./, '')}${c.path || '/'}`;
         const restored = { url, name: c.name, value: c.value, path: c.path, secure: c.secure, httpOnly: c.httpOnly, sameSite: c.sameSite };
         if (!c.hostOnly) restored.domain = c.domain;
         if (c.expirationDate) restored.expirationDate = c.expirationDate;

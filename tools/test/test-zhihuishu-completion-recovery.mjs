@@ -1,0 +1,24 @@
+// Synthetic catalog, durable state and a queue that fails after a completed task.
+import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/zhs-completed-'));
+const {savePlatformCourses,readPlatformCatalog}=await import('../../src/platforms/catalog.mjs');
+const {syncZhihuishuVideoCompletions}=await import('../../src/platforms/zhihuishu/catalog.mjs');
+const {PlatformRuns,planPlatformRun}=await import('../../src/platforms/runs.mjs');
+const {setTaskStatus,loadState,invalidateCache}=await import('../../src/state.mjs');
+const {buildChecklist}=await import('../../src/chaoxing/checklist.mjs');
+const {runScopeRequest,assertRunScope,pendingRunTasks}=await import('../../src/ui/run-scope.js');
+const id='zhihuishu:fixture:term',video=i=>({knowledgeId:id+':video:'+i,platformTaskKey:id+':video:'+i,type:'video',name:'示例视频'+i,finished:false});
+const course={platform:'zhihuishu',courseId:id,clazzId:'term',name:'示例课程',sections:[],taskPoints:[video(1),video(2),{knowledgeId:id+':test',platformTaskKey:id+':test',name:'章节测验',type:'work',finished:false}]};
+savePlatformCourses('zhihuishu',[course,{...course,courseId:id+'-other',taskPoints:[{...video(1),finished:false}]}]);
+const snapshot={pageKind:'study',course:{key:id},videos:[{key:video(1).platformTaskKey,completion:'completed'},{key:video(2).platformTaskKey,completion:'pending'}]};
+assert.equal(syncZhihuishuVideoCompletions({courseId:id},snapshot),1);
+assert.equal(syncZhihuishuVideoCompletions({courseId:'wrong'},snapshot),0,'错课程不写状态');
+assert.equal(syncZhihuishuVideoCompletions({courseId:id},{...snapshot,videos:[]}),0,'空白或迟到目录不能清除已完成');
+const saved=readPlatformCatalog();assert.equal(saved.courses[0].taskPoints[0].finished,true);assert.equal(saved.courses[0].taskPoints[1].finished,false);assert.equal(saved.courses[0].taskPoints[2].finished,false,'视频不能替章节测验完成');assert.equal(saved.courses[1].taskPoints[0].finished,false);
+let checklist=buildChecklist({includeProgress:true}),own=checklist.courses.filter(c=>c.courseId===id),scope=runScopeRequest(own),selected=assertRunScope(own,scope);assert.equal(selected.length,3,'签名仍覆盖用户原始选择');assert.equal(pendingRunTasks(own).length,2,'开始按钮只计未完成任务');
+const called=[];const runs=new PlatformRuns({execute:async({task})=>{called.push(task.key);if(task.type==='work')throw Error('模拟弹题中断');setTaskStatus(task.key,{platform:'zhihuishu',status:'done'});return {ok:true};}});
+const plan=planPlatformRun(selected,loadState().taskPoints);assert.equal(plan.skipped,1);runs.start('zhihuishu',plan.tasks);await runs.wait('zhihuishu');assert.equal(called.length,2);assert.equal(runs.snapshot().zhihuishu.phase,'failed');assert.equal(runs.snapshot().zhihuishu.done,1);
+invalidateCache();checklist=buildChecklist({includeProgress:true});own=checklist.courses.filter(c=>c.courseId===id);selected=assertRunScope(own,scope);const retry=planPlatformRun(selected,loadState().taskPoints);
+assert.equal(retry.tasks.length,1);assert.equal(retry.tasks[0].type,'work');assert.equal(retry.skipped,2);assert.equal(pendingRunTasks(own).length,1);
+assert.deepEqual(planPlatformRun([{key:'unknown'},{key:'failed'},{key:'review'}],{failed:{status:'failed'},review:{status:'manual'}}).tasks.map(t=>t.key),['unknown','failed','review'],'失败和待审不能被当成已完成');
+console.log('✓ 已完成视频实时持久化、错课程隔离、测验不误标、重读后按钮计数、失败续跑仅剩未完成项且不扩大选课范围');

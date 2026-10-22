@@ -5,6 +5,14 @@ try{const p=await b.newPage();let mode='normal';const html=()=>`<meta charset="u
 await p.route('https://studyvideoh5.zhihuishu.com/**',r=>r.fulfill({contentType:'text/html; charset=utf-8',body:html()}));const key='zhihuishu:course:term:video:1.1';
 await p.goto('https://studyvideoh5.zhihuishu.com/stuStudy');let q=await readZhihuishuVideoPrompt(p);assert.equal(q.answered,false);assert.deepEqual(await resumeZhihuishuVideo(p,{expectedKey:key}),{ok:false,phase:'needs-human',reason:'video-question-open'});assert.equal(await p.evaluate(()=>window.playClicks),0);
 let result=await handleZhihuishuVideoPrompt(p,{expectedKey:key});assert.equal(result.ok,true);assert.equal(result.phase,'playing');assert.ok(result.after>result.before);assert.equal(await p.evaluate(()=>window.playClicks),1,'关闭弹窗后必须另点播放');assert.equal(await p.evaluate(()=>window.optionClicks),1);assert.equal(await readZhihuishuVideoPrompt(p),null);
+// Live-site feedback is inserted inside .topic-title, after the click. It must
+// not change the identity; actual stem/option replacement must still stop.
+for(const cls of ['error','success']){
+ await p.reload();await p.locator('.topic-item').first().evaluate((e,cls)=>e.addEventListener('click',()=>{const span=document.createElement('span');span.className=cls;span.textContent=cls==='error'?'错误':'正确';document.querySelector('.topic-title').prepend(span)}),cls);
+ result=await handleZhihuishuVideoPrompt(p,{expectedKey:key});assert.equal(result.ok,true,cls+'反馈不是换题');assert.equal(await p.evaluate(()=>window.optionClicks),1);assert.equal(await p.evaluate(()=>window.playClicks),1);
+}
+await p.reload();await p.locator('.topic-item').first().evaluate(e=>e.addEventListener('click',()=>{document.querySelector('.item-topic').textContent='替换后的另一道题选项'}));
+await assert.rejects(handleZhihuishuVideoPrompt(p,{expectedKey:key}),/弹题内容变化/);assert.equal(await p.evaluate(()=>window.playClicks),0,'实际选项改变必须保留弹窗，不得关闭续播');
 await p.reload();await assert.rejects(handleZhihuishuVideoPrompt(p,{expectedKey:'wrong-task'}),/不属于/);assert.equal(await p.evaluate(()=>window.optionClicks),0);
 await p.reload();await p.locator('.el-dialog__footer').evaluate(e=>{e.style.position='fixed';e.style.top='2000px';});result=await handleZhihuishuVideoPrompt(p,{expectedKey:key});assert.equal(result.ok,true,'小视口中固定到屏幕外的关闭按钮也要处理');assert.equal(await p.evaluate(()=>window.playClicks),1);assert.equal(await p.evaluate(()=>window.optionClicks),1);assert.equal(await readZhihuishuVideoPrompt(p),null);
 mode='multi';await p.reload();result=await handleZhihuishuVideoPrompt(p,{expectedKey:key});assert.equal(result.ok,true);assert.equal(await p.evaluate(()=>window.playClicks),1);

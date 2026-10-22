@@ -24,7 +24,9 @@ export async function readZhihuishuVideoPrompt(page){
  return d.evaluate(root=>{
   const text=e=>(e?.innerText||e?.textContent||'').replace(/\s+/g,' ').trim();
   const title=root.querySelector('.topic-title'),copy=title?.cloneNode(true);
-  copy?.querySelectorAll('.right,.wrong,.title-tit').forEach(e=>e.remove());
+  // The live site inserts .error / .success feedback into the title after a
+  // selection. It is an answer result, not a change to the question identity.
+  copy?.querySelectorAll('.right,.wrong,.error,.success,.title-tit').forEach(e=>e.remove());
   const options=[...root.querySelectorAll('.topic-list .topic-item')].map((e,index)=>({index,letter:text(e.querySelector('.topic-option-item')).replace(/[.．、]$/,''),text:text(e.querySelector('.item-topic')),selected:!!e.querySelector('.topic-option-item.active')}));
   const type=text(root.querySelector('.title-tit'));
   const multiple=/多选题/.test(type);
