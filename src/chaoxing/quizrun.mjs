@@ -121,7 +121,7 @@ async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, sh
  * @param {Function} [opts.shouldStop]
  * @returns {Promise<object>} 结果摘要
  */
-export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress, shouldStop }) {
+export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress, shouldStop, reviewRetry=false }, {solve=solveOne}={}) {
   const settings = loadSettings();
   const started = Date.now();
 
@@ -137,7 +137,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
     answered: 0,
     queued: 0,
     submitted: false,
-    submitMode: settings.submitMode,
+    submitMode: reviewRetry ? 'manual' : settings.submitMode,
     items: [],
     error: null,
     elapsedSec: 0,
@@ -145,8 +145,8 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
 
   const page = await newTaskPage(ctx, 'quiz');
   page.on('dialog', (d) => {if(!submittingPages.has(page))void d.accept().catch(() => {});});
-  let workFrame = null, questions = [];
-  const keepForReview = () => {
+  let workFrame = null, questions = [],validatedQuestions=false;
+  const keepForReview = ({busy=false}={}) => {
     result.keepPageOpen = true; result.workPage = page;
     result.workFrameUrl = workFrame.url();
     registerKeptPage(task.key, page, {
@@ -156,8 +156,9 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
       course: task.courseName || task.courseId, secNo: task.secNo, name: task.name,
       totalQuestions: result.totalQuestions, answered: result.answered, queued: result.queued,
       items: result.items.map(i => ({questionIndex:i.questionIndex,qtype:i.qtype,letters:i.letters,textAnswer:i.textAnswer,requiresReview:i.requiresReview,confidence:i.confidence,autoFilled:i.autoFilled})),
-    });
+    },{busy});
   };
+  const checkpoint=()=>{keepForReview({busy:true});recordQuizResult(result,{checkpoint:true});};
 
   try {
     // —— 0) 已完成则跳过（本地记录 / 上次侦察快照）——
@@ -228,6 +229,25 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
     if (!meta.submitBtn) log('    ! 未找到提交按钮，将只填不交', 'warn');
 
     questions = await extractQuestions(workFrame);
+    // Resume only answers belonging to this exact work/attempt and a stable
+    // question mapping. A number alone is never enough to reuse an answer.
+    const cached=listReviewItems().filter(item=>item.taskKey===task.key);
+    const reusable=new Map();
+    if(cached.length){
+      const identity=loadState().keptPages?.[task.key]?.info?.workIdentity;
+      const actual=workIdentity(workFrame.url());
+      if(!identity?.workid||Object.entries(identity).some(([key,value])=>actual[key]!==value))throw Error('作业或作答次数改变，已保留旧答案，请先人工核对');
+      const {matchReviewQuestions}=await import('./review-recovery.mjs');
+      for(const {item,question}of matchReviewQuestions(cached.filter(item=>(item.aiAnswer&&!item.aiError)||item.editedByHuman),questions)){
+        const parsed=parseAnswer(item.aiAnswer||'',question);
+        if(item.editedByHuman){parsed.letters=item.letters||[];parsed.textAnswer=item.textAnswer||'';parsed.confidence='high';parsed.canFill=true;}
+        const validation=validateBeforeSubmit(parsed,question);
+        if((!item.aiError||item.editedByHuman)&&(question.qtype==='essay'?parsed.canFill:validation.safe&&parsed.confidence==='high'))reusable.set(question.index,{...item,parsed,validation});
+      }
+    }
+    for(const [index,previous]of reusable)result.items.push({...previous,questionIndex:index,autoFilled:false,filled:null,savedAnswer:true,status:'pending-review'});
+    validatedQuestions=true;
+    checkpoint();
     // —— 3) AI登录检查 ——
     const login = await checkLogin(qianwenPage);
     if (!login.loggedIn) {
@@ -256,7 +276,9 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
 
       if (onProgress) onProgress({ index: i, total: questions.length, phase: 'asking' });
 
-      const solved = await solveOne({
+      const previous=reusable.get(q.index);
+      if(previous)log(`        复用第 ${q.index} 题已保存答案，仅核对并恢复填写，不重复问 AI`, 'info');
+      const solved = previous ? {...previous,question:q,aiError:null,aiErrorCode:null} : await solve({
         taskKey:task.key,
         workFrame,
         domIndex: q.domIndex,
@@ -347,7 +369,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
       });
 
       const item = {
-        id: `${task.key}#q${q.index}`,
+        id: previous?.id || `${task.key}#q${q.index}`,
         taskKey: task.key,
         course: task.courseName || task.courseId,
         courseId: task.courseId,
@@ -380,16 +402,18 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
         archive,
         status: autoFilled ? 'filled' : 'pending-review',
       };
-      result.items.push(item);
+      const existing=result.items.findIndex(it=>it.questionIndex===item.questionIndex);
+      if(existing>=0)result.items[existing]=item;else result.items.push(item);
 
       if (autoFilled) result.answered += 1;
       if (isEssay || !autoFilled) result.queued += 1;
+      checkpoint();
 
       if (onProgress) onProgress({ index: i, total: questions.length, phase: 'done', item });
       await sleep(600);
     }
 
-    if (result.stopped) return result;
+    if (result.stopped) {queueUnanswered(result,task,questions,'任务已停止，可继续未完成题目');keepForReview();return result;}
     throwIfStopped(shouldStop);
     if (result.needsHuman) {
       // Preserve the blocker. Never overwrite it with awaiting-review / ok=true.
@@ -398,7 +422,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
     result.phase = 'decide-submit';
 
     // —— 5) 提交决策 ——
-    const subm = settings.submitMode;
+    const subm = result.submitMode;
     const allHigh = result.queued === 0 && canAutoSubmitItems(result.items, questions.length);
 
     if (subm === 'auto' && allHigh && meta.submitBtn) {
@@ -436,10 +460,11 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
   } catch (err) {
     if (err.code === 'STOPPED') {
       result.phase = 'stopped'; result.stopped = true; result.error = err.message;
+      if(workFrame&&validatedQuestions){queueUnanswered(result,task,questions,'任务已停止，可继续未完成题目');keepForReview();}
       return result;
     }
     result.error = err.message;
-    if (workFrame && questions.length) {
+    if (workFrame && validatedQuestions) {
       queueUnanswered(result, task, questions, err.message);
       result.phase = 'needs-human'; result.needsHuman = err.message;
       keepForReview();
@@ -449,6 +474,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
     return result;
   } finally {
     result.elapsedSec = Math.round((Date.now() - started) / 1000);
+    if(workFrame&&validatedQuestions){result.answered=result.items.filter(i=>i.autoFilled).length;result.queued=result.items.filter(i=>i.requiresReview||!i.autoFilled).length;recordQuizResult(result);if(!page.isClosed())setPageBusy(page,false);}
     // 为人工确认而保留的页面不能在这里关掉
     if (!result.keepPageOpen) {
       await page.close().catch(() => {});
@@ -700,7 +726,7 @@ export async function submitWork(workFrame,{confirmationOnly=false}={}) {
  * 走 mutateState 做原子"读-改-写" —— 早期用 loadState()+saveState()，
  * 在"外部进程也改了同一文件"的场景下会被覆盖，导致待审队列写不进去。
  */
-export function recordQuizResult(result) {
+export function recordQuizResult(result,{checkpoint=false}={}) {
   const saved=mutateState((state) => {
     state.quizzes = state.quizzes || {};
     state.quizzes[result.key] = {
@@ -723,7 +749,7 @@ export function recordQuizResult(result) {
      */
     state.taskPoints = state.taskPoints || {};
     const prev = state.taskPoints[result.key] || { retries: 0 };
-    if (prev.status !== 'done') {
+    if (!checkpoint && prev.status !== 'done') {
       if (result.submitted) {
         state.taskPoints[result.key] = {
           ...prev,
@@ -764,6 +790,7 @@ export function recordQuizResult(result) {
 
     // 需要人工确认的题目进队；已自动提交的不进队
     state.reviewQueue = state.reviewQueue || [];
+    if(result.submitted)for(const item of state.reviewQueue)if(item.taskKey===result.key&&item.status!=='discarded')item.status='submitted';
     const keep = result.items.filter((it) => it.status === 'pending-review' || (!result.submitted && it.autoFilled));
     for (const it of keep) {
       const idx = state.reviewQueue.findIndex((x) => x.id === it.id);

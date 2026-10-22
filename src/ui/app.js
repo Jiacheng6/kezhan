@@ -1466,7 +1466,7 @@ async function restoreReviewedAnswers(taskKey) {
   const result=response.result;
   if(response.ok&&result.pendingConfirmation)reviewConfirmationReady.add(taskKey);else reviewConfirmationReady.delete(taskKey);
   const message=response.ok?
-    result.alreadySubmitted?(result.discussion?'平台已显示本人讨论回复，待审记录已同步':'平台显示该作业已提交，可刷新确认状态'):result.pendingConfirmation?'作业页仍有提交确认框，请核对后继续确认；已保存答案保留':result.discussion?'讨论草稿已填入网页，请核对后确认发布':`${result.pendingRecovered?'已重新核对平台草稿':'作业页已打开'}，恢复 ${result.restored||0} 题${result.ready?'，请核对后提交':`；第 ${(result.missing||[]).join('、')} 题仍需填写`}`:
+    result.alreadySubmitted?(result.discussion?'平台已显示本人讨论回复，待审记录已同步':'平台显示该作业已提交，可刷新确认状态'):result.pendingConfirmation?'作业页仍有提交确认框，请核对后继续确认；已保存答案保留':result.discussion?'讨论草稿已填入网页，请核对后确认发布':`${result.pendingRecovered?'已重新核对平台草稿':'作业页已打开'}，恢复 ${result.restored||0} 题${result.ready?'，请核对后提交':`；${Array.isArray(result.missing)?'第 '+result.missing.join('、')+' 题':result.missing+' 题'}仍需填写`}`:
     `恢复失败：${response.error}`;
   reviewFeedback.set(taskKey,message);
   appendLog({t:Date.now(),level:response.ok?'ok':'error',message});
@@ -1578,6 +1578,20 @@ function renderReview(data) {
         await loadReview();
       });
       head.appendChild(open);
+      if(!discussion&&list.some(item=>!item.autoFilled||item.aiError)){
+        const retry=el('button','ghost','只重试未完成题目');
+        retry.disabled=!!state.status?.running;
+        retry.addEventListener('click',async()=>{
+          if(hasReviewEdits()){reviewFeedback.set(taskKey,'请先保存正在编辑的答案，再继续未完成题目');await loadReview();return;}
+          retry.disabled=true;retry.textContent='正在继续…';
+          try{
+            const response=await fetch('/api/action/retryReview',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({taskKey})}).then(r=>r.json());
+            const started=response.ok&&response.result?.started;
+            reviewFeedback.set(taskKey,started?'已继续此作业：保留并恢复已保存答案，只向 AI 询问未完成题目；完成后仍需核对提交':response.error||response.result?.reason||'未能继续，草稿已保留');
+          }catch(error){reviewFeedback.set(taskKey,'继续失败：'+error.message);}finally{await loadReview();}
+        });
+        head.appendChild(retry);
+      }
       const buttonLabel=discussion?(k?.info?.submissionPending?'核对发布结果':'确认发布讨论'):needsRecovery?'恢复并核对':reviewConfirmationReady.has(taskKey)?'继续确认提交':opened?'✔ 提交这一组':'恢复后提交这一组';
       const btn = el('button', 'primary', buttonLabel);
       btn.addEventListener('click', async () => {

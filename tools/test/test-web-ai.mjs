@@ -9,6 +9,10 @@ const {askImage,checkLogin}=await import('../../src/ai/ai.mjs');
 const {webChatState,writeWebPrompt}=await import('../../src/ai/web-chat.mjs');
 const {normalizeSettings}=await import('../../src/settings.mjs');
 const {loadSettings}=await import('../../src/config.mjs');
+// All traffic is intercepted below; account rate limits would only slow the
+// fixture, so disable delays in this test's independent state directory.
+const {mutateState}=await import('../../src/state.mjs');
+mutateState(s=>{s.settings={ai:{minIntervalMs:0,jitterMs:0,stuckCooldownMs:0}};});
 assert.equal(normalizeSettings({'ai.provider':'doubao'},loadSettings()).settings.ai.provider,'doubao');
 assert.ok(normalizeSettings({'ai.provider':'unknown'},loadSettings()).errors.length);
 for(const url of ['https://doubao.com.evil.test/','https://evil.test/?q=chat.deepseek.com','http://www.doubao.com/'])assert.equal(providerForUrl(url),null);

@@ -55,6 +55,12 @@ export function isJunkUrl(url) {
 /** 新建一个"任务页"并登记（替代裸用 ctx.newPage()） */
 export async function newTaskPage(ctx, kind = 'task') {
   const page = await ctx.newPage();
+  await adoptTaskPage(page,kind);
+  return page;
+}
+
+/** Register only a popup opened by this task's own normal site entry. */
+export async function adoptTaskPage(page,kind='task'){
   registry.set(page, { kind, busy: true, createdAt: Date.now() });
   if (embedded) await targetOf(page).then(targetId => embeddedRequest('annotate', { targetId, role: kind, busy: true })).catch(() => {});
   return page;

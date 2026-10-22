@@ -65,6 +65,7 @@ document.querySelector('#popok').onclick=()=>{window.fixtureSubmitted({key:${JSO
   return route.abort();
 });
 const service=await startServer({
+  retryReview:async req=>{let raw='';for await(const part of req)raw+=part;const body=JSON.parse(raw);return {started:true,count:1,taskKey:body.taskKey};},
   listKeptPages,
   openReview:async({taskKey})=>withReviewLock(taskKey,async()=>{const {page,...result}=await reopenReviewWork(context,taskKey,{personId,waitMs:150});return result;}),
   submitReviews:scope=>submitPendingReviews(context,scope,{personId,waitMs:150}),
@@ -229,6 +230,11 @@ try{
   assert.equal(loadState().quizzes['manual-demo'].phase,'submitted','手动提交后摘要也要同步');
   assert.equal(loadState().quizzes['manual-demo'].submitted,true);
   assert.equal(loadState().keptPages['manual-demo'],undefined,'已确认提交后移除持久化恢复入口');
+  seed('retry-only-demo',{missing:true});await ui.reload();await ui.locator('[data-tab="review"]').click();
+  const retryRequest=ui.waitForRequest(req=>new URL(req.url()).pathname==='/api/action/retryReview');
+  await ui.getByRole('button',{name:'只重试未完成题目',exact:true}).click();
+  assert.deepEqual((await retryRequest).postDataJSON(),{taskKey:'retry-only-demo'},'重试按钮只传本组任务标识，不能提交或启动其他作业');
+  await ui.locator('.review-feedback').filter({hasText:'只向 AI 询问未完成题目'}).waitFor();
   console.log('✓ 真实隔离页面：关闭/重启记录恢复、题序变化、选择与简答回填、人工修改、缺题/错题/换次拦截、提交结果核实、未知结果不重交、并发和批量部分失败通过');
   console.log(`截图：${path.join(data,'restored-review.png')}`);
 }finally{

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { taskProgressModel, platformTaskStatus, totalProgressModel } from '../../src/ui/task-progress.js';
+import { taskProgressModel, platformTaskStatus, totalProgressModel,runSummaryLabel } from '../../src/ui/task-progress.js';
 import { currentTaskPage, pageKind, sortedPages } from '../../src/ui/web-pages.js';
 const video = { running: true, progress: { total: 8, done: 2, current: '演示课程 · 视频', taskType: 'video', percent: .642, currentTime: 385, duration: 600, playbackRate: 2 } };
 let model = taskProgressModel(video);
@@ -27,6 +27,19 @@ assert.equal(taskProgressModel(platformTaskStatus(dual,'zhihuishu')).percent,'25
 assert.equal(taskProgressModel(platformTaskStatus(dual,'zhihuishu')).label,'正在读取 AI 回答');
 assert.deepEqual(totalProgressModel(dual),{total:7,done:2,review:1,running:true,fraction:2/7});
 assert.equal(totalProgressModel({}).fraction,0);
+const finishedRun={running:false,phase:'completed',done:1,total:1,current:'已完成视频',progress:{taskType:'video',percent:254/312,currentTime:254,duration:312}};
+const finished=taskProgressModel(platformTaskStatus({platforms:{zhihuishu:finishedRun}},'zhihuishu'));
+assert.equal(finished.label,'平台已确认完成');assert.equal(finished.kind,'任务完成进度');assert.equal(finished.percent,'100.0');assert.match(finished.detail,/播放记录 04:14 \/ 05:12/);
+assert.equal(finishedRun.progress.currentTime,254,'任务完成不能虚构实际播放位置');
+assert.equal(runSummaryLabel({platforms:{chaoxing:{running:false,total:0,phase:'idle'},zhihuishu:finishedRun}}),'已完成','智慧树执行不能依赖学习通的 runStats 判断是否开始');
+assert.equal(runSummaryLabel({platforms:{zhihuishu:{...finishedRun,running:true,phase:'running'}}}),'进行中');
+assert.equal(runSummaryLabel({platforms:{zhihuishu:{...finishedRun,phase:'needs-human',error:'验证'}}}),'已暂停 · 待处理');
+assert.equal(runSummaryLabel({platforms:{zhihuishu:{...finishedRun,phase:'awaiting-review',review:1}}}),'待你核对');
+assert.equal(runSummaryLabel({}),'尚未开始');
+for(const phase of ['stopped','needs-human','failed','awaiting-review']){
+ const model=taskProgressModel(platformTaskStatus({platforms:{zhihuishu:{...finishedRun,phase}}},'zhihuishu'));
+ assert.notEqual(model.label,'平台已确认完成');assert.equal(model.percent,'81.4','仅有停止或待审状态不能显示任务完成');
+}
 assert.equal(taskProgressModel(platformTaskStatus({running:true,platforms:{chaoxing:{running:false},zhihuishu:dual.platforms.zhihuishu},progress:dual.progress},'chaoxing')).visible,false);
 assert.equal(totalProgressModel({platforms:{a:{total:2,done:5},b:{total:3,done:-2}}}).fraction,.4);
 const pages = [{ id: 1, role: 'verify-point', busy: true }, { id: 2, role: 'video', busy: false }, { id: 3, role: 'video', busy: true }, { id: 4, url: 'https://chat.deepseek.com/' }];

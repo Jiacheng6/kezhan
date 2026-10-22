@@ -71,12 +71,12 @@ export async function restoreReviewAnswers(frame, items, {expectedCount, restore
   const questions=await extractQuestions(frame);
   if(!questions.length)throw new Error('未读到作业题目，请检查登录或页面加载状态');
   if(expectedCount>0&&questions.length!==expectedCount)throw new Error('作业题数已变化，未恢复或提交，请人工核对');
-  const matches=matchReviewQuestions(items,questions);
+  const matches=matchReviewQuestions(items.filter(item=>item.autoFilled===true||item.filled?.verified===true||item.editedByHuman===true||item.savedAnswer===true),questions);
   const plan=[];
   // Validate the whole mapping and existing drafts before changing any answer.
   for(const pair of matches){
     const {item,question}=pair;
-    const approved=item.autoFilled===true||item.filled?.verified===true||item.editedByHuman===true;
+    const approved=item.autoFilled===true||item.filled?.verified===true||item.editedByHuman===true||item.savedAnswer===true;
     const value=question.qtype==='essay'?normalizeEssayText(item.textAnswer):item.letters;
     if(!restoreAnswers||!approved||!value?.length)continue;
     if(!['essay','single','multiple','judge'].includes(question.qtype))continue;

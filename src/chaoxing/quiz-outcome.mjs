@@ -9,6 +9,7 @@ export function pendingQuizItem(task, q, reason, extra = {}) {
     questionIndex: q.index, questionId: q.questionId || '', domIndex: q.domIndex,
     qtype: q.qtype, qtypeRaw: q.qtypeRaw,
     options: (q.options || []).map(o => ({ letter: o.letter, text: o.text })),
+    archive:{questionId:q.questionId||'',stemTextRaw:q.stemTextRaw||'',qtype:q.qtype,options:(q.options||[]).map(o=>({letter:o.letter,text:o.text}))},
     aiAnswer: '', aiError: reason, aiErrorCode: 'not-attempted',
     confidence: 'none', confidenceLabel: '待处理', letters: [], textAnswer: '',
     requiresReview: true, autoFilled: false, filled: null,

@@ -12,6 +12,7 @@ const { loadState } = await import('../../src/state.mjs');
 const browser = await chromium.launch({ executablePath: findEdge(), headless: true });
 try {
   const context = await browser.newContext();
+  await context.route('https://onlineweb.zhihuishu.com/**',route=>route.fulfill({contentType:'text/html; charset=utf-8',body:'<div id="student-page"><div id="sharingClassed"><dl><div class="courseName" onclick="window.open(\'https://studyvideoh5.zhihuishu.com/stuStudy\',\'_blank\')">示例课程</div><a href="https://stuonline.zhihuishu.com/report?courseId=course&recruitId=term">成绩</a></dl></div></div>'}));
   await context.route('https://studyvideoh5.zhihuishu.com/**', route => route.fulfill({
     contentType: 'text/html; charset=utf-8',
     body: `<meta charset="utf-8">

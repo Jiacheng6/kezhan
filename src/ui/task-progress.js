@@ -18,6 +18,8 @@ export function platformTaskStatus(status = {}, id) {
     if (stage === 'filled-all') { progress.questionIndex = Math.max(0, (progress.questionTotal || 1) - 1); progress.phase = 'done'; }
   }
   return { running: legacy ? status.running : run.running, progress,
+    completed:run.phase==='completed'&&run.total>0&&run.done===run.total,
+    outcomePhase:run.phase,
     runStats: id === 'chaoxing' ? status.runStats : null };
 }
 
@@ -28,6 +30,16 @@ export function totalProgressModel(status = {}) {
   const done = runs.reduce((n, run) => n + Math.min(count(run.done), count(run.total)), 0);
   const review = runs.reduce((n, run) => n + count(run.review), 0);
   return { total, done, review, running: runs.some(run => run.running), fraction: total ? done / total : 0 };
+}
+
+export function runSummaryLabel(status={}){
+ const runs=Object.values(status.platforms||{}).filter(run=>run.running||run.total>0||run.error);
+ if(status.reconRunning||status.zhihuishuScan?.running)return '正在扫描';
+ if(status.running||runs.some(run=>run.running))return '进行中';
+ if(status.runStats?.paused||runs.some(run=>['needs-human','failed'].includes(run.phase)||run.error))return '已暂停 · 待处理';
+ if(runs.some(run=>run.phase==='awaiting-review'||run.review>0))return '待你核对';
+ if(runs.length&&runs.every(run=>run.phase==='completed'&&run.done===run.total))return '已完成';
+ return status.runStats||runs.length?'已停止':'尚未开始';
 }
 
 export function taskProgressModel(status = {}) {
@@ -46,11 +58,13 @@ export function taskProgressModel(status = {}) {
     const answered = Math.max(0, Math.min(questionTotal, questionIndex + (phase === 'done' ? 1 : 0)));
     fraction = answered / questionTotal; kind = '答题进度'; detail = `已处理 ${answered} / ${questionTotal} 题`;
   } else if (finite(currentTime) && duration > 0) detail = `${clock(currentTime)} / ${clock(duration)}`;
+  const completed=status.completed===true&&!running&&!scanning;
+  if(completed){fraction=1;kind='任务完成进度';if(type==='video'&&detail)detail='播放记录 '+detail;}
   if (scanning) { fraction = null; kind = '课程扫描'; }
   const verifying = phase === 'verifying';
-  const label = stats.paused ? '已暂停 · 需要处理' : scanning ? '正在读取课程' : !running ? '已停止' : verifying ? '核对平台状态' : phase === 'quiz' ? '处理视频弹题' : phase === 'asking' ? '正在读取 AI 回答' : fraction === null ? '正在准备任务' : '任务进行中';
+  const label = completed?'平台已确认完成':stats.paused ? '已暂停 · 需要处理' : scanning ? '正在读取课程' : !running ? status.outcomePhase==='awaiting-review'?'待你核对 · 尚未提交':['needs-human','failed'].includes(status.outcomePhase)?'需要处理后继续':'已停止' : verifying ? '核对平台状态' : phase === 'quiz' ? '处理视频弹题' : phase === 'asking' ? '正在读取 AI 回答' : fraction === null ? '正在准备任务' : '任务进行中';
   const rate = p.playbackRate ?? current.playbackRate;
-  const hint = p.playbackPhase || current.playbackPhase || (verifying ? '以平台确认结果为准' : !running ? '保留当前进度，可继续学习' : fraction === null ? '页面就绪后显示实际进度' : '');
+  const hint = completed?'以平台任务点完成标记为准':p.playbackPhase || current.playbackPhase || (verifying ? '以平台确认结果为准' : !running ? '保留当前进度，可继续学习' : fraction === null ? '页面就绪后显示实际进度' : '');
   return { visible: running || scanning || !!p.current || !!stats.current, running: running || scanning, verifying, fraction,
     percent: fraction === null ? '—' : (fraction * 100).toFixed(1), kind, label,
     title: scanning ? '正在整理课程与章节任务' : p.current || [current.courseName, current.secNo, current.name].filter(Boolean).join(' · ') || '等待当前任务页面就绪',

@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {chromium} from 'playwright-core';import {fixturePng} from './fixture-png.mjs';
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/web-send-retry-'));
+const {findEdge}=await import('../../src/browser/launch.mjs');const {askWebImage,WEB_UI}=await import('../../src/ai/web-chat.mjs');const {AI_PROVIDERS}=await import('../../src/ai/providers.mjs');const {loadState}=await import('../../src/state.mjs');
+const b=await chromium.launch({executablePath:findEdge(),headless:true});
+try{
+ const p=await b.newPage();await p.route('https://www.doubao.com/**',r=>r.fulfill({contentType:'text/html; charset=utf-8',body:`<div id="answers"></div><div data-testid="chat_input"><div class="tiptap" contenteditable="true"></div><input type="file" accept="image/png"><div id="preview"></div><button data-testid="chat_input_send_button">发送</button></div><button data-testid="send_button" onclick="window.wrong++">别的发送按钮</button><script>window.sent=0;window.wrong=0;window.uploads=0;const input=document.querySelector('input'),editor=document.querySelector('.tiptap');input.onchange=()=>{window.uploads++;document.querySelector('#preview').innerHTML='<img alt="'+input.files[0].name+'" src="'+URL.createObjectURL(input.files[0])+'">'};document.querySelector('[data-testid=chat_input_send_button]').onclick=()=>{window.sent++;document.querySelector('#answers').insertAdjacentHTML('beforeend','<div data-testid="send_message"></div>');document.querySelectorAll('[data-testid=send_message]').item(window.sent-1).textContent=editor.innerText;editor.innerText='';document.querySelector('#preview').innerHTML='';document.querySelector('#answers').insertAdjacentHTML('beforeend','<div data-testid="receive_message"><div data-testid="message_text_content">答案：B</div></div>');};</script>`}));
+ await p.goto(AI_PROVIDERS.doubao.url);const imagePath=path.join(process.env.XXT_DATA_DIR,'fixture.png');fs.writeFileSync(imagePath,fixturePng());
+ const args={imagePath,prompt:'选择答案',taskKey:'retry-test',question:{questionId:'q1',qtype:'single',options:[{letter:'A',text:'甲'},{letter:'B',text:'乙'}]},freshChat:false};
+ // Real upload and native editor run, then simulate a remount precisely before
+ // activation. The application must preserve its own prepared draft on disk.
+ let blocked=false;
+ const remount=new Proxy(p,{get(target,key){if(key==='evaluate')return async(fn,arg)=>{if(!blocked&&arg?.prompt&&String(fn).includes('button.click();return true')){blocked=true;return false;}return target.evaluate(fn,arg);};const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;}});
+ let result=await askWebImage({...args,page:remount},AI_PROVIDERS.doubao);assert.equal(result.errorCode,'send-failed');assert.equal(await p.evaluate(()=>window.sent),0);assert.equal(Object.values(loadState().aiWebDrafts)[0].phase,'prepared');
+ result=await askWebImage({...args,page:p},AI_PROVIDERS.doubao);assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.answer,'答案：B');assert.deepEqual(await p.evaluate(()=>[window.sent,window.uploads,window.wrong]),[1,1,0],'只续发自己的原附件，不重复上传，不点击全局末尾发送按钮');assert.deepEqual(loadState().aiWebDrafts,{});
+ await p.locator('.tiptap').fill('用户自己的草稿');result=await askWebImage({...args,page:p},AI_PROVIDERS.doubao);assert.equal(result.errorCode,'draft-not-empty');assert.equal(await p.locator('.tiptap').innerText(),'用户自己的草稿');
+ // A button activation with no outgoing message is not reported as sent.
+ await p.locator('.tiptap').fill('');await p.evaluate(()=>document.querySelector('[data-testid=chat_input_send_button]').onclick=()=>window.noop=(window.noop||0)+1);
+ let onSent=0;result=await askWebImage({...args,page:p,taskKey:'no-receipt',onSent:()=>onSent++},AI_PROVIDERS.doubao);assert.equal(result.errorCode,'send-failed');assert.equal(onSent,0);assert.equal(result.sent,false);assert.equal(await p.evaluate(()=>window.noop),1);
+ result=await askWebImage({...args,page:p,taskKey:'no-receipt'},AI_PROVIDERS.doubao);assert.equal(result.errorCode,'send-failed');assert.equal(await p.evaluate(()=>window.noop),1,'不明确的发送结果不能自动重复点击');
+ console.log('✓ 豆包真实浏览器隔离页：控件重建后草稿续发、原图只上传一次、限定输入区、发送回执、未确认不重发、用户草稿保护');
+}finally{await b.close();}

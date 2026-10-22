@@ -1,4 +1,20 @@
 import {readZhihuishuPage} from './read-page.mjs';
+import {throwIfStopped} from '../../control.mjs';
+
+export async function waitZhihuishuVideoReady(page,{expectedKey,previousSource,shouldStop,timeoutMs=20000}={}){
+ const deadline=Date.now()+timeoutMs;let signature='',stableSince=0;
+ while(Date.now()<deadline){
+  throwIfStopped(shouldStop);const state=await readZhihuishuPage(page);
+  if(state.blockers.length)throw Error(state.blockers.includes('progress-save-failed')?'智慧树提示学习进度提交失败，已停止播放，请查看原网页':'智慧树需要本人处理验证，已停止播放');
+  if(state.videos.find(v=>v.active)?.key!==expectedKey){await page.waitForTimeout(100);continue;}
+  const media=await page.locator('video').evaluateAll(vs=>vs.length===1?{source:vs[0].currentSrc,duration:vs[0].duration,readyState:vs[0].readyState,seeking:vs[0].seeking,error:vs[0].error?.code}:null);
+  if(media?.error)throw Error('智慧树播放器报告媒体错误');
+  if(!media?.source||!Number.isFinite(media.duration)||media.duration<=0||media.readyState<2||media.seeking||previousSource&&media.source===previousSource){signature='';await page.waitForTimeout(100);continue;}
+  const next=JSON.stringify([expectedKey,media.source,media.duration]);if(next!==signature){signature=next;stableSince=Date.now();}
+  if(Date.now()-stableSince>=700)return {ready:true};
+  await page.waitForTimeout(100);
+ }throw Error('所选智慧树视频尚未加载就绪，未操作旧播放器，请稍后继续');
+}
 // The SPA can keep hidden copies of old dialogs in the DOM.
 const popup=page=>page.getByRole('dialog',{name:'弹题测验',exact:true}).filter({visible:true});
 /** Only the observed, non-graded in-video dialog. Never handles coursework/exams. */

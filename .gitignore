@@ -201,3 +201,16 @@ api-config.bin*
 !tools/test/test-zhihuishu-notices.mjs
 !tools/test/test-zhihuishu-network.mjs
 !tools/test/test-zhihuishu-video-multiple.mjs
+
+# Android local toolchains, signing material and generated output
+!tools/test/test-quiz-partial-retry.mjs
+!tools/test/test-web-send-retry.mjs
+!tools/test/test-browser-session.mjs
+!tools/test/test-zhihuishu-entry.mjs
+!tools/test/test-zhihuishu-video-ready.mjs
+android/.gradle/
+android/**/build/
+android/local.properties
+android/**/*.jks
+android/**/*.keystore
+android/app/src/main/assets/generated/

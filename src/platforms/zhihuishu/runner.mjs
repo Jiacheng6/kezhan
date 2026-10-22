@@ -1,14 +1,30 @@
 import { readZhihuishuPage, isZhihuishuUrl } from './read-page.mjs';
 import { dismissZhihuishuNotices } from './notices.mjs';
-import { handleZhihuishuVideoPrompt, readZhihuishuVideoPrompt, resumeZhihuishuVideo } from './video.mjs';
-import { newTaskPage, releasePage } from '../../browser/pages.mjs';
+import { handleZhihuishuVideoPrompt, readZhihuishuVideoPrompt, resumeZhihuishuVideo, waitZhihuishuVideoReady } from './video.mjs';
+import { releasePage, adoptTaskPage } from '../../browser/pages.mjs';
 import { setTaskStatus } from '../../state.mjs';
 import { log, notifyUser } from '../../logbus.mjs';
-export async function runZhihuishuVideo({ task, context, shouldStop, onProgress }) {
+import {openZhihuishuStudy} from './entry.mjs';
+let retainedVideo=null;
+export async function runZhihuishuVideo({ task, context, shouldStop=()=>false, onProgress=()=>{} },{openStudy=openZhihuishuStudy}={}) {
   if (task.platform !== 'zhihuishu' || task.type !== 'video' || !isZhihuishuUrl(task.studyUrl) || !task.platformTaskKey) throw Error('智慧树视频身份不完整');
-  const page = await newTaskPage(context, 'video'); let completed = false;
+  let page,entryPage,completed = false;
   try {
-    await page.goto(task.studyUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    if(retainedVideo&&!retainedVideo.page.isClosed()){
+      const old=retainedVideo;retainedVideo=null;
+      const state=await readZhihuishuPage(old.page).catch(()=>null);
+      if(state?.blockers.some(b=>b!=='progress-save-failed')){
+        retainedVideo=old;return {ok:false,phase:'needs-human',error:'上次智慧树视频仍需本人完成验证或处理提示，请先处理保留的原页面'};
+      }
+      if(old.key===task.key&&state?.course?.key===task.courseId&&!state.blockers.length){page=old.page;await adoptTaskPage(page,'video');}
+      else{
+        // These are exclusively our previous paused task pages. An abandoned
+        // progress session must not compete with the fresh native portal entry.
+        await old.page.locator('video').evaluateAll(vs=>vs.forEach(v=>v.pause())).catch(()=>{});
+        releasePage(old.page);await old.page.close();
+      }
+    }
+    if(!page)({page,entryPage}=await openStudy(context,task,{shouldStop}));
     await page.locator('li.video').first().waitFor({ timeout: 20000 });
     let state = await readZhihuishuPage(page);
     if (state.course?.key !== task.courseId) throw Error('打开的智慧树课程与选择不一致');
@@ -17,7 +33,11 @@ export async function runZhihuishuVideo({ task, context, shouldStop, onProgress 
     if (index < 0) throw Error('课程目录变化，请重新读取智慧树课程');
     if (state.videos[index].completion === 'completed') { completed = true; return { ok: true }; }
     setTaskStatus(task.key, { status: 'running', platform: 'zhihuishu' });
-    if (!state.videos[index].active) await page.locator('li.video').nth(index).click();
+    let previousSource;
+    if (!state.videos[index].active) {previousSource=await page.locator('video').evaluateAll(vs=>vs[0]?.currentSrc||'');await page.locator('li.video').nth(index).click();}
+    // The active row changes before the media source and its metadata do.
+    // Never resume the old video while the requested one is still loading.
+    if(!state.blockers.length)await waitZhihuishuVideoReady(page,{expectedKey:task.platformTaskKey,previousSource,shouldStop});
     const selectionDeadline = Date.now() + 20000;
     const deadline = Date.now() + 6 * 60 * 60 * 1000;
     let resumeFailures = 0;
@@ -74,17 +94,20 @@ export async function runZhihuishuVideo({ task, context, shouldStop, onProgress 
         }
       }
       const player = state.players[0];
-      onProgress({ percent: player?.duration ? player.currentTime / player.duration : null, currentTime: player?.currentTime, duration: player?.duration, taskType: 'video', platform: 'zhihuishu' });
+      onProgress({ percent: player?.duration ? player.currentTime / player.duration : null, currentTime: player?.currentTime, duration: player?.duration, playbackRate:player?.rate, taskType: 'video', platform: 'zhihuishu' });
       if (player?.error) throw Error('智慧树播放器报告错误');
       await page.waitForTimeout(1000);
     }
     throw Error('视频长时间未取得平台完成标记，请手动核对');
+  } catch(error){page||=error.taskPage;throw error;
   } finally {
-    await page.locator('video').evaluateAll(videos => videos.forEach(v => v.pause())).catch(() => {});
+    if(page&&!page.isClosed())await page.locator('video').evaluateAll(videos => videos.forEach(v => v.pause())).catch(() => {});
     setTaskStatus(task.key, { status: completed ? 'done' : 'pending', platform: 'zhihuishu' });
-    releasePage(page);
+    if(page)releasePage(page);
+    if(!completed&&page&&!page.isClosed()&&await readZhihuishuPage(page).then(s=>s.pageKind==='study'&&s.course?.key===task.courseId).catch(()=>false))retainedVideo={key:task.key,page};
+    if(entryPage&&entryPage!==page){releasePage(entryPage);await entryPage.close().catch(()=>{});}
     // Preserve unresolved pages for verification; close only confirmed completion.
-    if (completed) await page.close().catch(() => {});
+    if (completed&&page) await page.close().catch(() => {});
     log(`【智慧树】${task.courseName || ''} · ${task.name}：${completed ? '平台已确认完成' : '保留进度，尚未完成'}`, completed ? 'ok' : 'warn');
   }
 }

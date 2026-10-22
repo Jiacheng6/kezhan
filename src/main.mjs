@@ -37,6 +37,7 @@ import { onAIQueueChange } from './ai/queue.mjs';
 onAIQueueChange(aiQueue => patchStatus({ aiQueue }));
 const extraRuns = new PlatformRuns({ execute: args => args.task.type==='work'?runZhihuishuQuiz(args):runZhihuishuVideo(args), changed: sessions => patchStatus({ platformRuns: sessions }) });
 const startingPlatforms = new Set();
+const retryingReviews = new Set();
 const zhsScan = { running: false, stop: false };
 function startZhihuishuTasks(tasks) {
   const result = extraRuns.start('zhihuishu', tasks, ctx());
@@ -902,6 +903,30 @@ function buildHooks() {
         if(process.env.XXT_DESKTOP==='1'){await setBrowserVisible(true);patchStatus({browserVisible:true});}
         return result;
       });
+    },
+
+    retryReview: async req => {
+      const {taskKey}=await readJson(req,4096);
+      if(typeof taskKey!=='string'||!taskKey||taskKey.length>1000)throw Error('待审任务标识无效');
+      if(getStatus().running||recon.running||zhsScan.running||retryingReviews.size)throw Error('请先停止正在运行或扫描的任务，再继续待审作业');
+      if(!runtime.context||!getStatus().ready)throw Error('内置网页尚未就绪');
+      const items=listReviewItems().filter(i=>i.taskKey===taskKey);
+      if(!items.length||items.some(i=>i.qtype==='discussion'))throw Error('此记录不是可继续的测验草稿');
+      const task=buildChecklist()?.courses.flatMap(c=>c.tasks||[]).find(t=>t.key===taskKey);
+      if(!task||task.type!=='work')throw Error('课程清单中找不到这份作业，请先读取清单；已有答案保留');
+      if(loadState().taskPoints?.[taskKey]?.status==='done')throw Error('平台已确认完成，未重复作答');
+      retryingReviews.add(taskKey);
+      try{
+        if(platformOf(task)==='zhihuishu')return startZhihuishuTasks([{...task,reviewRetry:true}]);
+        if(!PERSON_ID)throw Error('请先登录学习通并重新检测登录');
+        await refreshQianwenStatus({create:true});
+        // A retry is restricted to one stored task and always stops for review.
+        // It never changes the user's course selection or submits an assignment.
+        void batchRunner.start({ctx:ctx(),tasks:[{...task,willHandle:true,reviewRetry:true}],command:{personId:PERSON_ID},qianwenPage:runtime.qianwenPage,
+          onUpdate:({running,stats})=>patchStatus({running,runStats:stats,progress:{done:stats.done,total:1,current:stats.current?.name||task.name,taskType:'work',questionIndex:stats.current?.questionIndex??null,questionTotal:stats.current?.questionTotal??null,phase:stats.current?.phase??null}})
+        }).catch(error=>{log(`继续作业失败：${error.message}`,'error');notifyUser('batch-error',{key:taskKey+':retry',detail:error.message});}).finally(()=>patchStatus({running:false,reviewCount:listReviewItems().length}));
+        return {started:true,count:1};
+      }finally{retryingReviews.delete(taskKey);}
     },
 
     /**

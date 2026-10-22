@@ -7,6 +7,7 @@ import {loadSettings} from '../config.mjs';
 import {log} from '../logbus.mjs';
 import {beginWebTurn,endWebTurn,webRequestMarker} from './web-turn.mjs';
 import {canPauseAI,waitForAIResume} from './resume.mjs';
+import {draftKey,readWebDraft,createWebDraft,saveWebDraft,clearWebDraft} from './web-draft.mjs';
 export const WEB_UI = {
   doubao: {
     composer: '[data-testid="chat_input"]',
@@ -144,10 +145,12 @@ export async function writeWebPrompt(page,provider,prompt,{shouldStop}={}) {
   const state=await webChatState(page,provider);
   if(!samePrompt(state.editorText,prompt))throw new Error('题干写入后回读不一致，已停止上传和发送');
 }
-export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=false,onSent=()=>{}},provider) {
+export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=false,onSent=()=>{},taskKey,question},provider) {
   // A unique user-turn marker also rejects remounted historical bubbles when
   // the virtual list recycles every DOM node. The model need not echo it.
-  if(provider.id==='doubao')prompt+=`\n\n本次提问标记：${randomUUID()}。标记仅用于区分本次提问，答案中不要重复标记。`;
+  const basePrompt=prompt,ownedKey=draftKey(provider.id,taskKey,question),owned=readWebDraft(ownedKey,prompt,page.url());
+  if(owned){prompt=owned.prompt;imagePath=owned.imagePath;freshChat=false;}
+  else if(provider.id==='doubao')prompt+=`\n\n本次提问标记：${randomUUID()}。标记仅用于区分本次提问，答案中不要重复标记。`;
   let started=Date.now(),pausedMs=0;
   const ui=WEB_UI[provider.id],settings=loadSettings().ai||{};
   const read=operation=>waitForRead(operation,{shouldStop,timeoutMs:10000,message:`${provider.label}页面读取超时`});
@@ -173,14 +176,19 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
     throwIfStopped(shouldStop);
     await dismissWebObstructions(page);
     let state=await readyState(),blocked=webBlock(state,provider);if(blocked)return blocked;
-    if(state.generating)return {ok:false,errorCode:'already-generating',error:`${provider.label}仍在回答上一条消息，请等待结束后再开始`};
+    if(state.generating&&!owned)return {ok:false,errorCode:'already-generating',error:`${provider.label}仍在回答上一条消息，请等待结束后再开始`};
     if(state.editorText&&!samePrompt(state.editorText,prompt))return {ok:false,errorCode:'draft-not-empty',error:`${provider.label}输入框已有草稿，请先处理，避免覆盖你的内容`};
     if(!fs.existsSync(imagePath))return {ok:false,errorCode:'image-missing',error:'题目图片不存在'};
     if(freshChat){await page.goto(provider.url,{waitUntil:'domcontentloaded',timeout:45000});state=await readyState();blocked=webBlock(state,provider);if(blocked)return blocked;}
     if(state.editorText&&!samePrompt(state.editorText,prompt))return {ok:false,errorCode:'draft-not-empty',error:`${provider.label}输入框已有草稿，请先处理，避免覆盖你的内容`};
     const composer=page.locator(ui.composer).filter({visible:true}).first();
+    const waitingOwned=!!owned&&owned.phase!=='prepared'&&!state.editorText;
+    if(owned?.phase==='activated'&&state.editorText)return {ok:false,errorCode:'send-failed',error:'上次发送结果尚未确认，请先在 AI 网页核对；已保留草稿，未重复发送'};
+    const continuingDraft=!!owned&&samePrompt(state.editorText,prompt)&&await read(()=>hasComposerAttachment(page,provider));
+    if(!waitingOwned&&!continuingDraft){
     const inputs=()=>read(()=>composer.locator('input[type="file"]').evaluateAll(inputs=>inputs.map((e,i)=>({i,accept:e.accept,selected:e.files.length,testid:e.getAttribute('data-testid')}))));
     if(await read(()=>hasComposerAttachment(page,provider)))return {ok:false,errorCode:'draft-attachment',error:`${provider.label}输入区已有附件，请先处理原草稿，避免混入其他题目`};
+    createWebDraft(ownedKey,{prompt,basePrompt,pageUrl:page.url(),imagePath});
     stage='editor';await writeWebPrompt(page,provider,prompt,{shouldStop});
     stage='upload';
     // Doubao mounts its file inputs after the first focus/text update. Never use
@@ -200,6 +208,8 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
       try {await page.locator(ui.upload).first().click({timeout:8000});await (await chooser).setFiles(imagePath,{timeout:15000});}
       catch(error){await chooser.catch(()=>{});throw error;}
     }
+    }
+    if(!waitingOwned){
     // Attachment confirmation must be in the composer, never a previous chat image.
     let ready=false;
     while(Date.now()-started<45000){
@@ -209,7 +219,7 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
         const editor=[...document.querySelectorAll(ui.editor)].find(e=>e.getClientRects().length);
         const composer=editor?.closest(ui.composer);
         if(composer){
-          const send=composer.querySelector(ui.send);
+          const send=[...composer.querySelectorAll(ui.send)].find(e=>e.getClientRects().length&&e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}));
           if(!send)return false;
           const text=composer.innerText||'';
           const image=[...composer.querySelectorAll('img')].some(e=>e.complete&&e.naturalWidth>0&&(e.alt===name||(e.getAttribute('src')||'').startsWith('blob:')));
@@ -224,13 +234,41 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
       if(ready)break;await interruptibleSleep(350,shouldStop);
     }
     if(!ready)return {ok:false,errorCode:'upload-not-ready',error:`${provider.label}未确认图片上传完成，已停止发送，避免发出无图题目`};
+    }
     const baseline=await read(()=>webChatState(page,provider));
-    turnMarker=await read(()=>beginWebTurn(page,provider,prompt));
+    turnMarker=await read(()=>beginWebTurn(page,provider,prompt,{resume:waitingOwned}));
     stage='send';
     await dismissWebObstructions(page);
-    throwIfStopped(shouldStop);await page.locator(ui.send).filter({visible:true}).last().click({timeout:10000});
+    if(!waitingOwned){
+      throwIfStopped(shouldStop);
+      // One activation of the identified site's native button. Native DOM
+      // activation doesn't depend on hidden Electron renderer hit-test frames.
+      // No fallback/reclick after an uncertain outcome.
+      saveWebDraft(ownedKey,{phase:'activated',pageUrl:page.url()});
+      const activated=await read(()=>page.evaluate(({ui,prompt})=>{
+        const visible=e=>!!e.getClientRects().length&&e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
+        const composers=[...document.querySelectorAll(ui.composer)].filter(visible);
+        if(composers.length!==1)return false;
+        const c=composers[0],editors=[...c.querySelectorAll(ui.editor)].filter(visible),buttons=[...c.querySelectorAll(ui.send)].filter(visible);
+        const normalize=s=>s.replace(/[\u200b\ufeff]/g,'').replace(/\s+/g,' ').trim();
+        if(editors.length!==1||buttons.length!==1||normalize(editors[0].value??editors[0].innerText??'')!==normalize(prompt))return false;
+        const button=buttons[0];if(button.disabled||button.getAttribute('aria-disabled')==='true'||button.classList.contains('ds-button--disabled'))return false;
+        if([...document.querySelectorAll('[role="dialog"],iframe[src*="captcha"],[class*="captcha"]')].some(visible))return false;
+        button.click();return true;
+      },{ui,prompt}));
+      if(!activated){saveWebDraft(ownedKey,{phase:'prepared'});throw Error('发送控件或草稿状态发生变化，已保留本题，未重复点击');}
+    }
+    const receiptDeadline=Date.now()+15000;
+    let confirmed=false;
+    while(Date.now()<receiptDeadline){
+      throwIfStopped(shouldStop);state=await readState();blocked=webBlock(state,provider);if(blocked)return blocked;
+      confirmed=provider.id==='doubao'?state.turnObserved&&!state.turnInvalidated:!state.editorText&&(state.generating||isCurrentWebAnswer(state,baseline,prompt));
+      if(confirmed)break;await interruptibleSleep(150,shouldStop);
+    }
+    if(!confirmed)return {ok:false,errorCode:'send-failed',sent:false,error:`${provider.label}未确认本题发送回执，草稿与已有答案已保留；不会重复点击发送`};
     sent=true;onSent();stage='answer';
-    log(`    ${provider.label}已发送图片题，等待回答`, 'info');
+    saveWebDraft(ownedKey,{phase:'sent',pageUrl:page.url()});
+    log(waitingOwned?`    ${provider.label}已找到本题发送记录，继续读取回答（不重复发送）`:`    ${provider.label}已发送图片题，等待回答`, 'info');
     let last='',stable=0,lastProgress=Date.now();
     const timeout=Math.max(60000,Number(settings.answerTimeoutMs)||240000),stuck=Math.max(15000,Number(settings.answerStuckMs)||60000);
     while(Date.now()-started<timeout){
@@ -240,7 +278,7 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
       const text=current?state.text:'';
       if(text!==last){lastProgress=Date.now();stable=0;}else if(text)stable++;
       last=text;
-      if(current&&text&&stable>=3&&!state.generating)return {ok:true,answer:text,provider:provider.id,waitedMs:Date.now()-started};
+      if(current&&text&&stable>=3&&!state.generating){clearWebDraft(ownedKey);return {ok:true,answer:text,provider:provider.id,waitedMs:Date.now()-started};}
       if(Date.now()-lastProgress>stuck){
         log(`    ${provider.label}回答核对：页面回答 ${state.count} 条；本次提问回执${state.turnObserved?'已捕获':'未捕获'}；回答关联${state.turnConfirmed?'已确认':'未确认'}${state.turnInvalidated?'；检测到其他提问':''}`, 'warn');
         return {ok:false,errorCode:'answer-not-confirmed',error:`${provider.label}本次回答未能确认，已保留本题；请打开软件内 AI 网页核对，不代表平台限流`,waitedMs:Date.now()-started};

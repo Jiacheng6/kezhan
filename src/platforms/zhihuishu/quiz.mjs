@@ -55,14 +55,14 @@ export async function saveZhihuishuDraft(page,{paperKey,timeoutMs=10000}={}){
 }
 
 /** Reloaded homework restores selections after the question skeleton mounts. */
-export async function verifyZhihuishuDraft(page,{paperKey,answers,timeoutMs=15000}={}){
+export async function verifyZhihuishuDraft(page,{paperKey,answers,timeoutMs=15000,allowPartial=false,total}={}){
  if(!paperKey||!Array.isArray(answers)||!answers.length)throw Error('缺少待核对的作业与答案');
  const deadline=Date.now()+timeoutMs;let stableAt=0,lastMismatch=[];
  while(Date.now()<deadline){
   if(page.isClosed()||zhihuishuHomeworkKey(page.url())!==paperKey)return {ok:false,reason:'paper-closed-or-changed'};
   const questions=await extractZhihuishuQuestions(page);lastMismatch=[];
   for(const answer of answers){const q=questions.find(q=>q.questionId===answer.questionId),ids=q?.options.filter(o=>o.selected).map(o=>o.optionId).sort()||[];if(!q||JSON.stringify(ids)!==JSON.stringify([...answer.optionIds].sort()))lastMismatch.push(answer.questionIndex);}
-  if(questions.length===answers.length&&!lastMismatch.length){if(!stableAt)stableAt=Date.now();if(Date.now()-stableAt>=600)return {ok:true,total:questions.length,matched:answers.length};}else stableAt=0;
+  if((allowPartial?questions.length===total:questions.length===answers.length)&&!lastMismatch.length){if(!stableAt)stableAt=Date.now();if(Date.now()-stableAt>=600)return {ok:true,total:questions.length,matched:answers.length};}else stableAt=0;
   await page.waitForTimeout(150);
  }
  return {ok:false,reason:'saved-answers-not-confirmed',mismatchedQuestions:lastMismatch};

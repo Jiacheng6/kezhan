@@ -4,11 +4,11 @@ import {observeDoubaoReceipt} from './doubao-receipt.mjs';
 const receipts=new WeakMap();
 export const webRequestMarker = prompt => /本次提问标记：([0-9a-f-]{36})。标记仅用于区分本次提问，答案中不要重复标记。$/.exec(prompt)?.[1] || '';
 
-export async function beginWebTurn(page, provider, prompt) {
+export async function beginWebTurn(page, provider, prompt, {resume=false}={}) {
   const marker = provider.id === 'doubao' ? webRequestMarker(prompt) : '';
   if (!marker) return '';
   receipts.get(page)?.dispose();
-  await page.evaluate(marker => {
+  await page.evaluate(({marker,resume}) => {
     const symbol = Symbol.for('xxt.web-chat-turn');
     globalThis[symbol]?.observer.disconnect();
     const root = node => node?.closest('[data-testid="union_message"]') || node;
@@ -19,7 +19,7 @@ export async function beginWebTurn(page, provider, prompt) {
       return nodes.filter(node => !nodes.some(other => other !== node && node.contains(other)));
     };
     const before = (a, b) => {const position=root(a).compareDocumentPosition(root(b));return !(position&Node.DOCUMENT_POSITION_DISCONNECTED)&&!!(position&Node.DOCUMENT_POSITION_FOLLOWING);};
-    const knownAnswers = new Set(answers(document).map(messageId).filter(Boolean));
+    const knownAnswers = new Set(resume?[]:answers(document).map(messageId).filter(Boolean));
     const turn = {marker, observed: false, answerId: '', answerNode: null, invalidated: false, receipt: false};
     const scan = scope => {
       const users = [...scope.querySelectorAll('[data-testid="send_message"]')].filter(node => (node.textContent || '').trim());
@@ -51,7 +51,7 @@ export async function beginWebTurn(page, provider, prompt) {
     });
     globalThis[symbol] = turn;
     turn.observer.observe(document, {subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['data-message-id']});
-  }, marker);
+  }, {marker,resume});
   const dispose=observeDoubaoReceipt(page,marker,
     ({answerId})=>page.evaluate(({marker,answerId})=>{
       const turn=globalThis[Symbol.for('xxt.web-chat-turn')];

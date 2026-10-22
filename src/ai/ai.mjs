@@ -508,14 +508,14 @@ export async function askImage(args) {
   }, { shouldStop: args.shouldStop, platform: args.platform || (args.taskKey?.startsWith('zhihuishu:') ? 'zhihuishu' : 'chaoxing'),
     taskKey: args.taskKey || null, questionId: String(args.question?.questionId || args.question?.qid || args.question?.id || ''), provider: selectedProvider(loadSettings()).id });
 }
-async function askImageCore({ page, imagePath, prompt = DEFAULT_PROMPT, freshChat = true, shouldStop, question, onSent=()=>{} }) {
+async function askImageCore({ page, imagePath, prompt = DEFAULT_PROMPT, freshChat = true, shouldStop, question, taskKey, onSent=()=>{} }) {
   throwIfStopped(shouldStop);
   prompt = questionPrompt(prompt, question);
   if(selectedProvider(loadSettings()).id==='api')return askApiImage({imagePath,prompt,shouldStop});
   if(!page)return {ok:false,errorCode:'not-logged-in',error:'没有可用的 AI 网页，请先打开所选平台并登录'};
   const provider=providerForUrl(page.url?.());
   if(typeof page.url==='function'&&!provider)return {ok:false,errorCode:'wrong-ai-page',error:'答题网页不属于所选官方 AI 平台，已停止发送'};
-  if(provider&&provider.id!=='qianwen')return askWebImage({page,imagePath,prompt,freshChat,shouldStop,onSent},provider);
+  if(provider&&provider.id!=='qianwen')return askWebImage({page,imagePath,prompt,freshChat,shouldStop,onSent,taskKey,question},provider);
   const started = Date.now();
   const cfg = loadSettings().ai || {};
   const retries = Math.max(0, Math.min(4, Number(cfg.askRetries ?? 2)));

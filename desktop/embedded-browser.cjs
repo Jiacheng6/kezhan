@@ -1,6 +1,7 @@
 const { BrowserWindow, WebContentsView, session, safeStorage, webContents } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
+const {renameWithRetry}=require('../src/atomic-file.cjs');
 
 function webURL(url) {
   if (url === 'about:blank') return true;
@@ -36,11 +37,11 @@ class EmbeddedBrowser {
     this.captureWindow = null; this.captureReady = Promise.resolve();
     this.bounds = null; this.suspended = true; this.closeSuspended = false;
     this.lastContentSize = window.getContentSize();
-    this.disposed = false; this.timer = null;
+    this.disposed = false; this.timer = null; this.cookiesReady=false;
     this.session.setUserAgent(this.session.getUserAgent().replace(/\sElectron\/\S+/g, '').replace(/\sxuexitong-auto\/\S+/g, ''));
     this.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     this.session.setPermissionCheckHandler(() => false);
-    this.cookieChanged = () => { clearTimeout(this.timer); this.timer = setTimeout(() => this.saveCookies().catch(() => this.log('内置网页登录保存失败，下次可能需要重新登录')), 700); };
+    this.cookieChanged = () => { if(!this.cookiesReady)return;clearTimeout(this.timer); this.timer = setTimeout(() => this.saveCookies().catch(() => this.log('内置网页登录保存失败，下次可能需要重新登录')), 700); };
     this.session.cookies.on('changed', this.cookieChanged);
     for (const event of ['resize', 'show', 'restore']) window.on(event, () => this.applyBounds());
   }
@@ -65,20 +66,32 @@ class EmbeddedBrowser {
     }).catch(error => { this.captureBootstrapError = error; });
   }
   async restoreCookies() {
-    if (!fs.existsSync(this.cookieFile) || !safeStorage.isEncryptionAvailable()) return;
-    try {
+    if(this.cookieRestore)return this.cookieRestore;
+    this.cookieRestore=(async()=>{try {
+      if (!fs.existsSync(this.cookieFile) || !safeStorage.isEncryptionAvailable()) return;
       const cookies = JSON.parse(safeStorage.decryptString(fs.readFileSync(this.cookieFile)));
+      if(!Array.isArray(cookies))throw Error('Invalid session backup');
+      // Chromium's persistent store may contain a newer login than the backup.
+      // Restore missing session cookies without replacing that current login.
+      const key=c=>JSON.stringify([c.domain,c.path||'/',c.name]);
+      const existing=new Set((await this.session.cookies.get({})).map(key));let restoredCount=0,failed=0;
       for (const c of cookies) {
         if (c.expirationDate && c.expirationDate <= Date.now() / 1000) continue;
+        if(existing.has(key(c)))continue;
         const url = `${c.secure ? 'https' : 'http'}://${c.domain.replace(/^\./, '')}${c.path || '/'}`;
         const restored = { url, name: c.name, value: c.value, path: c.path, secure: c.secure, httpOnly: c.httpOnly, sameSite: c.sameSite };
         if (!c.hostOnly) restored.domain = c.domain;
         if (c.expirationDate) restored.expirationDate = c.expirationDate;
-        await this.session.cookies.set(restored).catch(() => {});
+        try{await this.session.cookies.set(restored);restoredCount++;}catch{failed++;}
       }
+      await this.session.cookies.flushStore();
+      this.log(`内置网页登录恢复：补回 ${restoredCount} 项${failed?`，${failed} 项未恢复，请检查网站登录状态`:''}`);
     } catch { this.log('内置网页登录状态无法恢复，请重新登录；课程数据保留'); }
+    finally{this.cookiesReady=true;}})();
+    return this.cookieRestore;
   }
   async saveCookies() {
+    await this.cookieRestore;
     this.cookieSave = (this.cookieSave || Promise.resolve()).catch(() => {}).then(() => this.writeCookies());
     return this.cookieSave;
   }
@@ -87,7 +100,7 @@ class EmbeddedBrowser {
     const cookies = await this.session.cookies.get({});
     const bytes = safeStorage.encryptString(JSON.stringify(cookies));
     const temp = this.cookieFile + '.tmp';
-    fs.writeFileSync(temp, bytes); fs.renameSync(temp, this.cookieFile);
+    fs.writeFileSync(temp, bytes); renameWithRetry(temp, this.cookieFile);
     await this.session.cookies.flushStore();
   }
   snapshot() {

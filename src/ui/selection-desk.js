@@ -3,6 +3,7 @@ import { platformOf, platformBadge, platformInfo } from './platforms.js';
 import { recalc, willSummary, matchesQuery, courseVisible } from './selection.js';
 import { completionOf, courseCompletion, sectionCompletion } from './task-status.js';
 import { selectOnlyTask, clearRunSelection, selectCourseTasks } from './run-scope.js';
+import {runSummaryLabel} from './task-progress.js';
 
 const node = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const types = { video: '视频', work: '测验', doc: '文档', read: '阅读',discuss:'讨论' };
@@ -198,7 +199,7 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
   }
   function drawSession() {
     const status = snapshot().status || {};
-    $('deskRunState').textContent = status.runStats?.paused ? '已暂停 · 待处理' : status.reconRunning ? '正在扫描' : status.running ? '进行中' : status.runStats ? '已停止' : '尚未开始';
+    $('deskRunState').textContent = runSummaryLabel(status);
     const connected = status.ready && status.edge?.connected && status.login?.loggedIn;
     $('deskConnection').hidden = !!connected || !!status.running || !!status.reconRunning;
     $('deskConnectionMessage').textContent = !status.ready ? '正在准备服务…' : !status.edge?.connected ? '浏览器尚未连接' : '开始前请先登录学习通';

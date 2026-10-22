@@ -1,8 +1,9 @@
 // Real browser DOM, synthetic Doubao virtualization. No account or external requests.
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {chromium} from 'playwright-core';
+import {fixturePng} from './fixture-png.mjs';
 const root=process.cwd();const data=fs.mkdtempSync(path.join(root,'.desktop-test/virtual-turns-'));process.env.XXT_DATA_DIR=data;
 const {findEdge}=await import('../../src/browser/launch.mjs');const {askImage}=await import('../../src/ai/ai.mjs');const {webChatState}=await import('../../src/ai/web-chat.mjs');const {mutateState}=await import('../../src/state.mjs');
-mutateState(s=>{s.settings||={};s.settings.ai={...s.settings.ai,answerStuckMs:15000,answerTimeoutMs:60000}});
+mutateState(s=>{s.settings||={};s.settings.ai={...s.settings.ai,minIntervalMs:0,jitterMs:0,stuckCooldownMs:0,answerStuckMs:15000,answerTimeoutMs:60000}});
 const browser=await chromium.launch({executablePath:findEdge(),headless:true});
 try{const page=await browser.newPage();await page.route('**/*',route=>route.fulfill({contentType:'text/html',body:'<meta charset="utf-8"><div id="history"></div><div data-testid="chat_input"><div class="tiptap" contenteditable="true"></div><input type="file" accept="image/png" data-testid="upload-file-input"><div id="attachment"></div><button data-testid="chat_input_send_button">发送</button><button data-testid="chat_input_stop_button" hidden>停止</button></div>'}));await page.goto('https://www.doubao.com/chat/');
 await page.evaluate(()=>{
@@ -12,7 +13,7 @@ await page.evaluate(()=>{
  input.onchange=()=>{attachment.innerHTML='';const img=document.createElement('img');img.src=URL.createObjectURL(input.files[0]);img.alt=input.files[0].name;attachment.append(img)};
  document.querySelector('[data-testid=chat_input_send_button]').onclick=()=>{const prompt=editor.innerText;window.prompts.push(prompt);window.sent++;editor.innerText='';attachment.innerHTML='';history.innerHTML=history.innerHTML;history.append(union('user','',true),union('user',prompt+'\n展开全部\n今天 17:56'));if(window.mode==='old-only')return;const reply=union('assistant','答案：B');history.append(reply);for(let i=0;i<3;i++)history.firstElementChild.remove();if(window.mode==='stream'){stop.hidden=false;setTimeout(()=>{stop.hidden=true},6500)}};
 });
-const imagePath=path.join(root,'.desktop-test/hidden-screenshot/verified-hidden.png');
+const imagePath=path.join(data,'fixture.png');fs.writeFileSync(imagePath,fixturePng());
 for(let i=0;i<3;i++){const before=await webChatState(page,{id:'doubao'});const result=await askImage({page,imagePath,prompt:'只输出答案：B',freshChat:false});assert.equal(result.ok,true,JSON.stringify(result));assert.equal(result.answer,'答案：B');const after=await webChatState(page,{id:'doubao'});assert.equal(before.count,4);assert.equal(after.count,4);assert.equal(before.text,after.text);assert.notEqual(before.answerKey,after.answerKey);console.log('PASS identical answer with remounted history and constant count: '+(i+1))}
 await page.evaluate(()=>window.mode='stream');const started=Date.now();const streaming=await askImage({page,imagePath,prompt:'只输出答案：B',freshChat:false});assert.equal(streaming.ok,true);assert.ok(Date.now()-started>=6500,'must wait for completion, not only stable text');console.log('PASS visible partial text not accepted while generating');
 const prompts=await page.evaluate(()=>window.prompts);assert.equal(new Set(prompts).size,4,'every user turn must have a distinct marker');

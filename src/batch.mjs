@@ -205,6 +205,7 @@ export class BatchRunner {
               personId: command.personId,
               onProgress: onProg,
               shouldStop: stopFn,
+              reviewRetry: task.reviewRetry===true,
             });
             recordQuizResult(r);
           } else if(task.type==='discuss'){
