@@ -31,7 +31,7 @@ export async function answerZhihuishuHomework({page,askImage,imagePathFor,onStag
  const paperKey=initial[0].paperKey;
  if(previous&&(previous.paperKey!==paperKey||previous.total!==initial.length))throw Error('已存草稿的作业或题数改变，未复用答案');
  const answers=structuredClone(previous?.answers||[]);
- for(const answer of answers){const q=initial.find(q=>q.questionId===answer.questionId);if(!q||q.qtype!==answer.qtype||!answer.optionIds?.length||answer.optionIds.some(id=>q.options.filter(o=>o.optionId===id).length!==1)||JSON.stringify(q.options.map(o=>[o.optionId,o.text]))!==JSON.stringify(answer.options.map(o=>[o.optionId,o.text])))throw Error('已存题目或选项改变，未复用答案');}
+ for(const answer of answers){const q=initial.find(q=>q.questionId===answer.questionId),old=answer.options||[];if(!q||q.qtype!==answer.qtype||!answer.optionIds?.length||q.options.length!==old.length||answer.optionIds.some(id=>q.options.filter(o=>o.optionId===id).length!==1)||q.options.some(o=>old.filter(v=>v.optionId===o.optionId&&v.text===o.text).length!==1))throw Object.assign(Error('已存题目或选项内容改变，未复用答案'),{code:'TASK_IDENTITY_CHANGED'});}
  await checkpoint({paperKey,total:initial.length,questions:initial,answers,submitted:false});
  for(let index=0;index<initial.length;index++){
   throwIfStopped(shouldStop);const questions=await extractZhihuishuQuestions(page),visible=questions.filter(q=>q.visible);
@@ -42,7 +42,7 @@ export async function answerZhihuishuHomework({page,askImage,imagePathFor,onStag
    onStage({stage:'restore-saved',index:index+1,total:initial.length});
    const letters=q.options.filter(o=>cached.optionIds.includes(o.optionId)).map(o=>o.letter);
    const filled=await fillZhihuishuChoice(page,q,letters);if(!filled.ok)throw Error('已保存答案恢复回读不一致');
-   cached.letters=filled.selected;
+   cached.letters=filled.selected;cached.options=structuredClone(q.options);
   }else{
   onStage({stage:'capture',index:index+1,total:initial.length,qtype:q.qtype});const imagePath=imagePathFor(index+1);await captureZhihuishuQuestion(page,q,imagePath);
   throwIfStopped(shouldStop);onStage({stage:'ask-ai',index:index+1,total:initial.length});

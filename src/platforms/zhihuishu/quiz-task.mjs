@@ -138,7 +138,7 @@ export async function restoreZhihuishuReview(context,key){
   if(!current||current.questionId!==questions[index].questionId)throw Error('恢复题序变化，已停止回填');
   if(answer){
   const ids=new Set(answer.optionIds),options=current.options.filter(o=>ids.has(o.optionId));if(options.length!==ids.size)throw Error('题目选项改变，未使用旧答案');
-  const result=await fillZhihuishuChoice(page,current,options.map(o=>o.letter));if(!result.ok)throw Error('恢复答案回读不一致');restored.push({...answer,letters:options.map(o=>o.letter)});
+  const result=await fillZhihuishuChoice(page,current,options.map(o=>o.letter));if(!result.ok)throw Error('恢复答案回读不一致');restored.push({...answer,letters:options.map(o=>o.letter),options:structuredClone(current.options)});
   }
   if(index<last){await page.getByRole('button',{name:'下一题',exact:true}).click();await page.waitForFunction(id=>{const root=[...document.querySelectorAll('.examPaper_subject')].find(e=>e.getBoundingClientRect().width);return root?.querySelector('.subject_num [id^=anchor_]')?.id==='anchor_'+id;},questions[index+1].questionId,{timeout:15000});}
  }

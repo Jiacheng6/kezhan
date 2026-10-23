@@ -1,4 +1,4 @@
-import {isZhihuishuUrl} from './read-page.mjs';
+import {isZhihuishuUrl,readZhihuishuPage} from './read-page.mjs';
 export function zhihuishuHomeworkKey(value){
  try{const u=new URL(value);if(!isZhihuishuUrl(value)||u.hostname!=='onlineexamh5new.zhihuishu.com'||!u.hash.startsWith('#/webExamList/dohomework/'))return null;const parts=u.hash.split('?')[0].split('/').slice(3);return parts.length>=6&&parts.every(Boolean)?'zhihuishu:homework:'+parts.map(encodeURIComponent).join(':'):null;}catch{return null;}
 }
@@ -14,7 +14,7 @@ export async function extractZhihuishuQuestions(page){
    const input=e.querySelector('input[type=radio],input[type=checkbox]'),body=text(e.querySelector('.node_detail'));
    const label=[...e.querySelectorAll('span')].map(text).find(s=>/^[A-Z][.．、]$/.test(s))||'';const displayLetter=label.replace(/[.．、]$/,'');
    const truth=/^(对|正确|是|true)$/i.test(body)?'true':/^(错|错误|否|false)$/i.test(body)?'false':null;
-   return {letter:qtype==='judge'?(truth||displayLetter):displayLetter,displayLetter,optionId:input?.value||null,text:body,domIndex:optionIndex,selected:!!input?.checked||selectedIds.includes(String(input?.value))||!!e.querySelector('.ABCase.onChecked,.node_detail.onChecked')};
+   return {letter:qtype==='judge'?(truth||displayLetter):displayLetter,displayLetter,optionId:input?.value||null,text:body,domIndex:optionIndex,selected:!!input?.checked||selectedIds.includes(String(input?.value))||!!e.querySelector('.ABCase.onChecked,.mr10.onChecked,.node_detail.onChecked')};
   });
   return {questionId,questionIndex:Number(text(root.querySelector('.subject_num')).replace(/\D/g,''))||null,domIndex,qtype,qtypeRaw:raw,visible:!!root.getBoundingClientRect().width,requiresImage:true,options,selected:options.filter(o=>o.selected).map(o=>o.letter)};
  }));
@@ -28,9 +28,24 @@ export async function fillZhihuishuChoice(page,question,letters){
  if(!['single','multiple','judge'].includes(current.qtype))throw Error('当前题型尚未验证');
  const chosen=[...new Set(letters||[])];if(!chosen.length||chosen.length!==(letters||[]).length||current.qtype!=='multiple'&&chosen.length!==1||chosen.some(l=>!current.options.some(o=>o.letter===l))||new Set(current.options.map(o=>o.letter)).size!==current.options.length)throw Error('答案不能唯一映射到本题选项');
  const root=page.locator('.examPaper_subject').nth(current.domIndex);
- for(const option of current.options){const need=chosen.includes(option.letter);if(need!==option.selected&&(current.qtype==='multiple'||need))await root.locator('.subject_node .nodeLab .label').nth(option.domIndex).click();}
- const after=(await extractZhihuishuQuestions(page)).find(q=>q.questionId===question.questionId);const expected=[...chosen].sort();
- if(JSON.stringify([...after.selected].sort())!==JSON.stringify(expected))return {ok:false,reason:'selection-readback-mismatch',selected:after.selected};
+ const readback=async()=>{
+  const state=await readZhihuishuPage(page);if(state.blockers.length)throw Object.assign(Error('智慧树回填被网页验证或提示阻挡，保留本题'),{code:state.blockers.includes('user-consent')?'USER_CONSENT_REQUIRED':state.blockers.includes('progress-save-failed')?'PROGRESS_SAVE_FAILED':'VERIFICATION_REQUIRED'});
+  const q=(await extractZhihuishuQuestions(page)).find(q=>q.questionId===question.questionId);
+  if(!q?.visible||q.qtype!==current.qtype||fingerprint(q)!==fingerprint(current))throw Object.assign(Error('回填期间题目或选项身份改变，已停止'),{code:'TASK_IDENTITY_CHANGED'});
+  return q;
+ };
+ for(const option of current.options){
+  const need=chosen.includes(option.letter),before=await readback();
+  if(need!==before.options[option.domIndex].selected&&(current.qtype==='multiple'||need)){
+   await root.locator('.subject_node .nodeLab .label').nth(option.domIndex).click();
+   const deadline=Date.now()+5000;let changed=false;
+   while(Date.now()<deadline){const q=await readback();if(q.options[option.domIndex].selected===need){changed=true;break;}await page.waitForTimeout(100);}
+   if(!changed)return {ok:false,reason:'selection-readback-mismatch',selected:(await readback()).selected};
+  }
+ }
+ const expected=[...chosen].sort(),deadline=Date.now()+5000;let after,stableAt=0;
+ while(Date.now()<deadline){after=await readback();if(JSON.stringify([...after.selected].sort())===JSON.stringify(expected)){stableAt||=Date.now();if(Date.now()-stableAt>=250)break;}else stableAt=0;await page.waitForTimeout(100);}
+ if(!stableAt||Date.now()-stableAt<250)return {ok:false,reason:'selection-readback-mismatch',selected:after.selected};
  return {ok:true,selected:after.selected,questionId:after.questionId};
 }
 export async function saveZhihuishuDraft(page,{paperKey,timeoutMs=10000}={}){

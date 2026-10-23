@@ -12,5 +12,10 @@ mode='close';const closed=await context.newPage();await closed.exposeFunction('f
 mode='single';await p.reload();[q]=await extractZhihuishuQuestions(p);await p.evaluate(()=>setTimeout(()=>document.querySelector('input[value="a-id"]').closest('.nodeLab').querySelector('.node_detail').classList.add('onChecked'),300));const restored=await verifyZhihuishuDraft(p,{paperKey:q.paperKey,answers:[{questionId:q.questionId,questionIndex:1,optionIds:['a-id']}],timeoutMs:2000});assert.equal(restored.ok,true,'应等待异步恢复后稳定核对');
 await p.reload();await p.locator('.el-message__content').evaluate(e=>{e.textContent='保存成功！';setTimeout(()=>{e.textContent=''},250)});result=await saveZhihuishuDraft(p,{paperKey:q.paperKey});assert.equal(result.ok,true);assert.equal(result.confirmed,true,'不能把上一条保存提示当作本次暂存成功');
 assert.equal(zhihuishuHomeworkKey('https://example.com/#/webExamList/dohomework/a/b/c/d/e/f'),null);assert.equal(zhihuishuHomeworkKey('https://onlineexamh5new.zhihuishu.com/stuExamWeb.html#/webExamList/exam/a'),null);
+mode='multiple';shuffle=false;await p.reload();
+await p.locator('.nodeLab .label').evaluateAll(es=>{window.fixtureClicks=0;for(const e of es)e.onclick=()=>{window.fixtureClicks++;setTimeout(()=>e.querySelector('.mr10').classList.toggle('onChecked'),350);};});
+[q]=await extractZhihuishuQuestions(p);assert.equal((await fillZhihuishuChoice(p,q,['A','C'])).ok,true);assert.equal(await p.evaluate(()=>window.fixtureClicks),2,'异步勾选只点击一次，不反复切换');assert.deepEqual((await extractZhihuishuQuestions(p))[0].selected,['A','C']);
+await p.reload();await p.locator('.nodeLab .label').first().evaluate(e=>{e.onclick=()=>{const mask=document.createElement('div');mask.className='yidun_popup';mask.style='position:fixed;inset:0';document.body.append(mask);};});
+[q]=await extractZhihuishuQuestions(p);await assert.rejects(fillZhihuishuChoice(p,q,['A']),e=>e.code==='VERIFICATION_REQUIRED','点击后出现验证应保留原题，不能当作选中成功');
 console.log('✓ 智慧树章节测试：单选/多选/判断、自定义选中回读、随机换序拦截、身份核对、暂存确认及保存后关页待核对通过');
 }finally{await b.close();}

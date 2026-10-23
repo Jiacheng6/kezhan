@@ -9,6 +9,11 @@ await assert.rejects(answerZhihuishuHomework({page:p,imagePathFor:n=>path.join(d
 assert.equal(partial.answers.length,1,'第一题应在第二题失败前已留检查点');await p.reload();const retried=[];
 const resumed=await answerZhihuishuHomework({page:p,previous:partial,imagePathFor:n=>path.join(data,'retry-'+n+'.png'),askImage:async({question})=>{retried.push(question.questionId);return {ok:true,answer:'答案：对'};}});
 assert.deepEqual(retried,['q2'],'只重试未完成的第二题');assert.equal(resumed.answers.length,2);assert.equal(resumed.submitted,false);await p.reload();
+await p.evaluate(()=>{for(const root of document.querySelectorAll('.examPaper_subject')){const parent=root.querySelector('.subject_node');[...parent.children].reverse().forEach(e=>parent.append(e));[...parent.querySelectorAll('.nodeLab')].forEach((e,i)=>e.querySelector('span').textContent=String.fromCharCode(65+i)+'.');}});
+const shuffledAsked=[];const shuffled=await answerZhihuishuHomework({page:p,previous:partial,imagePathFor:n=>path.join(data,'shuffle-'+n+'.png'),askImage:async({question})=>{shuffledAsked.push(question.questionId);return {ok:true,answer:'答案：对'};}});
+assert.deepEqual(shuffledAsked,['q2'],'重开打乱顺序后仍只问未完成题');assert.deepEqual(shuffled.answers[0].letters,['A'],'按稳定选项 ID 将旧 B 映射为新 A');assert.equal(shuffled.answers[0].options.find(o=>o.optionId==='1-B').letter,'A','待审显示同步新的字母顺序');
+await p.reload();await p.locator('input[value="1-B"]').locator('..').locator('.node_detail').evaluate(e=>e.textContent='内容确实发生改变');
+await assert.rejects(answerZhihuishuHomework({page:p,previous:partial,imagePathFor:()=>'',askImage:async()=>{throw Error('不得询问')}}),e=>e.code==='TASK_IDENTITY_CHANGED','相同 ID 内容变更仍须阻断');await p.reload();
 await assert.rejects(answerZhihuishuHomework({page:p,previous:{...partial,paperKey:'changed'},imagePathFor:()=>'',askImage:async()=>{throw Error('不得询问')}}),/作业或题数改变/);
 await p.reload();let calls=0;await assert.rejects(answerZhihuishuHomework({page:p,imagePathFor:n=>path.join(data,'bad-'+n+'.png'),askImage:async()=>{calls++;return {ok:true,answer:'图片看不清，无法确定'};}}),/未通过/);assert.equal(calls,1);assert.equal(await p.evaluate(()=>window.saved),0,'不明确的AI回答不能跳到下一题');
 console.log('✓ 智慧树整卷编排：渲染截图、逐题关联、判断映射、逐题检查点、下一题保存、不明确回答原题停止通过');
