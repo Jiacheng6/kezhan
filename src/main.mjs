@@ -35,7 +35,8 @@ import { runZhihuishuQuiz, restoreZhihuishuReview, submitZhihuishuReview, editZh
 import { platformOf } from './ui/platforms.js';
 import { onAIQueueChange } from './ai/queue.mjs';
 onAIQueueChange(aiQueue => patchStatus({ aiQueue }));
-const extraRuns = new PlatformRuns({ execute: args => args.task.type==='work'?runZhihuishuQuiz(args):runZhihuishuVideo(args), changed: sessions => patchStatus({ platformRuns: sessions }) });
+const extraRuns = new PlatformRuns({ execute: args => args.task.type==='work'?runZhihuishuQuiz(args):runZhihuishuVideo(args), changed: sessions => patchStatus({ platformRuns: sessions }),
+  onRestart:({task,result,error})=>log(`【智慧树】当前任务暂停，保留进度并重启一次（1/1）：${task.name||''} · ${result?.error||error?.message||'页面暂未恢复'}`,'warn') });
 const startingPlatforms = new Set();
 const retryingReviews = new Set();
 const zhsScan = { running: false, stop: false };
@@ -46,7 +47,11 @@ function startZhihuishuTasks(tasks) {
   const result = extraRuns.start('zhihuishu', plan.tasks, ctx());
   log(`【智慧树】开始 ${plan.tasks.length} 个任务；学习通队列独立运行，AI逐题排队`, 'info');
   void extraRuns.wait('zhihuishu').then(session => {
-    if (session.error) { log('【智慧树】任务中断：' + session.error, 'error'); notifyUser('batch-error', { key: `zhihuishu:${Date.now()}`, detail: '智慧树：' + session.error }); }
+    if (session.error) {
+      const attention=session.phase==='needs-human';
+      log(`【智慧树】${attention?'已暂停，需要处理':'任务中断'}：`+session.error,attention?'warn':'error');
+      notifyUser(attention?'zhihuishu-attention':'batch-error',{key:`zhihuishu:${Date.now()}`,detail:'智慧树：'+session.error});
+    }
     else notifyUser(session.phase === 'stopped' ? 'batch-stopped' : session.review ? 'batch-review' : 'batch-complete', { key: `zhihuishu:${Date.now()}`, detail: `智慧树：完成 ${session.done}/${session.total} 个任务，待审 ${session.review||0} 份` });
   });
   return {...result,skipped:plan.skipped,selected:plan.selected};

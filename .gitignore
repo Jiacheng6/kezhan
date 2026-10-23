@@ -211,6 +211,9 @@ api-config.bin*
 !tools/test/test-zhihuishu-video-ready.mjs
 !tools/test/test-zhihuishu-completion-recovery.mjs
 !tools/test/test-course-list-entry.mjs
+!tools/test/test-zhihuishu-stability.mjs
+!tools/test/test-task-recovery.mjs
+!tools/test/test-zhihuishu-restart.mjs
 android/.gradle/
 android/**/build/
 android/local.properties

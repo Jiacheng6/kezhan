@@ -18,7 +18,7 @@ import { installDefence, checkDefence } from '../browser/inject.mjs';
 import { newTaskPage, releasePage } from '../browser/pages.mjs';
 import { watchPopups } from './popup.mjs';
 import { watchVideoQuiz } from './videoquiz.mjs';
-import { registerKeptPage } from './quizrun.mjs';
+import { registerKeptPage,getKeptPage } from './quizrun.mjs';
 import { cardsUrl, openSectionCard, waitForAttachments } from './section.mjs';
 import { checkTaskTracking, readPointStatusFromPage } from './attach.mjs';
 import { skipDecision, describeSkip } from './skip.mjs';
@@ -478,7 +478,7 @@ export async function runDocTask({ ctx, task, personId, onProgress, shouldStop }
  * @param {Function} opts.onProgress 进度回调
  * @param {Function} opts.shouldStop 中止判据
  */
-export async function runVideoTask({ ctx, task, personId, onProgress, shouldStop, qianwenPage = null }) {
+export async function runVideoTask({ ctx, task, personId, onProgress, shouldStop, qianwenPage = null,restartTask=false }) {
   const settings = loadSettings();
   const started = Date.now();
 
@@ -499,6 +499,7 @@ export async function runVideoTask({ ctx, task, personId, onProgress, shouldStop
     events: [],
   };
 
+  if(restartTask){const old=getKeptPage(task.key)?.page;if(old&&!old.isClosed()){await old.locator('video').evaluateAll(vs=>vs.forEach(v=>v.pause())).catch(()=>{});releasePage(old);await old.close();}}
   const page = await newTaskPage(ctx, 'video');
   page.on('dialog', (d) => d.accept().catch(() => {}));
 

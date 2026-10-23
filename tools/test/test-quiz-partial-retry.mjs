@@ -26,5 +26,14 @@ try{
  result=await runQuizTask({ctx,qianwenPage:ai,task,personId:'fixture',reviewRetry:true},{solve});
  assert.match(result.error,/作答次数改变/);assert.deepEqual(asked,[1,2,3,3],'作答次数改变时不得询问或覆盖旧答案');
  assert.equal(loadState().reviewQueue.filter(i=>i.taskKey===task.key&&i.aiAnswer).length,3,'身份变化不能把已存答案覆盖为空白占位题');
- console.log('✓ 学习通三题实际执行器：前两题即时落盘、第三题失败、关页后恢复前两题、只重试第三题、零提交、作答次数变更保护');
+ const {BatchRunner}=await import('../../src/batch.mjs');attempt='one';asked.length=0;
+ const automaticTask={...task,key:'automatic-recovery-demo',willHandle:true,finished:false};
+ const originalKey=task.key;task.key=automaticTask.key;
+ const batch=new BatchRunner({runQuiz:args=>runQuizTask(args,{solve})});
+ await batch.start({ctx,qianwenPage:ai,command:{personId:'fixture'},tasks:[automaticTask]});
+ assert.deepEqual(asked,[1,2,3,3],'批量自动重启也只询问失败的第三题');
+ assert.equal(batch.stats.review,1);assert.equal(batch.stats.done,0);assert.equal(batch.stats.failed,0);
+ const saved=loadState().reviewQueue.filter(i=>i.taskKey===automaticTask.key);assert.equal(saved.length,3);assert.ok(saved.every(i=>i.aiAnswer));
+ task.key=originalKey;
+ console.log('✓ 学习通三题实际执行器：逐题落盘、仅失败题自动重试、关旧页重开后恢复草稿、零提交、作答次数变更保护');
 }finally{await b.close();}

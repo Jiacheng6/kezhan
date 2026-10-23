@@ -3,11 +3,11 @@ import { dismissZhihuishuNotices } from './notices.mjs';
 import { handleZhihuishuVideoPrompt, readZhihuishuVideoPrompt, resumeZhihuishuVideo, waitZhihuishuVideoReady } from './video.mjs';
 import { releasePage, adoptTaskPage } from '../../browser/pages.mjs';
 import { setTaskStatus } from '../../state.mjs';
-import { log, notifyUser } from '../../logbus.mjs';
+import { log } from '../../logbus.mjs';
 import {openZhihuishuStudy} from './entry.mjs';
 import {syncZhihuishuVideoCompletions} from './catalog.mjs';
 let retainedVideo=null;
-export async function runZhihuishuVideo({ task, context, shouldStop=()=>false, onProgress=()=>{} },{openStudy=openZhihuishuStudy}={}) {
+export async function runZhihuishuVideo({ task, context, shouldStop=()=>false, onProgress=()=>{},restartTask=false },{openStudy=openZhihuishuStudy}={}) {
   if (task.platform !== 'zhihuishu' || task.type !== 'video' || !isZhihuishuUrl(task.studyUrl) || !task.platformTaskKey) throw Error('智慧树视频身份不完整');
   let page,entryPage,completed = false,completionSignature='';
   const recordCompletions=state=>{
@@ -18,10 +18,14 @@ export async function runZhihuishuVideo({ task, context, shouldStop=()=>false, o
     if(retainedVideo&&!retainedVideo.page.isClosed()){
       const old=retainedVideo;retainedVideo=null;
       const state=await readZhihuishuPage(old.page).catch(()=>null);
-      if(state?.blockers.some(b=>b!=='progress-save-failed')){
-        retainedVideo=old;return {ok:false,phase:'needs-human',error:'上次智慧树视频仍需本人完成验证或处理提示，请先处理保留的原页面'};
+      recordCompletions(state||{videos:[]});
+      if(state?.blockers.includes('user-consent')){
+        retainedVideo=old;return {ok:false,phase:'needs-human',code:'USER_CONSENT_REQUIRED',error:'上次智慧树视频仍需本人处理承诺书，请先处理保留的原页面'};
       }
-      if(old.key===task.key&&state?.course?.key===task.courseId&&!state.blockers.length){page=old.page;await adoptTaskPage(page,'video');}
+      if(!restartTask&&state?.blockers.some(b=>b!=='progress-save-failed')){
+        retainedVideo=old;return {ok:false,phase:'needs-human',code:'VERIFICATION_REQUIRED',verificationPlatform:'zhihuishu',error:'上次智慧树视频仍需本人完成验证，请先处理保留的原页面'};
+      }
+      if(!restartTask&&old.key===task.key&&state?.course?.key===task.courseId&&!state.blockers.length){page=old.page;await adoptTaskPage(page,'video');}
       else{
         // These are exclusively our previous paused task pages. An abandoned
         // progress session must not compete with the fresh native portal entry.
@@ -37,7 +41,7 @@ export async function runZhihuishuVideo({ task, context, shouldStop=()=>false, o
     await dismissZhihuishuNotices(page);
     const index = state.videos.findIndex(v => v.key === task.platformTaskKey);
     if (index < 0) throw Error('课程目录变化，请重新读取智慧树课程');
-    if (state.videos[index].completion === 'completed') { completed = true; return { ok: true }; }
+    if (state.videos[index].completion === 'completed') { log('【智慧树】视频打开时已完成，跳过播放','info');completed = true; return { ok: true,phase:'already-finished' }; }
     setTaskStatus(task.key, { status: 'running', platform: 'zhihuishu' });
     let previousSource;
     if (!state.videos[index].active) {previousSource=await page.locator('video').evaluateAll(vs=>vs[0]?.currentSrc||'');await page.locator('li.video').nth(index).click();}
@@ -57,11 +61,9 @@ export async function runZhihuishuVideo({ task, context, shouldStop=()=>false, o
       if (state.blockers.length) {
         if (state.blockers.includes('progress-save-failed')) {
           const error = '智慧树提示学习进度提交失败，请在软件内按平台提示返回学堂重新进入；未确认任务完成';
-          notifyUser('batch-error', { key: task.key + ':progress-save-failed', detail: error });
           return { ok: false, phase: 'needs-human', error };
         }
-        notifyUser('ai-verification', { key: task.key + ':verification', detail: '智慧树需要人工验证，请在软件内网页完成；本平台保留当前进度，其他平台继续。' });
-        return { ok: false, phase: 'needs-human', error: '智慧树需要人工验证，完成后可重新开始续播' };
+        return { ok: false, phase: 'needs-human', code:state.blockers.includes('user-consent')?'USER_CONSENT_REQUIRED':'VERIFICATION_REQUIRED',verificationPlatform:'zhihuishu',error: '智慧树需要人工验证，完成后可重新开始续播' };
       }
       if (state.videos.find(v => v.key === task.platformTaskKey)?.completion === 'completed') { completed = true; return { ok: true }; }
       const current = state.videos.find(v => v.active);
@@ -106,12 +108,23 @@ export async function runZhihuishuVideo({ task, context, shouldStop=()=>false, o
       await page.waitForTimeout(1000);
     }
     throw Error('视频长时间未取得平台完成标记，请手动核对');
-  } catch(error){page||=error.taskPage;throw error;
+  } catch(error){
+    page||=error.taskPage;entryPage||=error.entryPage;
+    if(['LOGIN_REQUIRED','VERIFICATION_REQUIRED','USER_CONSENT_REQUIRED','PROGRESS_SAVE_FAILED'].includes(error.code))return {ok:false,phase:'needs-human',code:error.code,verificationPlatform:'zhihuishu',error:error.message};
+    // A verification overlay can appear between the state read and the click.
+    // Report that actual blocker instead of a generic click/timeout failure.
+    const latest=page&&!page.isClosed()?await readZhihuishuPage(page).catch(()=>null):null;
+    if(latest)recordCompletions(latest);
+    if(latest?.blockers.includes('human-verification'))return {ok:false,phase:'needs-human',code:'VERIFICATION_REQUIRED',verificationPlatform:'zhihuishu',error:'智慧树需要人工验证，请在软件内网页完成后继续，已完成记录保留'};
+    if(latest?.course?.key===task.courseId&&!latest.blockers.length&&latest.videos.find(v=>v.key===task.platformTaskKey)?.completion==='completed'){
+      completed=true;return {ok:true};
+    }
+    throw error;
   } finally {
     if(page&&!page.isClosed())await page.locator('video').evaluateAll(videos => videos.forEach(v => v.pause())).catch(() => {});
     setTaskStatus(task.key, { status: completed ? 'done' : 'pending', platform: 'zhihuishu' });
     if(page)releasePage(page);
-    if(!completed&&page&&!page.isClosed()&&await readZhihuishuPage(page).then(s=>s.pageKind==='study'&&s.course?.key===task.courseId).catch(()=>false))retainedVideo={key:task.key,page};
+    if(!completed&&page&&!page.isClosed()&&isZhihuishuUrl(page.url()))retainedVideo={key:task.key,page};
     if(entryPage&&entryPage!==page){releasePage(entryPage);await entryPage.close().catch(()=>{});}
     // Preserve unresolved pages for verification; close only confirmed completion.
     if (completed&&page) await page.close().catch(() => {});

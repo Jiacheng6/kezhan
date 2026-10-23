@@ -33,6 +33,7 @@ if (!process.env.XXT_DATA_DIR) {
 }
 
 const suite = [
+  ['任务单次重启 / 验证限次 / 草稿与提交保护', 'tools/test/test-task-recovery.mjs'],
   ['Windows 短暂文件占用 / 原文件保护', 'tools/test/test-atomic-file.mjs'],
   ['API 加密 / 图片请求 / 取消与错误隔离', 'tools/test/test-ai-api.mjs'],
   ['人工验证 / 同题显式续跑与停止', 'tools/test/test-ai-resume.mjs'],

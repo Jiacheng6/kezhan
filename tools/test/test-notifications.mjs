@@ -36,6 +36,7 @@ shown.at(-1).emit('failed');assert.equal(center.snapshot().items[0].delivery,'fa
 console.log(`✓ ${Object.keys(catalog).length} 种关键通知、系统投递、失败/不支持回退、去重、点击跳转、关闭未读及重启保留`);
 
 const zhsNotice=center.snapshot().items.find(n=>n.kind==='zhihuishu-login');assert.ok(zhsNotice);assert.match(zhsNotice.title,/智慧树/);center.activate(zhsNotice.id);assert.equal(opens.at(-1),'zhihuishu','智慧树登录通知不能跳到学习通');
+const zhsAttention=center.snapshot().items.find(n=>n.kind==='zhihuishu-attention');assert.ok(zhsAttention);assert.match(zhsAttention.title,/暂停/);center.activate(zhsAttention.id);assert.equal(opens.at(-1),'zhihuishu','智慧树验证或登录应定位智慧树网页');
 const {BatchRunner,classifyTaskResult}=await import('../../src/batch.mjs');
 const {queueUnanswered,AI_BLOCK_CODES}=await import('../../src/chaoxing/quiz-outcome.mjs');
 for(const code of ['editor-unavailable','upload-failed','upload-not-ready','send-failed','exception'])assert.ok(AI_BLOCK_CODES.has(code),'本地网页操作失败必须立即停批并保留原始错误，不能继续冒充 AI 限流');

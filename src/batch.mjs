@@ -10,9 +10,10 @@ import { loadSettings } from './config.mjs';
 import { log as writeLog, notifyUser } from './logbus.mjs';
 const log = (message, level) => writeLog(message, level, { platform: 'chaoxing' });
 import { runVideoTask, runDocTask, HANDLED_TYPES } from './chaoxing/runner.mjs';
-import { runQuizTask, recordQuizResult } from './chaoxing/quizrun.mjs';
+import { runQuizTask, recordQuizResult,dropKeptPage } from './chaoxing/quizrun.mjs';
 import {runDiscussionTask} from './chaoxing/discussion.mjs';
 import { selectedRunTasks } from './ui/run-scope.js';
+import {runWithTaskRestart,canRestartTask} from './task-recovery.mjs';
 import {
   loadState,
   setTaskStatus,
@@ -23,6 +24,7 @@ import {
   reconcile,
   nextPending,
   saveState,
+  mutateState,
 } from './state.mjs';
 
 /** 连续失败多少次就全局暂停（防雪崩式误操作） */
@@ -34,7 +36,7 @@ const CONSECUTIVE_FAIL_LIMIT = 3;
  * 返回：
  *   'done'        正常完成 / 已完成 / 非任务点
  *   'review'      尚未提交，待人工核对 —— 不计已完成
- *   'needs-human' 需要人（如视频弹窗题判不准）—— 不重试，整批暂停
+ *   'needs-human' 待处理；可恢复情况在记账前由恢复层重启一次
  *   'stopped'     用户主动中止 —— **不是失败**，保留 pending 下次续跑
  *   'blocked'     触发风控等硬障碍 —— 立刻停整批
  *   'failed'      真失败 —— 重试
@@ -168,10 +170,10 @@ export class BatchRunner {
          * 得等下一次整批运行才会再碰到它，等于没重试。
          */
         let r = null;
-        let lastTry = 0;
-        for (let tryIdx = 1; tryIdx <= settings.maxRetries; tryIdx += 1) {
+        let lastTry = 0,pauseRecoveryUsed=false;
+        const maxAttempts=Math.max(2,settings.maxRetries);
+        for (let tryIdx = 1; tryIdx <= maxAttempts; tryIdx += 1) {
           if (this.stopRequested) break;
-          lastTry = tryIdx;
           log(
             `[${this.stats.processed + 1}/${runnable.length}] ${task.secNo} ${task.name || task.sectionName}` +
               (tryIdx > 1 ? `（第 ${tryIdx} 次尝试）` : ''),
@@ -197,36 +199,45 @@ export class BatchRunner {
           };
           const stopFn = () => this.stopRequested;
 
-          if (task.type === 'work') {
-            r = await this.executors.runQuiz({
-              ctx,
-              qianwenPage: this.qianwenPage,
-              task,
-              personId: command.personId,
-              onProgress: onProg,
-              shouldStop: stopFn,
-              reviewRetry: task.reviewRetry===true,
-            });
-            recordQuizResult(r);
-          } else if(task.type==='discuss'){
-            r=await this.executors.runDiscussion({ctx,task,personId:command.personId,onProgress:onProg,shouldStop:stopFn,qianwenPage:this.qianwenPage});
-          } else if (task.type === 'video') {
-            r = await this.executors.runVideo({
-              ctx,
-              task,
-              personId: command.personId,
-              onProgress: onProg,
-              shouldStop: stopFn,
-              qianwenPage: this.qianwenPage,
-            });
-          } else {
-            r = await this.executors.runDoc({ ctx, task, personId: command.personId, onProgress: onProg, shouldStop: stopFn });
-          }
+          r=await runWithTaskRestart(async({restartTask})=>{
+            lastTry++;
+            if (task.type === 'work') {
+              r = await this.executors.runQuiz({
+                ctx,
+                qianwenPage: this.qianwenPage,
+                task,
+                personId: command.personId,
+                onProgress: onProg,
+                shouldStop: stopFn,
+                reviewRetry: task.reviewRetry===true,
+                restartTask,
+              });
+              recordQuizResult(r);
+            } else if(task.type==='discuss'){
+              r=await this.executors.runDiscussion({ctx,task,personId:command.personId,onProgress:onProg,shouldStop:stopFn,qianwenPage:this.qianwenPage});
+            } else if (task.type === 'video') {
+              r = await this.executors.runVideo({
+                ctx,
+                task,
+                personId: command.personId,
+                onProgress: onProg,
+                shouldStop: stopFn,
+                qianwenPage: this.qianwenPage,
+                restartTask:restartTask||tryIdx>1,
+              });
+            } else {
+              r = await this.executors.runDoc({ ctx, task, personId: command.personId, onProgress: onProg, shouldStop: stopFn });
+            }
+            return r;
+          },{task,shouldStop:stopFn,
+            retryWhen:(result,error)=>!pauseRecoveryUsed&&(!!error||['needs-human','blocked'].includes(classifyTaskResult(result))),
+            onRestart:()=>{pauseRecoveryUsed=true;setTaskStatus(task.key,{status:'running',note:'保留进度，自动重启当前任务一次'});log('    当前任务暂停，保留已完成内容并重启一次（1/1）','warn');}
+          });
 
           /*
            * 记账分类：完成 / 需人工 / 用户中止 / 硬障碍 / 失败。
-           * 前四种都不该重试 —— 尤其"用户中止"和"弹窗题等人"，
-           * 重试只会把同一条视频再播一遍。
+           * 可恢复的暂停已在上面的任务恢复层重启一次；这里不再
+           * 重启等待本人处理的任务，也不重启用户停止或待审确认。
            */
           const kind = classifyTaskResult(r);
           if (kind === 'done' || kind === 'review' || kind === 'stopped' || kind === 'needs-human') break;
@@ -244,8 +255,9 @@ export class BatchRunner {
           }
 
           // kind === 'failed' → 记下这次失败并重试
+          if(!canRestartTask(task,r))break;
           setTaskStatus(task.key, { retries: tryIdx, lastError: r.error, progress: r.progress });
-          if (tryIdx < settings.maxRetries) {
+          if (tryIdx < maxAttempts) {
             log(`    第 ${tryIdx} 次失败：${r.error} —— 重试中`, 'warn');
             await new Promise((res) => setTimeout(res, 2500));
           }
@@ -256,6 +268,10 @@ export class BatchRunner {
         if (kind === 'done') {
           this.stats.done += 1;
           this.stats.consecutiveFail = 0;
+          if(pauseRecoveryUsed||lastTry>1){
+            mutateState(s=>{s.handbook=(s.handbook||[]).filter(h=>h.key!==task.key);});
+            dropKeptPage(task.key);
+          }
           /*
            * 记下"这次其实是被跳过（本来就完成了）"的原因 ——
            * 执行器把 already-finished 也归到 done，用户在汇总里要能看出
@@ -316,7 +332,7 @@ export class BatchRunner {
             type: task.type,
             typeName: task.typeName,
             name: task.name,
-            reason: `重试 ${settings.maxRetries} 次仍失败：${reason}`,
+            reason: `尝试 ${lastTry||1} 次仍失败：${reason}`,
           });
           this.stats.failed += 1;
           this.stats.handbook += 1;

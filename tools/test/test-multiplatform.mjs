@@ -15,3 +15,6 @@ console.log('PASS: 合并课程、跨平台身份隔离、旧数据兼容、独�
 const progressTransitions=[];const sequential=new PlatformRuns({execute:async({onProgress})=>{onProgress({percent:1});return {ok:true};},changed:s=>progressTransitions.push(structuredClone(s))});
 sequential.start('zhihuishu',[{key:'one',name:'第一项',platform:'zhihuishu'},{key:'two',name:'第二项',platform:'zhihuishu'}]);await sequential.wait('zhihuishu');
 assert.equal(progressTransitions.find(s=>s.zhihuishu.current==='第二项').zhihuishu.progress,null,'切换下一项不能沿用上一项的100%');
+const reconciled=new PlatformRuns({execute:async({task})=>task.key==='already'?{ok:true,phase:'already-finished'}:{ok:true}});
+reconciled.start('zhihuishu',[{key:'already',platform:'zhihuishu'},{key:'new',platform:'zhihuishu'}]);await reconciled.wait('zhihuishu');
+assert.equal(reconciled.snapshot().zhihuishu.done,2);assert.equal(reconciled.snapshot().zhihuishu.skipped,1,'打开时已完成应单独记跳过，不能冒充本轮新完成');

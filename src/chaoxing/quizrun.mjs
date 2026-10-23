@@ -121,7 +121,7 @@ async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, sh
  * @param {Function} [opts.shouldStop]
  * @returns {Promise<object>} 结果摘要
  */
-export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress, shouldStop, reviewRetry=false }, {solve=solveOne}={}) {
+export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress, shouldStop, reviewRetry=false,restartTask=false }, {solve=solveOne}={}) {
   const settings = loadSettings();
   const started = Date.now();
 
@@ -143,6 +143,12 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
     elapsedSec: 0,
   };
 
+  if(restartTask){
+    const previous=getKeptPage(task.key),saved=loadState().keptPages?.[task.key]?.info;
+    if(saved?.submissionPending||isReviewLocked(task.key))return {...result,phase:'awaiting-review',submissionPending:!!saved?.submissionPending};
+    if(previous?.page&&!previous.page.isClosed()){releasePage(previous.page);await previous.page.close();}
+    // Keep persisted work identity and answers for the normal checkpoint match.
+  }
   const page = await newTaskPage(ctx, 'quiz');
   page.on('dialog', (d) => {if(!submittingPages.has(page))void d.accept().catch(() => {});});
   let workFrame = null, questions = [],validatedQuestions=false;

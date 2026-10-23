@@ -39,9 +39,19 @@ export async function readZhihuishuVideoPrompt(page){
  });
 }
 export async function resumeZhihuishuVideo(page,{expectedKey,timeoutMs=10000}={}){
- const state=await readZhihuishuPage(page),active=state.videos.find(v=>v.active);
- if(!expectedKey||active?.key!==expectedKey)throw Error('当前视频与指定任务不一致，已停止恢复播放');
+ if(!expectedKey)throw Error('当前视频与指定任务不一致，已停止恢复播放');
+ let state=await readZhihuishuPage(page);
+ const deadline=Date.now()+Math.min(timeoutMs,5000);
+ // At a video's final popup the site may switch the active row first, then
+ // publish its completion marker. Never click Play on the newly active video.
+ while(state.videos.find(v=>v.active)?.key!==expectedKey){
+  if(state.blockers.length)return {ok:false,phase:'needs-human',reason:'human-verification'};
+  if(state.videos.find(v=>v.key===expectedKey)?.completion==='completed')return {ok:true,phase:'completed'};
+  if(Date.now()>=deadline)throw Error('当前视频与指定任务不一致，已停止恢复播放');
+  await page.waitForTimeout(150);state=await readZhihuishuPage(page);
+ }
  if(state.blockers.length) return {ok:false,phase:'needs-human',reason:'human-verification'};
+ if(state.videos.find(v=>v.key===expectedKey)?.completion==='completed')return {ok:true,phase:'completed'};
  if(await readZhihuishuVideoPrompt(page))return {ok:false,phase:'needs-human',reason:'video-question-open'};
  const video=page.locator('video');if(await video.count()!==1)throw Error('无法唯一定位当前视频');
  const before=await video.evaluate(v=>({time:v.currentTime,paused:v.paused,ended:v.ended,error:v.error?.code||null}));

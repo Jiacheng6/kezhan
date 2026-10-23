@@ -1,6 +1,5 @@
 import fs from 'node:fs';import path from 'node:path';
 import {PATHS,loadSettings} from '../../config.mjs';
-import {notifyUser} from '../../logbus.mjs';
 import {askImage} from '../../ai/ai.mjs';import {selectedProvider,ensureProviderPage} from '../../ai/providers.mjs';
 import {throwIfStopped} from '../../control.mjs';import {mutateState,loadState,listReviewItems,setTaskStatus,clearReviewByTask} from '../../state.mjs';
 import {newTaskPage,releasePage,markSavedReviewPage} from '../../browser/pages.mjs';
@@ -59,12 +58,22 @@ export async function openZhihuishuTask(context,task,{shouldStop}={}){
  }
 }
 async function saveCurrent(page,{complete=true}={}){const button=page.getByRole('button',{name:'保存',exact:true});if(await button.count()!==1)throw Error('当前题保存按钮不唯一');await button.click();if(complete)await page.waitForFunction(()=>/完成率\s*100%/.test(document.body.innerText),null,{timeout:15000});}
-export async function runZhihuishuQuiz({task,context,shouldStop,onProgress=()=>{}},{ask=askImage,open=openZhihuishuTask}={}){
+export async function runZhihuishuQuiz({task,context,shouldStop,onProgress=()=>{},restartTask=false},{ask=askImage,open=openZhihuishuTask}={}){
  let page;
  try{
   const previous=saved(task.key);
   if(previous?.submitted)return {ok:true,phase:'submitted'};
-  if(previous?.answers?.length===previous?.total&&previous?.total>0)return {ok:true,phase:'awaiting-review'};
+  if(!restartTask&&previous?.answers?.length===previous?.total&&previous?.total>0)return {ok:true,phase:'awaiting-review'};
+  if(restartTask){
+   // Answers are checkpointed per question. Close only this task's old page,
+   // leaving the saved paper identity/answers intact for the normal restore path.
+   const old=getKeptPage(task.key)?.page;
+   if(old&&!old.isClosed()){
+    const state=await readZhihuishuPage(old).catch(()=>null);
+    if(state?.blockers.includes('user-consent'))return {ok:false,phase:'needs-human',code:'USER_CONSENT_REQUIRED',error:'请本人处理保留页面的承诺书'};
+    releasePage(old);await old.close();dropKeptPage(task.key);
+   }
+  }
   page=await open(context,task,{shouldStop});setTaskStatus(task.key,{status:'running',platform:'zhihuishu'});
   const provider=selectedProvider(loadSettings()),aiPage=await ensureProviderPage(context,provider);
   const directory=path.join(PATHS.answers,'zhihuishu',Date.now()+'-'+Math.random().toString(36).slice(2,8));fs.mkdirSync(directory,{recursive:true});
@@ -73,7 +82,12 @@ export async function runZhihuishuQuiz({task,context,shouldStop,onProgress=()=>{
    checkpoint:data=>checkpoint(task,{...data,url:page.url()}),onStage:stage=>onProgress({taskType:'work',phase:stage.stage,questionIndex:stage.index,questionTotal:stage.total})});
   await saveCurrent(page);await page.reload({waitUntil:'domcontentloaded'});const verify=await verifyZhihuishuDraft(page,result);if(!verify.ok)throw Error('保存后答案未匹配，已留在待审');
   checkpoint(task,{...result,url:page.url(),saved:true});return {ok:true,phase:'awaiting-review'};
- }catch(error){page||=error.taskPage;if(error.code==='STOPPED')return {ok:false,phase:'stopped'};if(error.code==='LOGIN_REQUIRED')notifyUser('zhihuishu-login',{key:task.key+':login',detail:error.message});return {ok:false,phase:'needs-human',error:error.message};}
+ }catch(error){
+  page||=error.taskPage;if(error.code==='STOPPED')return {ok:false,phase:'stopped'};
+  const state=page&&!page.isClosed()?await readZhihuishuPage(page).catch(()=>null):null;
+  const code=state?.blockers.includes('user-consent')?'USER_CONSENT_REQUIRED':state?.blockers.includes('human-verification')?'VERIFICATION_REQUIRED':error.code;
+  return {ok:false,phase:'needs-human',error:error.message,code,verificationPlatform:code==='VERIFICATION_REQUIRED'?'zhihuishu':undefined};
+ }
  finally{const hasReview=listReviewItems().some(i=>i.taskKey===task.key);setTaskStatus(task.key,{status:hasReview?'manual':'pending',platform:'zhihuishu'});
   if(page&&!page.isClosed()){registerKeptPage(task.key,page,{platform:'zhihuishu',course:task.courseName,secNo:task.secNo,name:task.name});markSavedReviewPage(page);releasePage(page);}
  }
