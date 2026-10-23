@@ -1,8 +1,22 @@
 import {verifyZhihuishuDraft,zhihuishuHomeworkKey} from './quiz.mjs';
 const attempts=new WeakMap();
 const confirmation=page=>page.locator('.el-message-box').filter({has:page.locator('.el-message-box__message').filter({hasText:/^\s*是否确认提交[?？]\s*提交后[,，]\s*批阅过的试卷不能再修改[!！]?\s*$/})});
-export async function readZhihuishuGrade(page){
+export async function readZhihuishuGrade(page,{task}={}){
  if(page.isClosed())return null;
+ const url=new URL(page.url());
+ if(url.hostname==='onlineexamh5new.zhihuishu.com'&&/^#\/webExamList\/checkHomework\/[^/]+\/[^/]+\/[^/]+\/[^/]+\/[^/?]+(?:\?|$)/.test(url.hash)){
+  const result=await page.evaluate(()=>{
+   const text=e=>(e?.innerText||'').replace(/\s+/g,'').trim();
+   const visible=e=>!!(e?.getBoundingClientRect().width&&e?.getBoundingClientRect().height)&&getComputedStyle(e).visibility!=='hidden';
+   const fields=label=>[...document.querySelectorAll('.examInfo.hasNotes > ul > li')].filter(e=>visible(e)&&text(e.querySelector('label'))===label).map(e=>text(e.querySelector('span')));
+   const scores=[...document.querySelectorAll('.examInfo.first-info > ul > li')].filter(e=>visible(e)&&/^得分[:：]?$/.test(text(e.querySelector('label')))).map(e=>text(e.querySelector('div')));
+   const course=fields('名称'),chapter=fields('对应章节');
+   return scores.length===1&&/^\d+(?:\.\d+)?$/.test(scores[0])&&course.length===1&&chapter.length===1?{score:Number(scores[0]),courseName:course[0],chapter:chapter[0]}:null;
+  });
+  if(!result)return null;
+  if(task){const normalized=value=>String(value||'').replace(/\s+/g,'');if(!task.courseName||!task.secNo||normalized(task.courseName)!==result.courseName||normalized(task.secNo)!==result.chapter)throw Object.assign(Error('成绩页课程或章节与当前任务不一致，未标记完成'),{code:'TASK_IDENTITY_CHANGED'});}
+  return {phase:'graded',...result};
+ }
  const text=await page.locator('body').innerText();const match=/你本次获得的成绩是\s*(\d+(?:\.\d+)?)\s*分/.exec(text);
  if(match)return {phase:'graded',score:Number(match[1])};
  if(/作业提交成功|试卷提交成功/.test(text))return {phase:'submitted',score:null};return null;

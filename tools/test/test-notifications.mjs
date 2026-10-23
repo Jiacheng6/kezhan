@@ -33,6 +33,20 @@ class BrokenNotification extends FakeNotification {show(){throw Error('OS blocke
 const broken=new NotificationCenter({dataDir:fs.mkdtempSync(path.join(root,'.desktop-test/notice-failed-')),Notification:BrokenNotification});
 assert.equal(broken.push({kind:'task-failed'}).delivery,'failed');assert.equal(broken.snapshot().unread,1);
 shown.at(-1).emit('failed');assert.equal(center.snapshot().items[0].delivery,'failed');
+const updateDir=fs.mkdtempSync(path.join(root,'.desktop-test/notice-update-'));
+const updateCenter=new NotificationCenter({dataDir:updateDir,Notification:FakeNotification});
+const oldUpdateError=updateCenter.push({kind:'update-error'});
+updateCenter.push({kind:'update-available'});updateCenter.push({kind:'update-ready'});
+const unrelated=updateCenter.push({kind:'task-failed'});
+const restartedCenter=new NotificationCenter({dataDir:updateDir,Notification:FakeNotification});
+assert.equal(restartedCenter.snapshot().items.find(n=>n.id===oldUpdateError.id).read,false);
+restartedCenter.resolveUpdateNotices();
+assert.ok(restartedCenter.snapshot().items.filter(n=>n.kind.startsWith('update-')).every(n=>n.read),'确认最新版后关闭跨重启残留的更新错误');
+assert.equal(restartedCenter.snapshot().items.find(n=>n.id===unrelated.id).read,false,'不能清除无关任务提醒');
+assert.equal(restartedCenter.snapshot().items.length,4,'保留历史便于回查');
+assert.equal(new NotificationCenter({dataDir:updateDir,Notification:FakeNotification}).snapshot().unread,1,'处理结果重启后保留');
+updateCenter.resolveUpdateNotices();
+assert.ok(!updateCenter.live.has(oldUpdateError.id),'同一进程中的旧系统提醒同时关闭');
 console.log(`✓ ${Object.keys(catalog).length} 种关键通知、系统投递、失败/不支持回退、去重、点击跳转、关闭未读及重启保留`);
 
 const zhsNotice=center.snapshot().items.find(n=>n.kind==='zhihuishu-login');assert.ok(zhsNotice);assert.match(zhsNotice.title,/智慧树/);center.activate(zhsNotice.id);assert.equal(opens.at(-1),'zhihuishu','智慧树登录通知不能跳到学习通');

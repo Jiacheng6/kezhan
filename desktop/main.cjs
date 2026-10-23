@@ -246,9 +246,7 @@ else {
       onStatus: (status) => {
         if (!mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:update-status', status);
         if (status.phase === 'current') {
-          for (const item of notifications.snapshot().items) {
-            if (!item.read && ['update-available', 'update-ready'].includes(item.kind)) notifications.read(item.id);
-          }
+          notifications.resolveUpdateNotices();
         }
         if (status.phase !== previousUpdatePhase) {
           previousUpdatePhase = status.phase;

@@ -45,6 +45,11 @@ class NotificationCenter {
       nativeSupported: this.nativeEnabled && !!this.Notification.isSupported(), saveError: this.saveError };
   }
   publish() { this.onState(this.snapshot()); }
+  resolveUpdateNotices() {
+    for (const item of this.items) {
+      if (!item.read && ['update-available', 'update-ready', 'update-error'].includes(item.kind)) this.read(item.id);
+    }
+  }
   save() {
     try {
       const temp = this.file + '.tmp'; fs.writeFileSync(temp, JSON.stringify(this.items)); fs.renameSync(temp, this.file); this.saveError = false;

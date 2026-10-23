@@ -9,7 +9,7 @@ export function canRestartTask(task,outcome,{thrown=false}={}){
   if(/submit|publish/.test(phase))return false;
   if(['awaiting-review','submitted','done','already-finished','no-tracking'].includes(phase))return false;
   if(outcome.ok&&!outcome.needsHuman&&!phase.startsWith('blocked-'))return false;
-  if(outcome.retryable===false||code==='USER_CONSENT_REQUIRED'||hardAI.has(outcome.aiErrorCode||code))return false;
+  if(outcome.retryable===false||['USER_CONSENT_REQUIRED','TASK_IDENTITY_CHANGED'].includes(code)||hardAI.has(outcome.aiErrorCode||code))return false;
   // The user explicitly requested ONE native task re-entry for Zhihuishu
   // verification. This neither answers nor manipulates the verification UI.
   if(code==='VERIFICATION_REQUIRED')return task.platform==='zhihuishu'&&outcome.verificationPlatform!=='ai';
