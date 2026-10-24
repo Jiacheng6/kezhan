@@ -22,11 +22,12 @@ assert.equal(doubaoReplyReceipt(ack+announce+finish,'local-current'),null,'trunc
 assert.equal(doubaoReplyReceipt(ack+announce+end,'local-current'),null,'unfinished answers must not be accepted');
 assert.equal(doubaoReplyReceipt(stream.replace('"msgid":"reply-current"','"msgid":"older-reply"'),'local-current'),null);
 assert.equal(doubaoReplyReceipt(stream+frame('STREAM_MSG_NOTIFY',{meta:{message_id:'second'}})+frame('SSE_REPLY_END',{msg_finish_attr:{msgid:'second'}}),'local-current'),null,'ambiguous multiple replies must remain unconfirmed');
-const page=new EventEmitter();let accepted=0,superseded=0;
-const dispose=observeDoubaoReceipt(page,marker,async value=>{assert.equal(value.answerId,'reply-current');accepted++;},async()=>{superseded++;});
+const page=new EventEmitter();let accepted=0,superseded=0,sent=0;
+const dispose=observeDoubaoReceipt(page,marker,async value=>{assert.equal(value.answerId,'reply-current');accepted++;},async()=>{superseded++;},async value=>{assert.equal(value.localId,'local-current');sent++;});
 page.emit('request',request());page.emit('response',{request:()=>request(),status:()=>200,text:async()=>stream});
-await new Promise(r=>setTimeout(r,10));assert.equal(accepted,1);assert.equal(superseded,0);
+await new Promise(r=>setTimeout(r,10));assert.equal(accepted,1);assert.equal(superseded,0);assert.equal(sent,1,'匹配的正常网页请求立即确认发送，不依赖折叠后的提示文字');
 page.emit('request',request('manual unrelated message'));await new Promise(r=>setTimeout(r,10));assert.equal(superseded,1);
+assert.equal(sent,1,'其他提问不能冒充本题发送');
 dispose();assert.equal(page.listenerCount('response'),0);assert.equal(page.listenerCount('request'),0);
 let resolveBody;const stop=observeDoubaoReceipt(page,marker,async()=>{accepted++;},async()=>{});
 page.emit('response',{request:()=>request(),status:()=>200,text:()=>new Promise(r=>{resolveBody=r;})});

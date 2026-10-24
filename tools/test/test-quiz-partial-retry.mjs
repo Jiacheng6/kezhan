@@ -19,8 +19,11 @@ try{
  let result=await runQuizTask({ctx,qianwenPage:ai,task,personId:'fixture'}, {solve});
  assert.equal(result.phase,'blocked-verification');assert.equal(result.answered,2);assert.equal(loadState().reviewQueue.filter(i=>i.taskKey===task.key).length,3);
  await result.workPage.close();
+ const {reportFailure,resetThrottle}=await import('../../src/ai/throttle.mjs');
+ reportFailure({errorCode:'empty-answer'});reportFailure({errorCode:'empty-answer'});
  result=await runQuizTask({ctx,qianwenPage:ai,task,personId:'fixture',reviewRetry:true},{solve});
  assert.deepEqual(asked,[1,2,3,3],'续跑只允许询问第三题，前两题复用并恢复');assert.equal(result.answered,3);assert.equal(result.phase,'awaiting-review');assert.equal(result.submitted,false);
+ resetThrottle();
  const frame=result.workPage.frames().find(f=>f.url().includes('/work/'));assert.equal(await frame.evaluate(()=>window.submissions),0);assert.ok((await frame.locator('textarea').evaluateAll(es=>es.map(e=>e.value))).every(Boolean));
  await result.workPage.close();attempt='different-attempt';
  result=await runQuizTask({ctx,qianwenPage:ai,task,personId:'fixture',reviewRetry:true},{solve});

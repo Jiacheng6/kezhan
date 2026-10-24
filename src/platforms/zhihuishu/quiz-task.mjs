@@ -6,9 +6,16 @@ import {newTaskPage,releasePage,markSavedReviewPage} from '../../browser/pages.m
 import {registerKeptPage,getKeptPage,dropKeptPage} from '../../chaoxing/quizrun.mjs';
 import {isZhihuishuUrl,readZhihuishuPage} from './read-page.mjs';import {scanGuard,waitScanPage} from './scan.mjs';
 import {dismissZhihuishuNotices} from './notices.mjs';import {answerZhihuishuHomework} from './quiz-run.mjs';
-import {extractZhihuishuQuestions,zhihuishuHomeworkKey,fillZhihuishuChoice,verifyZhihuishuDraft} from './quiz.mjs';
+import {extractZhihuishuQuestions,zhihuishuHomeworkKey,matchesZhihuishuResult,fillZhihuishuChoice,verifyZhihuishuDraft} from './quiz.mjs';
+import {readPlatformCatalog} from '../catalog.mjs';
 import {readZhihuishuGrade,submitZhihuishuHomework} from './quiz-submit.mjs';
 const saved=key=>loadState().quizzes?.[key];
+function namedTask(task){return task?.courseName?task:{...task,courseName:readPlatformCatalog().courses.find(c=>c.courseId===task?.courseId)?.name};}
+function reviewPage(context,record){
+ const matches=page=>page&&!page.isClosed()&&(zhihuishuHomeworkKey(page.url())===record.paperKey||matchesZhihuishuResult(record.paperKey,page.url()));
+ const kept=getKeptPage(record.task?.key)?.page;return matches(kept)?kept:context.pages().find(matches);
+}
+function recordSubmitted(key){clearReviewByTask(key);setTaskStatus(key,{status:'done',platform:'zhihuishu'});dropKeptPage(key);mutateState(s=>{s.quizzes[key].submitted=true;s.quizzes[key].phase='submitted';});}
 function checkpoint(task,data){
  mutateState(s=>{s.quizzes||={};s.quizzes[task.key]={...s.quizzes[task.key],...data,task,platform:'zhihuishu'};s.reviewQueue||=[];
  for(const question of data.questions||data.answers||[]){const answer=data.answers?.find(a=>a.questionId===question.questionId),id=task.key+':question:'+question.questionId,previous=s.reviewQueue.find(i=>i.id===id);const item={id,platform:'zhihuishu',taskKey:task.key,course:task.courseName,secNo:task.secNo,sectionName:task.name,...question,...answer,aiAnswer:answer?.rawAI||'',aiError:answer?null:'本题尚未完成，可继续重试',autoFilled:!!answer,confidence:answer?'high':'none',confidenceLabel:answer?'已核对选项':'待继续',validation:{safe:!!answer,errors:[]},status:'pending-review'};if(previous)Object.assign(previous,item);else s.reviewQueue.push(item);}});
@@ -53,6 +60,7 @@ export async function waitZhihuishuHomeworkEntry(page,task,{shouldStop,timeoutMs
  throw Error('智慧树本章作业列表、题面或已提交成绩尚未加载，未点击重做');
 }
 export async function openZhihuishuTask(context,task,{shouldStop}={}){
+ task=namedTask(task);
  if(task.platform!=='zhihuishu'||task.type!=='work'||!isZhihuishuUrl(task.studyUrl))throw Error('智慧树测验身份不完整');
  const page=await newTaskPage(context,'quiz');
  try{await page.addInitScript(scanGuard);await page.goto(task.studyUrl,{waitUntil:'domcontentloaded'});
@@ -80,6 +88,7 @@ export async function openZhihuishuTask(context,task,{shouldStop}={}){
 }
 async function saveCurrent(page,{complete=true}={}){const button=page.getByRole('button',{name:'保存',exact:true});if(await button.count()!==1)throw Error('当前题保存按钮不唯一');await button.click();if(complete)await page.waitForFunction(()=>/完成率\s*100%/.test(document.body.innerText),null,{timeout:15000});}
 export async function runZhihuishuQuiz({task,context,shouldStop,onProgress=()=>{},restartTask=false},{ask=askImage,open=openZhihuishuTask}={}){
+ task=namedTask(task);
  let page,completed=false;
  try{
   const previous=saved(task.key);
@@ -121,10 +130,11 @@ export async function runZhihuishuQuiz({task,context,shouldStop,onProgress=()=>{
  }
 }
 export async function restoreZhihuishuReview(context,key){
- const record=saved(key);if(!record?.task||!record.answers?.length)throw Error('智慧树待审草稿不完整');
- let page=getKeptPage(key)?.page;if(!page||page.isClosed())page=await openZhihuishuTask(context,record.task);
- const samePaper=zhihuishuHomeworkKey(page.url())===record.paperKey,grade=await readZhihuishuGrade(page,{task:record.task});
- if(grade&&(samePaper||grade.courseName&&grade.chapter)){clearReviewByTask(key);setTaskStatus(key,{status:'done'});dropKeptPage(key);mutateState(s=>{s.quizzes[key].submitted=true;});return {page,alreadySubmitted:true};}
+ const record=saved(key);if(!record?.task||!record.paperKey)throw Error('智慧树待审草稿不完整');
+ const task=namedTask(record.task);let page=reviewPage(context,record);if(!page)page=await openZhihuishuTask(context,task);
+ const samePaper=zhihuishuHomeworkKey(page.url())===record.paperKey,grade=await readZhihuishuGrade(page,{task,paperKey:record.paperKey});
+ if(grade&&(samePaper||matchesZhihuishuResult(record.paperKey,page.url()))){recordSubmitted(key);return {page,alreadySubmitted:true};}
+ if(!record.answers?.length)throw Error('智慧树待审草稿不完整');
  if(!samePaper)throw Error('重新打开的作业身份改变，未回填');
  const questions=await extractZhihuishuQuestions(page);
  if(questions.length!==record.total)throw Error('作业题数改变，已保留草稿');
@@ -146,10 +156,12 @@ export async function restoreZhihuishuReview(context,key){
  registerKeptPage(key,page,{platform:'zhihuishu',course:record.task.courseName,secNo:record.task.secNo,name:record.task.name});markSavedReviewPage(page);checkpoint(record.task,{...record,answers:restored,saved:true});return {page,restored:restored.length,total:record.total,ready:restored.length===record.total,missing:record.total-restored.length};
 }
 export async function submitZhihuishuReview(context,key){
+ await syncZhihuishuReviews(context,{keys:[key]});
+ if(saved(key)?.submitted)return {submitted:1,failed:0,details:[{key,ok:true,alreadySubmitted:true}]};
  const pending=saved(key);if(!pending?.total||pending.answers?.length!==pending.total)throw Error('仍有未完成题目，请先继续未完成题目；已保存答案不会重复询问 AI');
  const {page,alreadySubmitted}=await restoreZhihuishuReview(context,key);if(alreadySubmitted)return {submitted:1,failed:0,details:[{key,ok:true,alreadySubmitted:true}]};
- const record=saved(key),result=await submitZhihuishuHomework(page,{paperKey:record.paperKey,answers:record.answers,authorized:true});
- if(result.ok){clearReviewByTask(key);setTaskStatus(key,{status:'done',platform:'zhihuishu'});dropKeptPage(key);mutateState(s=>{s.quizzes[key].submitted=true;});}
+ const record=saved(key),result=await submitZhihuishuHomework({page,paperKey:record.paperKey,answers:record.answers,task:namedTask(record.task),authorized:true});
+ if(result.ok)recordSubmitted(key);
  return {submitted:result.ok?1:0,failed:result.ok?0:1,details:[{key,ok:result.ok,error:result.ok?null:result.reason||'平台提交结果尚未确认'}]};
 }
 export async function editZhihuishuReview(context,item,letters){
@@ -157,11 +169,12 @@ export async function editZhihuishuReview(context,item,letters){
  mutateState(s=>{const r=s.quizzes[item.taskKey],answer=r?.answers.find(a=>a.questionId===item.questionId);if(!answer)throw Error('草稿题目不存在');answer.letters=letters;answer.optionIds=options.map(o=>o.optionId);});
  await restoreZhihuishuReview(context,item.taskKey);return listReviewItems().find(i=>i.id===item.id);
 }
-export async function syncZhihuishuReviews(context){
+export async function syncZhihuishuReviews(context,{keys}={}){
  if(!context)return 0;let count=0;
- for(const key of new Set(listReviewItems().filter(i=>i.platform==='zhihuishu').map(i=>i.taskKey))){
+ for(const key of new Set(listReviewItems().filter(i=>i.platform==='zhihuishu'&&(!keys||keys.includes(i.taskKey))).map(i=>i.taskKey))){
   const record=saved(key);if(!record?.paperKey)continue;
-  const page=context.pages().find(p=>zhihuishuHomeworkKey(p.url())===record.paperKey);
-  if(page&&await readZhihuishuGrade(page)){clearReviewByTask(key);setTaskStatus(key,{status:'done',platform:'zhihuishu'});dropKeptPage(key);mutateState(s=>{s.quizzes[key].submitted=true;});count++;}
+  const page=reviewPage(context,record);
+  const grade=page&&await readZhihuishuGrade(page,{task:namedTask(record.task),paperKey:record.paperKey}).catch(()=>null);
+  if(grade){recordSubmitted(key);count++;}
  }return count;
 }

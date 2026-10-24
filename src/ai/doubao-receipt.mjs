@@ -30,10 +30,11 @@ export function doubaoReplyReceipt(body, localId) {
   return acknowledged&&ended&&ids.length===1?{answerId:ids[0]}:null;
 }
 
-export function observeDoubaoReceipt(page, marker, onReceipt, onSuperseded) {
+export function observeDoubaoReceipt(page, marker, onReceipt, onSuperseded, onSent = async () => {}) {
   let active=true;
   const onRequest=request=>{
     const turn=doubaoRequestTurn(request,marker);
+    if(active&&turn?.matches&&turn.localId)void onSent({localId:turn.localId}).catch(()=>{});
     if(active&&turn&&!turn.matches)void onSuperseded().catch(()=>{});
   };
   const onResponse=response=>{

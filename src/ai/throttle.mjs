@@ -93,7 +93,8 @@ export function reportFailure({ errorCode, error } = {}) {
     };
   }
 
-  current.consecutiveFail += 1;
+  // Editor/upload/send/identity failures are not evidence of provider rate
+  // limiting. Keep their actual error instead of poisoning future draft restores.
   return { shouldPause: false };
 }
 

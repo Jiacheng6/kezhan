@@ -59,7 +59,14 @@ export async function beginWebTurn(page, provider, prompt, {resume=false}={}) {
       if(turn.answerId&&turn.answerId!==answerId){turn.invalidated=true;turn.invalidatedReason='receipt-id-changed';return;}
       turn.observed=true;turn.receipt=true;turn.answerId=answerId;
     },{marker,answerId}),
-    ()=>page.evaluate(marker=>{const turn=globalThis[Symbol.for('xxt.web-chat-turn')];if(turn?.marker===marker){turn.invalidated=true;turn.invalidatedReason='superseded-request';}},marker));
+    ()=>page.evaluate(marker=>{const turn=globalThis[Symbol.for('xxt.web-chat-turn')];if(turn?.marker===marker){turn.invalidated=true;turn.invalidatedReason='superseded-request';}},marker),
+    ()=>page.evaluate(marker=>{
+      // A folded prompt can omit its trailing marker from the rendered DOM.
+      // The page's own matching POST proves send only; its reply still needs
+      // the exact response receipt or a verified DOM relationship.
+      const turn=globalThis[Symbol.for('xxt.web-chat-turn')];
+      if(turn?.marker===marker&&!turn.invalidated)turn.observed=true;
+    },marker));
   receipts.set(page,{marker,dispose});
   return marker;
 }

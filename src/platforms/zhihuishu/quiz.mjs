@@ -2,6 +2,16 @@ import {isZhihuishuUrl,readZhihuishuPage} from './read-page.mjs';
 export function zhihuishuHomeworkKey(value){
  try{const u=new URL(value);if(!isZhihuishuUrl(value)||u.hostname!=='onlineexamh5new.zhihuishu.com'||!u.hash.startsWith('#/webExamList/dohomework/'))return null;const parts=u.hash.split('?')[0].split('/').slice(3);return parts.length>=6&&parts.every(Boolean)?'zhihuishu:homework:'+parts.map(encodeURIComponent).join(':'):null;}catch{return null;}
 }
+// The site's result route preserves recruit/student-exam/exam/course/school;
+// only the homework route adds meetCourseType. Never match by title alone.
+export function matchesZhihuishuResult(paperKey,value){
+ try{
+  const prefix='zhihuishu:homework:',u=new URL(value);
+  if(typeof paperKey!=='string'||!paperKey.startsWith(prefix)||!isZhihuishuUrl(value)||u.hostname!=='onlineexamh5new.zhihuishu.com'||!u.hash.startsWith('#/webExamList/checkHomework/'))return false;
+  const expected=paperKey.slice(prefix.length).split(':'),actual=u.hash.split('?')[0].split('/').slice(3);
+  return expected.length===6&&actual.length===5&&actual.every(Boolean)&&actual.every((v,i)=>encodeURIComponent(v)===expected[i]);
+ }catch{return false;}
+}
 /** Question identity/options are DOM based; the displayed stem must be captured as an image. */
 export async function extractZhihuishuQuestions(page){
  const paperKey=zhihuishuHomeworkKey(page.url());if(!paperKey)throw Error('不是已识别的智慧树普通章节作业页面');

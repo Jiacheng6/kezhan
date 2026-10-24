@@ -320,7 +320,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
       {
         const st = throttleState();
         const limit = loadSettings().ai?.consecutiveFailLimit ?? 2;
-        if (st.consecutiveFail >= limit) {
+        if (solved.aiError && st.consecutiveFail >= limit) {
           result.phase = 'blocked-throttled';
           result.error = `AI连续 ${st.consecutiveFail} 次未正常返回（疑似限流），已停止`;
           result.needsHuman = `等待约 ${Math.round(st.cooldownLeftMs / 60000)} 分钟后重试，或减少每批题量`;

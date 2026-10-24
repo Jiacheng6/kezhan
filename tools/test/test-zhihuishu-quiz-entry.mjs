@@ -32,7 +32,7 @@ try{
  assert.equal(loadState().taskPoints[task.key].status,'done');assert.equal(loadState().quizzes[task.key].submitted,true);assert.ok(!listReviewItems().some(i=>i.taskKey===task.key));
  assert.equal((await runZhihuishuQuiz({task,context})).phase,'submitted');assert.equal(loadState().taskPoints[task.key].status,'done','finally 不能把已提交改回 pending');
  const restoreTask={...task,key:'restore-submitted'};
- mutateState(s=>{s.quizzes[restoreTask.key]={task:restoreTask,paperKey:'saved-paper',answers:[{questionId:'saved-question'}],total:1};s.reviewQueue.push({id:'restore-review',taskKey:restoreTask.key,status:'pending-review'});});
+ mutateState(s=>{s.quizzes[restoreTask.key]={task:restoreTask,paperKey:'zhihuishu:homework:t:w:c:s:0:fixture-type',answers:[{questionId:'saved-question'}],total:1};s.reviewQueue.push({id:'restore-review',taskKey:restoreTask.key,status:'pending-review'});});
  const restored=await restoreZhihuishuReview(context,restoreTask.key);assert.equal(restored.alreadySubmitted,true);assert.equal(loadState().taskPoints[restoreTask.key].status,'done');assert.equal(loadState().quizzes[restoreTask.key].submitted,true);assert.ok(!listReviewItems().some(i=>i.taskKey===restoreTask.key));await restored.page.close();
  chapter='第二章';await assert.rejects(openZhihuishuTask(context,task),e=>e.code==='TASK_IDENTITY_CHANGED');assert.equal(canRestartTask(task,{code:'TASK_IDENTITY_CHANGED',error:'不一致'}),false);
  const loginPage=await context.newPage();await loginPage.route('**/*',r=>r.fulfill({contentType:'text/html',body:'<p>login</p>'}));await loginPage.goto(loginUrl);await assert.rejects(waitZhihuishuHomeworkEntry(loginPage,task,{timeoutMs:1000,loginGraceMs:100}),e=>e.code==='LOGIN_REQUIRED');

@@ -26,4 +26,7 @@ assert.equal(isCurrentWebAnswer({...unmounted,turnInvalidated:true},baseline,mar
 assert.equal(AI_BLOCK_CODES.has('answer-not-confirmed'),true,'unconfirmed answer must pause immediately and remain recoverable');
 resetThrottle();reportFailure({errorCode:'answer-not-confirmed'});
 assert.equal(throttleState().cooldownLeftMs,0,'message matching failure must not impose a rate-limit cooldown');
+for(const errorCode of ['send-failed','upload-failed','editor-unavailable','exception','draft-not-empty'])reportFailure({errorCode});
+assert.equal(throttleState().consecutiveFail,0,'本地操作或消息归属失败不能积累成 AI 限流');
+reportFailure({errorCode:'empty-answer'});reportFailure({errorCode:'empty-answer'});assert.equal(throttleState().consecutiveFail,2,'真实空回答仍保留连续失败保护');resetThrottle();
 console.log('✓ repeated answers with constant virtualized counts, current prompt/image ownership, historical remount rejection, immediate pause');
