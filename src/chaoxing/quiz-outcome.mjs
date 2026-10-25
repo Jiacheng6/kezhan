@@ -28,3 +28,4 @@ export function queueUnanswered(result, task, questions, reason) {
 
 export const AI_BLOCK_CODES = new Set(['verification-required', 'rate-limited', 'not-logged-in', 'draft-not-empty', 'draft-attachment', 'already-generating', 'wrong-ai-page', 'editor-unavailable', 'upload-failed', 'upload-not-ready', 'send-failed', 'answer-not-confirmed', 'exception']);
 for(const code of ['api-not-configured','api-invalid-input','api-invalid-image','api-error','api-empty'])AI_BLOCK_CODES.add(code);
+AI_BLOCK_CODES.add('conversation-unavailable');

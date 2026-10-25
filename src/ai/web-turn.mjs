@@ -40,7 +40,7 @@ export async function beginWebTurn(page, provider, prompt, {resume=false}={}) {
       scan(document);
       const answer = turn.answerId ? answers(document).find(node => messageId(node) === turn.answerId)
         : turn.answerNode?.isConnected && [...document.querySelectorAll('[data-testid="send_message"]')].some(node => (node.textContent || '').includes(marker)) ? turn.answerNode : null;
-      if (answer && [...document.querySelectorAll('[data-testid="send_message"]')].some(node => (node.textContent || '').trim() && before(answer, node))) {turn.invalidated = true;turn.invalidatedReason='user-after-answer';}
+      if (answer && [...document.querySelectorAll('[data-testid="send_message"]')].some(node => ((node.textContent || '').trim()||node.querySelector('img')) && before(answer, node))) {turn.invalidated = true;turn.invalidatedReason='user-after-answer';}
       return {marker, observed: turn.observed, answer: turn.invalidated ? null : answer, answerId: turn.answerId, invalidated: turn.invalidated, invalidatedReason:turn.invalidatedReason||'', receipt: turn.receipt};
     };
     turn.observer = new MutationObserver(records => {

@@ -40,6 +40,8 @@ assert.equal(fs.readFileSync(path.join(app, 'src/ai/question-prompt.mjs')).equal
 assert.equal(fs.readFileSync(path.join(app, 'src/ai/web-chat.mjs')).equals(fs.readFileSync(path.join(ROOT, 'src/ai/web-chat.mjs'))), true, '发布包必须包含本次 AI 网页输入恢复修复');
   assert.equal(fs.readFileSync(path.join(app, 'src/ai/web-turn.mjs')).equals(fs.readFileSync(path.join(ROOT, 'src/ai/web-turn.mjs'))), true, '发布包必须包含提问卸载后的回答关联修复');
   assert.equal(fs.readFileSync(path.join(app, 'src/ai/doubao-receipt.mjs')).equals(fs.readFileSync(path.join(ROOT, 'src/ai/doubao-receipt.mjs'))), true, '发布包必须包含本次网页回执核对');
+assert.equal(fs.readFileSync(path.join(app, 'src/ai/doubao-image-recovery.mjs')).equals(fs.readFileSync(path.join(ROOT, 'src/ai/doubao-image-recovery.mjs'))), true, '发布包必须包含旧图片提问的严格归属恢复');
+assert.equal(fs.readFileSync(path.join(app, 'src/ai/web-draft.mjs')).equals(fs.readFileSync(path.join(ROOT, 'src/ai/web-draft.mjs'))), true, '发布包必须包含重启后原对话恢复');
 assert.equal(pkg.version, JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version);
 assert.equal(pkg.main, 'desktop/main.cjs');
 const archive = path.join(app, 'src/ui/library/archive');

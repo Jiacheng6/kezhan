@@ -6,8 +6,9 @@ import {interruptibleSleep,throwIfStopped,waitForRead} from '../control.mjs';
 import {loadSettings} from '../config.mjs';
 import {log} from '../logbus.mjs';
 import {beginWebTurn,endWebTurn,webRequestMarker} from './web-turn.mjs';
+import {recoverDoubaoImageTurn,readDoubaoImageCandidate} from './doubao-image-recovery.mjs';
 import {canPauseAI,waitForAIResume} from './resume.mjs';
-import {draftKey,readWebDraft,createWebDraft,saveWebDraft,clearWebDraft} from './web-draft.mjs';
+import {draftKey,readWebDraft,createWebDraft,saveWebDraft,clearWebDraft,savedWebConversation} from './web-draft.mjs';
 export const WEB_UI = {
   doubao: {
     composer: '[data-testid="chat_input"]',
@@ -176,6 +177,16 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
     throwIfStopped(shouldStop);
     await dismissWebObstructions(page);
     let state=await readyState(),blocked=webBlock(state,provider);if(blocked)return blocked;
+    const savedConversation=savedWebConversation(owned,page.url());
+    if(savedConversation){
+      if(state.generating)return {ok:false,errorCode:'already-generating',error:`${provider.label}当前对话仍在生成回答，请等待结束后恢复原题`};
+      if(state.editorText||await read(()=>hasComposerAttachment(page,provider)))return {ok:false,errorCode:'draft-not-empty',error:`${provider.label}当前对话有草稿，已保留；请先处理草稿，再恢复原题`};
+      throwIfStopped(shouldStop);
+      log(`    ${provider.label}正在恢复本题原对话，不重新上传或发送`, 'info');
+      await page.goto(savedConversation,{waitUntil:'domcontentloaded',timeout:45000});
+      state=await readyState();blocked=webBlock(state,provider);if(blocked)return blocked;
+      if(new URL(page.url()).pathname.replace(/\/$/,'')!==new URL(savedConversation).pathname.replace(/\/$/,''))return {ok:false,errorCode:'conversation-unavailable',error:`${provider.label}原对话未能恢复，已保留本题；请在 AI 网页核对原对话，不会重复发送`};
+    }
     if(state.generating&&!owned)return {ok:false,errorCode:'already-generating',error:`${provider.label}仍在回答上一条消息，请等待结束后再开始`};
     if(state.editorText&&!samePrompt(state.editorText,prompt))return {ok:false,errorCode:'draft-not-empty',error:`${provider.label}输入框已有草稿，请先处理，避免覆盖你的内容`};
     if(!fs.existsSync(imagePath))return {ok:false,errorCode:'image-missing',error:'题目图片不存在'};
@@ -259,9 +270,15 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
       if(!activated){saveWebDraft(ownedKey,{phase:'prepared'});throw Error('发送控件或草稿状态发生变化，已保留本题，未重复点击');}
     }
     const receiptDeadline=Date.now()+15000;
-    let confirmed=false;
+    let confirmed=false,recoveryAttempts=0,lastRecoveryAt=0;
     while(Date.now()<receiptDeadline){
       throwIfStopped(shouldStop);state=await readState();blocked=webBlock(state,provider);if(blocked)return blocked;
+      // History can hydrate after the editor. Keep polling until the original
+      // image/reply pair exists; do not miss it just because goto finished first.
+      if(waitingOwned&&provider.id==='doubao'&&!state.turnObserved&&!state.generating&&recoveryAttempts<2&&Date.now()-lastRecoveryAt>=2000&&await read(()=>page.evaluate(readDoubaoImageCandidate))){
+        recoveryAttempts++;lastRecoveryAt=Date.now();
+        if(await read(()=>recoverDoubaoImageTurn(page,owned,{shouldStop}))){log('    豆包原题图片与保存截图完全一致，已恢复对应回答（未重新发送）','info');state=await readState();}
+      }
       confirmed=provider.id==='doubao'?state.turnObserved&&!state.turnInvalidated:!state.editorText&&(state.generating||isCurrentWebAnswer(state,baseline,prompt));
       if(confirmed)break;await interruptibleSleep(150,shouldStop);
     }
