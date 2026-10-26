@@ -36,6 +36,8 @@ try{
  await assert.rejects(readZhihuishuGrade(page,{task:{secNo:'第二章'},paperKey:question.paperKey}),e=>e.code==='TASK_IDENTITY_CHANGED');
  assert.equal(await syncZhihuishuReviews(context),1);assert.equal(loadState().quizzes[legacyKey].submitted,true);assert.equal(loadState().taskPoints[legacyKey].status,'done');assert.equal(listReviewItems().filter(i=>i.taskKey===legacyKey).length,0);assert.equal(listReviewItems().filter(i=>i.taskKey===otherKey).length,1,'不能核销别份作业');
  assert.equal((await submitZhihuishuReview(context,legacyKey)).details[0].alreadySubmitted,true,'手动已交且本地答案缺失也不应再交');
+ mutateState(s=>s.reviewQueue.push({id:'late-stale-review',platform:'zhihuishu',taskKey:legacyKey,status:'pending-review'}));
+ assert.equal((await submitZhihuishuReview({pages:()=>[]},legacyKey)).submitted,1);assert.equal(listReviewItems().some(i=>i.taskKey===legacyKey),false,'持久化已交证据必须幂等核销后来残留的待审，不需要再次提交');
  const readOnly=await submitZhihuishuHomework({page,paperKey:question.paperKey,answers:[],authorized:true});assert.equal(readOnly.alreadySubmitted,true,'成绩页只读确认，不再打开提交按钮');
  console.log('✓ 实际待审入口→保存核对→确认一次→完成落盘；手动成绩页同步、旧记录缺课程名、部分草稿已交与跨作业隔离');
 }finally{await browser.close();}

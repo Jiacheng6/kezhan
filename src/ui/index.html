@@ -97,7 +97,7 @@
       <section class="card wide" id="handbookCard" style="display:none"><h2>需要你处理</h2><p class="hint">视频弹窗题以及直播、讨论等无法自动处理的任务会列在这里。视频弹窗请在保留的学习通页面中手动作答。</p><div id="handbookBody"></div></section>
     </section>
     <section class="panel" id="panel-review" aria-label="待审答案">
-      <div class="page-heading"><div><p class="eyebrow">确认每一个答案</p><h2>待审答案<span class="heading-period">.</span></h2></div><div class="actions"><button data-action="loadReview" class="ghost">刷新</button><button data-action="submitAllReviews" class="primary">提交已填答案</button></div></div>
+      <div class="page-heading"><div><p class="eyebrow">确认每一个答案</p><h2>待审答案<span class="heading-period">.</span></h2></div><div class="actions"><button data-action="loadReview" class="ghost">刷新</button><button id="reviewSyncResults" class="ghost">核对平台完成</button><button data-action="submitAllReviews" class="primary">提交已填答案</button></div></div>
       <div class="section-intro"><span class="pill" id="reviewSource">未加载</span><p id="reviewSummary">简答草稿与需要确认的答案，会在这里等你核对。</p></div><div id="reviewBody"></div>
     </section>
     <section class="panel" id="panel-logs" aria-label="运行记录">
@@ -121,9 +121,11 @@
 <dialog id="desktopUpdatePanel" class="card update-panel" aria-labelledby="updateTitle" aria-describedby="updateMessage">
   <div class="treebar"><h2 id="updateTitle">软件更新 <span id="updateCurrentVersion" class="pill"></span></h2><button id="updateLater" class="ghost" autofocus>稍后</button></div>
   <p id="updateMessage" role="status">正在读取更新状态…</p>
+  <div class="update-channel"><label for="updateSource">更新渠道</label><select id="updateSource"><option value="auto">自动选择（国内优先）</option><option value="cnb">国内下载 · CNB</option><option value="github">GitHub</option></select><span id="updateSourceState" class="pill"></span></div>
   <section id="updateNotesSection" class="update-notes hidden" aria-label="新版更新内容"><h3 id="updateNextVersion">主要变化</h3><div id="updateNotes"></div><details id="updateFullSection" class="update-full hidden"><summary>完整更新说明</summary><div id="updateFullNotes"></div></details></section>
   <progress id="updateProgress" max="100" value="0" class="hidden" aria-label="新版下载进度"></progress>
   <div class="actions"><button id="updateCheck">检查新版</button><button id="updateDownload" class="primary hidden">下载新版</button><button id="updateInstall" class="primary hidden">保存并安装</button></div>
+  <details class="update-alternatives"><summary>其他更新方式</summary><p>联网不方便时，可下载新版安装包和同版本的 release-manifest.json 校验文件，再从本地更新。登录、课程和进度会保留。</p><div class="actions"><button id="updateLocal">从本地安装包更新</button><button id="updateDomesticPage" class="ghost">国内下载页</button><button id="updateGithubPage" class="ghost">GitHub 下载页</button></div></details>
   <p class="hint">下载不影响任务；确认安装时会保存、备份数据并退出。</p>
 </dialog>
 <script src="/close-dialog.js"></script><script type="module" src="/app.js"></script><script type="module" src="/onboarding.js"></script><script type="module" src="/embedded-browser.js"></script><script type="module" src="/desktop.js"></script><script type="module" src="/notifications.js"></script><script type="module" src="/workspace-design.js"></script><script type="module" src="/library/home.js"></script>

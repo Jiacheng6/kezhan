@@ -780,7 +780,7 @@ async function refreshTreeProgress() {
 
 setInterval(() => {
   const library = document.getElementById('libraryHome');
-  if ($('#panel-review')?.classList.contains('active')&&!state.status?.running)void loadReview({passive:true}).catch(()=>{});
+  if ($('#panel-review')?.classList.contains('active'))void loadReview({passive:true}).catch(()=>{});
   if ($('#panel-courses').classList.contains('active') || (library && !library.hidden)) refreshTreeProgress();
 }, 5000);
 
@@ -1457,10 +1457,17 @@ async function loadReview({passive=false}={}) {
     return;
   }
   renderReview(body.result);
+  if(!passive&&body.result?.items?.length&&!hasReviewEdits())void fetch('/api/review/sync',{method:'POST',headers:{'content-type':'application/json'},body:'{}'}).catch(()=>{});
   }finally{reviewReadCount--;}
 }
 
 const reviewFeedback=new Map();
+$('#reviewSyncResults')?.addEventListener('click',async()=>{
+ const button=$('#reviewSyncResults');button.disabled=true;
+ try{const response=await fetch('/api/review/sync',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({force:true})}).then(r=>r.json());
+  if(!response.ok)throw Error(response.error);appendLog({t:Date.now(),level:'info',message:'正在核对平台已提交结果，只归档已确认完成的作业，其余草稿保留。'});await loadReview({passive:true});
+ }catch(error){appendLog({t:Date.now(),level:'error',message:error.message});}finally{button.disabled=false;}
+});
 const reviewConfirmationReady=new Set();
 async function restoreReviewedAnswers(taskKey) {
   const response=await fetch('/api/review/open',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({taskKey})})
@@ -1513,7 +1520,7 @@ function renderReview(data) {
     return;
   }
 
-  $('#reviewSource').textContent = '已加载';
+  $('#reviewSource').textContent = data.sync?.running?`核对平台 ${data.sync.index||0}/${data.sync.total||0}`:'已加载';
   const s = data.stats || {};
   const kept = data.keptPages || [];
   const openWorkPages = kept.filter(record => record.info?.type !== 'video-quiz' && !record.closed && record.submittable).length;

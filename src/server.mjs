@@ -203,6 +203,10 @@ export async function startServer(hooks = {}) {
     }
 
     // —— 待审队列 ——
+    if(pathname==='/api/review/sync'&&req.method==='POST'){
+      try{if(typeof hooks.syncReviews!=='function')return json(res,404,{ok:false,error:'平台核对未就绪'});return json(res,200,{ok:true,result:await hooks.syncReviews(await readJson(req,4096))});}
+      catch(error){return json(res,400,{ok:false,error:error.message});}
+    }
     if (pathname === '/api/review') {
       try {
         /*
@@ -220,7 +224,7 @@ export async function startServer(hooks = {}) {
         }
         return json(res, 200, {
           ok: true,
-          result: { items:listReviewItems(), stats: reviewStats(), keptPages: keptPages || [] },
+          result: { items:listReviewItems(), stats: reviewStats(), keptPages: keptPages || [], sync:getStatus().reviewSync },
         });
       } catch (err) {
         return json(res, 200, { ok: false, error: err.message });

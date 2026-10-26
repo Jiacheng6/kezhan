@@ -19,6 +19,8 @@ import { assertRunScope } from './ui/run-scope.js';
 import { loadState, resetState, statePath, setTaskStatus, listReviewItems, markReviewItem, healStaleRunning, reconcile, mutateState, repairCompletedReviewRecords } from './state.mjs';
 import { listKeptPages, registerKeptPage, editKeptEssayReviewAnswer } from './chaoxing/quizrun.mjs';
 import { reopenReviewWork, submitPendingReviews, withReviewLock, syncSubmittedReviews } from './chaoxing/review-recovery.mjs';
+import {reconcileReviewResults,reconcileOneReview} from './review-reconcile.mjs';
+import {reviewOperationBlock} from './review-policy.mjs';
 import { updateReviewAnswer } from './state.mjs';
 import { startServer } from './server.mjs';
 import { embedded, embeddedRequest } from './browser/embedded.mjs';
@@ -415,6 +417,23 @@ function accountStatus(autoFrom = null) {
  * （实测：重启后「待审队列」显示 closed=true，明明标签页还在）。
  * 这里按 URL 把活着的标签页重新登记回来。
  */
+let reviewSyncJob=null,reviewSyncStarted=0;
+async function beginReviewSync({force=false}={}){
+ if(reviewSyncJob)return {started:false,running:true};
+ if(!force&&Date.now()-reviewSyncStarted<30000)return {started:false,running:false,cooldown:true};
+ if(!ctx()||!getStatus().ready)throw Error('内置网页尚未就绪');
+ reviewSyncStarted=Date.now();patchStatus({reviewSync:{running:true,index:0,total:0,synced:0}});
+ reviewSyncJob=reconcileReviewResults(ctx(),{personId:PERSON_ID,shouldStop:()=>shuttingDown,onProgress:progress=>patchStatus({reviewSync:progress})})
+  .then(result=>{patchStatus({reviewSync:result,reviewCount:listReviewItems().length});log(`待审平台核对完成：已归档 ${result.synced} 组，其余 ${result.total-result.synced} 组保留`,'info');return result;})
+  .catch(error=>{patchStatus({reviewSync:{running:false,error:error.message}});log('待审平台核对未完成，草稿保留：'+error.message,'warn');})
+  .finally(()=>{reviewSyncJob=null;});
+ return {started:true,running:true};
+}
+function assertReviewScopeIdle(scope){
+ const error=reviewScopeBlock(scope);
+ if(error)throw Error(error);
+}
+function reviewScopeBlock(scope){return reviewOperationBlock(scope,{chaoxingRunning:batchRunner.running,zhihuishuRunning:!!extraRuns.snapshot().zhihuishu?.running,chaoxingScanning:recon.running,zhihuishuScanning:zhsScan.running,syncRunning:!!reviewSyncJob});}
 async function readoptKeptPages() {
   const ctxNow = ctx();
   if (!ctxNow) return 0;
@@ -905,8 +924,10 @@ function buildHooks() {
       if(!extraRuns.snapshot().zhihuishu?.running)await syncZhihuishuReviews(ctx());
       return listKeptPages();
     },
+    syncReviews: opts=>beginReviewSync(opts),
 
     openReview: async ({taskKey}={}) => {
+      assertReviewScopeIdle({taskKey});
       if(taskKey?.startsWith('zhihuishu:'))return withReviewLock(taskKey,async()=>{
         if(getStatus().platforms?.zhihuishu?.running)throw Error('请先停止智慧树任务再恢复草稿');
         const {page,...result}=await restoreZhihuishuReview(ctx(),taskKey);await bringToFront(page);if(embedded)await setBrowserVisible(true);return result;
@@ -953,17 +974,22 @@ function buildHooks() {
      *   { all: true } 提交所有"保持打开"的作业页
      */
     submitReviews: async (opts = {}) => {
-      if(getStatus().running||recon.running)throw new Error('请先停止任务，再提交待审作业');
+      const cxBlocked=reviewScopeBlock({taskKey:'chaoxing:review'}),zhsBlocked=reviewScopeBlock({taskKey:'zhihuishu:review'});
+      if(opts.all){if(cxBlocked&&zhsBlocked)throw Error(cxBlocked+'；'+zhsBlocked);}else assertReviewScopeIdle(opts);
       // 先做一次"重新认领"，确保重启后仍能提交（保持打开的页面还在 Edge 里）
       await readoptKeptPages();
       let result;
       try {
-        if(opts.taskKey?.startsWith('zhihuishu:'))result=await withReviewLock(opts.taskKey,()=>submitZhihuishuReview(ctx(),opts.taskKey));
+        if(opts.taskKey?.startsWith('zhihuishu:')){
+          await reconcileOneReview(ctx(),opts.taskKey,{personId:PERSON_ID});
+          result=await withReviewLock(opts.taskKey,()=>submitZhihuishuReview(ctx(),opts.taskKey));
+        }
         else {
-          result=await submitPendingReviews(ctx(),opts,{personId:PERSON_ID});
+          if(opts.all&&cxBlocked){const keys=[...new Set(listReviewItems().filter(i=>!i.taskKey.startsWith('zhihuishu:')).map(i=>i.taskKey))];result={submitted:0,failed:keys.length,details:keys.map(key=>({key,ok:false,error:cxBlocked}))};}
+          else result=await submitPendingReviews(ctx(),opts,{personId:PERSON_ID});
           result.details||=[];
           if(opts.all)for(const key of new Set(listReviewItems().filter(i=>platformOf(i)==='zhihuishu').map(i=>i.taskKey))){
-            const zhs=await withReviewLock(key,()=>submitZhihuishuReview(ctx(),key)).catch(error=>({submitted:0,failed:1,details:[{key,ok:false,error:error.message}]}));
+            const zhs=zhsBlocked?{submitted:0,failed:1,details:[{key,ok:false,error:zhsBlocked}]}:await (async()=>{await reconcileOneReview(ctx(),key,{personId:PERSON_ID});return withReviewLock(key,()=>submitZhihuishuReview(ctx(),key));})().catch(error=>({submitted:0,failed:1,details:[{key,ok:false,error:error.message}]}));
             result.submitted+=zhs.submitted;result.failed+=zhs.failed;result.details.push(...zhs.details);
           }
         }

@@ -104,6 +104,8 @@ tools/run/
 tools/test/*
 !tools/test/test-web-conversation-recovery.mjs
 !tools/test/test-doubao-image-recovery.mjs
+!tools/test/test-review-reconcile.mjs
+!tools/test/test-zhihuishu-auto-submit.mjs
 !tools/test/test-embedded-audio.mjs
 !tools/test/check-modules.mjs
 !tools/test/check-privacy.mjs
@@ -222,3 +224,5 @@ android/local.properties
 android/**/*.jks
 android/**/*.keystore
 android/app/src/main/assets/generated/
+!tools/test/test-update-sources.mjs
+!tools/test/test-update-sources-ui.mjs

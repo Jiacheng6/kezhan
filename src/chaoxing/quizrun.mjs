@@ -503,6 +503,10 @@ const keptWorkPages = new Map();
 const MAX_KEPT_PAGES = 6;
 
 export function registerKeptPage(key, page, info = {}, {busy=false}={}) {
+  const previous=keptWorkPages.get(key)?.info||loadState().keptPages?.[key]?.info||{};
+  if(previous.personId&&info.personId&&String(previous.personId)!==String(info.personId))throw Error('账号已变更，原作业身份与草稿已保留');
+  info={...previous,...info,...(previous.task||info.task?{task:{...previous.task,...info.task}}:{})};
+  if(previous.workIdentity?.workid&&!info.workIdentity?.workid)info.workIdentity=previous.workIdentity;
   setPageBusy(page, busy);
   keptWorkPages.set(key, { page, savedAt: Date.now(), info });
 
@@ -735,14 +739,16 @@ export async function submitWork(workFrame,{confirmationOnly=false}={}) {
 export function recordQuizResult(result,{checkpoint=false}={}) {
   const saved=mutateState((state) => {
     state.quizzes = state.quizzes || {};
+    const previous=state.quizzes[result.key]||{},emptySkip=result.phase==='already-finished'&&!result.totalQuestions;
     state.quizzes[result.key] = {
+      ...previous,
       at: new Date().toISOString(),
       ok: result.ok,
-      phase: result.phase,
-      totalQuestions: result.totalQuestions,
-      answered: result.answered,
-      queued: result.queued,
-      submitted: result.submitted,
+      phase: emptySkip&&previous.submitted?'submitted':result.phase,
+      totalQuestions: emptySkip?(previous.totalQuestions||0):result.totalQuestions,
+      answered: emptySkip?(previous.answered||0):result.answered,
+      queued: emptySkip?(previous.queued||0):result.queued,
+      submitted: result.submitted||emptySkip&&previous.submitted===true,
       error: result.error,
       aiErrorCode: result.aiErrorCode || null,
       needsHuman: result.needsHuman || null,

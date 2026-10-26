@@ -29,7 +29,12 @@ if (app) {
   function renderUpdate(status) {
     $('updateCurrentVersion').textContent = `当前 ${status.currentVersion}`;
     $('updateMessage').textContent = status.message;
-    const busy = ['checking', 'downloading', 'installing'].includes(status.phase);
+    const busy = status.busy || ['checking', 'downloading', 'installing'].includes(status.phase);
+    $('updateSource').value = status.sourcePreference || 'auto';
+    $('updateSource').disabled = busy || status.downloadReady;
+    $('updateSourceState').textContent = status.sourceName || '';
+    $('updateSourceState').classList.toggle('hidden', !status.sourceName);
+    $('updateLocal').disabled = busy || status.downloadReady || !status.localEnabled;
     $('updateCheck').disabled = busy || !status.enabled || status.downloadReady;
     $('updateDownload').classList.toggle('hidden', !status.nextVersion || status.downloadReady);
     $('updateDownload').disabled = busy;
@@ -71,5 +76,12 @@ if (app) {
   bind('updateCheck', async () => renderUpdate(await app.checkUpdate()));
   bind('updateDownload', async () => renderUpdate(await app.downloadUpdate()));
   bind('updateInstall', async () => renderUpdate(await app.installUpdate()));
+  $('updateSource').addEventListener('change', async () => {
+    try { renderUpdate(await app.updateSource($('updateSource').value)); }
+    catch (error) { alert(error.message || String(error)); renderUpdate(await app.updateState()); }
+  });
+  bind('updateLocal', async () => renderUpdate(await app.importLocalUpdate()));
+  bind('updateDomesticPage', async () => app.openUpdatePage('cnb'));
+  bind('updateGithubPage', async () => app.openUpdatePage('github'));
   bind('updateLater', async () => $('desktopUpdatePanel').close());
 }

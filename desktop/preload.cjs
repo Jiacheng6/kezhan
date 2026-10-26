@@ -41,6 +41,9 @@ contextBridge.exposeInMainWorld('desktopApp', Object.freeze({
   downloadUpdate: () => ipcRenderer.invoke('desktop:update-download'),
   installUpdate: () => ipcRenderer.invoke('desktop:update-install'),
   updateNotified: () => ipcRenderer.invoke('desktop:update-notified'),
+  updateSource: source => ipcRenderer.invoke('desktop:update-source', source),
+  importLocalUpdate: () => ipcRenderer.invoke('desktop:update-local'),
+  openUpdatePage: source => ipcRenderer.invoke('desktop:update-page', source),
   onUpdate: (callback) => {
     const listener = (_, status) => callback(status);
     ipcRenderer.on('desktop:update-status', listener);

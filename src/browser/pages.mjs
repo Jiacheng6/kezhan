@@ -21,6 +21,7 @@ import { embedded, embeddedRequest, targetOf } from './embedded.mjs';
 
 /** 本进程创建的页面台账 */
 const registry = new Map(); // page -> { kind, busy, createdAt }
+export const isPageBusy=page=>registry.get(page)?.busy===true;
 
 /** 刷课类页面的 URL 特征（这些是"临时页"，跑完就该没了） */
 const TASK_PAGE_RE = /mooc-ans\/knowledge\/cards|mooc-ans\/work\/|doHomeWorkNew|ananas\/modules\//i;

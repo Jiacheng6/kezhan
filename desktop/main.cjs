@@ -315,6 +315,27 @@ else {
     handle('desktop:update-download', () => updates.download());
     handle('desktop:update-install', () => updates.install());
     handle('desktop:update-notified', () => updates.acknowledgeNotification());
+    handle('desktop:update-source', source => updates.setSource(source));
+    handle('desktop:update-local', () => updates.importLocal(async () => {
+      const selected = await dialog.showOpenDialog(mainWindow, { title: '选择课栈新版安装包',
+        properties: ['openFile'], filters: [{ name: '课栈安装包', extensions: ['exe'] }] });
+      if (selected.canceled || !selected.filePaths[0]) return null;
+      const installer = selected.filePaths[0];
+      let manifest = path.join(path.dirname(installer), 'release-manifest.json');
+      if (!fs.existsSync(manifest)) {
+        const checkFile = await dialog.showOpenDialog(mainWindow, { title: '选择同一版本的 release-manifest.json 校验文件',
+          properties: ['openFile'], filters: [{ name: '更新校验文件', extensions: ['json'] }] });
+        if (checkFile.canceled || !checkFile.filePaths[0]) return null;
+        manifest = checkFile.filePaths[0];
+      }
+      return { installer, manifest };
+    }));
+    handle('desktop:update-page', source => {
+      const { SOURCES } = require('./update-sources.cjs');
+      const selected = SOURCES.find(item => item.id === source);
+      if (!selected) throw new Error('下载渠道无效。');
+      return shell.openExternal(selected.page);
+    });
     blocker = powerSaveBlocker.start('prevent-app-suspension');
     await mainWindow.loadURL(loadingUrl);
     await internalBrowser.restoreCookies();

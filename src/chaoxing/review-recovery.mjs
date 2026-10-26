@@ -11,6 +11,7 @@ import { normalizeEssayText } from '../ai/parse.mjs';
 import { newTaskPage, releasePage, setPageBusy, markSavedReviewPage } from '../browser/pages.mjs';
 import { withReviewLock } from './review-lock.mjs';
 import { submissionState, pageSubmissionState } from './submission-state.mjs';
+import {recoverReviewIdentity} from './review-identity.mjs';
 export { withReviewLock } from './review-lock.mjs';
 
 const text=value=>String(value||'').replace(/\s+/g,' ').trim();
@@ -108,20 +109,20 @@ export async function readSubmissionState(frame) {
   return submissionState(frame);
 }
 
-function finishManualReview(key, note = '已核对平台手动提交结果') {
+export function finishManualReview(key, note = '已核对平台手动提交结果', evidence={}) {
   mutateState(s => {
     const at = new Date().toISOString();
     for (const item of s.reviewQueue || []) if (item.taskKey === key && !['submitted','discarded'].includes(item.status)) Object.assign(item,{status:'submitted',updatedAt:at});
-    if (s.quizzes?.[key]) Object.assign(s.quizzes[key],{phase:'submitted',submitted:true,submittedAt:at});
-    s.taskPoints[key] = {...s.taskPoints[key],status:'done',submitted:true,progress:1,note,submittedAt:at,updatedAt:at};
+    if (s.quizzes?.[key]) Object.assign(s.quizzes[key],{phase:'submitted',submitted:true,submittedAt:at,...(evidence.score!=null?{score:evidence.score}:{})});
+    s.taskPoints[key] = {...s.taskPoints[key],status:'done',submitted:true,progress:1,lastError:null,note,submittedAt:at,updatedAt:at};
     if (s.keptPages) delete s.keptPages[key];
   });
   dropKeptPage(key);
 }
 
-export async function syncSubmittedReviews() {
+export async function syncSubmittedReviews({keys}={}) {
   let synced=0;
-  for(const record of listKeptPages().filter(r=>!r.closed&&!r.key.startsWith('zhihuishu:'))){
+  for(const record of listKeptPages().filter(r=>!r.closed&&!r.key.startsWith('zhihuishu:')&&(!keys||keys.includes(r.key)))){
     try{await withReviewLock(record.key,async()=>{
       const entry=getKeptPage(record.key);if(!entry)return;
       if(entry.info?.type==='discussion'){if(await (await import('./discussion.mjs')).syncDiscussionReview(record.key,entry))synced++;return;}
@@ -149,7 +150,8 @@ async function reopenReviewWorkCore(ctx,key,{personId,restoreAnswers=true,waitMs
   if(!items.length)throw new Error('此作业没有待审记录，请刷新列表');
   const record=loadState().keptPages?.[key];
   let entry=getKeptPage(key),reopened=false;
-  const info=entry?.info||record?.info||{};
+  let info=entry?.info||record?.info||{};
+  const recoveredIdentity=recoverReviewIdentity(key,info,items,{personId});if(recoveredIdentity)info={...info,workIdentity:recoveredIdentity};
   if(info.personId&&String(info.personId)!==String(personId))throw new Error('账号已变更，请重新核对待审记录');
   if(!entry&&record?.url){
     const hit=ctx.pages().find(page=>!page.isClosed()&&page.url()===record.url);

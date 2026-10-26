@@ -42,7 +42,9 @@ assert.equal(fs.readFileSync(path.join(app, 'src/ai/web-chat.mjs')).equals(fs.re
   assert.equal(fs.readFileSync(path.join(app, 'src/ai/doubao-receipt.mjs')).equals(fs.readFileSync(path.join(ROOT, 'src/ai/doubao-receipt.mjs'))), true, '发布包必须包含本次网页回执核对');
 assert.equal(fs.readFileSync(path.join(app, 'src/ai/doubao-image-recovery.mjs')).equals(fs.readFileSync(path.join(ROOT, 'src/ai/doubao-image-recovery.mjs'))), true, '发布包必须包含旧图片提问的严格归属恢复');
 assert.equal(fs.readFileSync(path.join(app, 'src/ai/web-draft.mjs')).equals(fs.readFileSync(path.join(ROOT, 'src/ai/web-draft.mjs'))), true, '发布包必须包含重启后原对话恢复');
+for(const file of ['src/review-reconcile.mjs','src/review-policy.mjs','src/chaoxing/review-identity.mjs','src/main.mjs','src/server.mjs','src/chaoxing/quizrun.mjs','src/chaoxing/review-recovery.mjs','src/platforms/zhihuishu/quiz-task.mjs'])assert.equal(fs.readFileSync(path.join(app,file)).equals(fs.readFileSync(path.join(ROOT,file))),true,'发布包必须包含两平台提交及待审核销修复：'+file);
 assert.equal(pkg.version, JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version);
+for(const file of ['desktop/updates.cjs','desktop/update-sources.cjs','desktop/main.cjs','desktop/preload.cjs','src/ui/desktop.js'])assert.equal(fs.readFileSync(path.join(app,file)).equals(fs.readFileSync(path.join(ROOT,file))),true,'发布包必须包含多渠道与本地更新功能：'+file);
 assert.equal(pkg.main, 'desktop/main.cjs');
 const archive = path.join(app, 'src/ui/library/archive');
 assert.match(fs.readFileSync(path.join(archive, 'LICENSE.txt'), 'utf8'), /LBEILC/);
