@@ -6,9 +6,12 @@ import {interruptibleSleep,throwIfStopped,waitForRead} from '../control.mjs';
 import {loadSettings} from '../config.mjs';
 import {log} from '../logbus.mjs';
 import {beginWebTurn,endWebTurn,webRequestMarker} from './web-turn.mjs';
+import {AI_PROVIDERS} from './providers.mjs';
 import {recoverDoubaoImageTurn,readDoubaoImageCandidate} from './doubao-image-recovery.mjs';
 import {canPauseAI,waitForAIResume} from './resume.mjs';
 import {draftKey,readWebDraft,createWebDraft,saveWebDraft,clearWebDraft,savedWebConversation} from './web-draft.mjs';
+import {sessionAction,nextSessionMemory,shouldResetSession,planComposerReset} from './session-policy.mjs';
+import {clearComposerResidue} from './composer-reset.mjs';
 export const WEB_UI = {
   doubao: {
     composer: '[data-testid="chat_input"]',
@@ -146,7 +149,56 @@ export async function writeWebPrompt(page,provider,prompt,{shouldStop}={}) {
   const state=await webChatState(page,provider);
   if(!samePrompt(state.editorText,prompt))throw new Error('题干写入后回读不一致，已停止上传和发送');
 }
-export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=false,onSent=()=>{},taskKey,question},provider) {
+/**
+ * 对外入口：在真正发问前后各加一层「页面状态自愈」。
+ *
+ * 为什么要包一层（用户实测反馈 2026-11-01）：
+ *   旧的重试只是把同一个 ask 原样再跑一遍 —— 不清输入区残留、不换会话、
+ *   不重载页面，于是每次都撞同一堵墙：`输入区已有附件` / `回答未能确认` /
+ *   `字体未加载` 一直重复，直到"连续失败 → 全局暂停"。
+ *   现在：上一次失败若与页面状态有关（session-policy），这一次就先
+ *   换干净起点（重载 + 新对话 + 清输入区），再发问。
+ */
+export async function askWebImage(opts={}, provider) {
+  const target = provider || selectedProviderForChat();
+  const memory = chatMemory.get(target.id) || {};
+  const plan = sessionAction({
+    lastFailed: !!memory.lastFailed,
+    lastCode: memory.lastCode || '',
+    sameCount: memory.sameCount || 0,
+    resetFlag: !!memory.resetFlag,
+  });
+  if (plan.reason) log(`    ${target.label} ${plan.reason}`, 'warn');
+
+  const result = await askWebImageInner(
+    { ...opts, freshChat: !!opts.freshChat || plan.freshChat },
+    target,
+  );
+
+  chatMemory.set(
+    target.id,
+    nextSessionMemory(memory, { ok: !!(result && result.ok), errorCode: (result && result.errorCode) || '' }),
+  );
+  return result;
+}
+
+function selectedProviderForChat() {
+  const settings = loadSettings();
+  return AI_PROVIDERS[settings?.ai?.provider] || AI_PROVIDERS.qianwen;
+}
+
+/** 每个通道的"上次结果"记忆（进程内；不落盘，重启即清） */
+const chatMemory = new Map();
+
+/** 测试用：读/清记忆 */
+export function __getChatMemory(providerId) {
+  return chatMemory.get(providerId) || null;
+}
+export function __resetChatMemory() {
+  chatMemory.clear();
+}
+
+async function askWebImageInner({page,imagePath,prompt,shouldStop,freshChat=false,onSent=()=>{},taskKey,question},provider) {
   // A unique user-turn marker also rejects remounted historical bubbles when
   // the virtual list recycles every DOM node. The model need not echo it.
   const basePrompt=prompt,ownedKey=draftKey(provider.id,taskKey,question),owned=readWebDraft(ownedKey,prompt,page.url());
@@ -171,6 +223,27 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
       await interruptibleSleep(200,shouldStop);
     }while(Date.now()-loadingStarted<15000);
     return state;
+  };
+  /*
+   * 输入区残留处理（用户实测反馈 2026-11-01）：
+   * 旧逻辑一遇到残留就拒绝 —— `输入区已有附件，请先处理原草稿`，
+   * 于是同一题重试 3 次全撞同一堵墙，用户手动清掉才恢复。
+   * 现在先判断"这是不是我们上一轮的残留"：是就自动清掉继续，
+   * 只有确实是用户自己敲的内容才拒绝（见 session-policy.planComposerReset）。
+   */
+  const ensureComposerClean=async({prompt,editorText=''})=>{
+    const hasAtt=await read(()=>hasComposerAttachment(page,provider));
+    const text=String(editorText||'').trim();
+    const plan=planComposerReset({hasAttachment:hasAtt,editorText:text,editorIsOwnDraft:!!text&&samePrompt(text,prompt)});
+    if(plan.action==='none')return null;
+    if(!plan.ok)return {ok:false,errorCode:'draft-not-empty',error:`${provider.label}输入框已有草稿，请先处理，避免覆盖你的内容`};
+    const cleaned=await clearComposerResidue(page,ui,{
+      hasAttachment:p=>hasComposerAttachment(p,provider),
+      clearAttachment:plan.action==='clear-all'||plan.action==='clear-attachment',
+      clearEditor:plan.action==='clear-all'||plan.action==='clear-editor',
+    });
+    if(!cleaned.ok)return {ok:false,errorCode:'draft-attachment',error:`${provider.label}输入区已有附件，自动清理失败（${cleaned.reason}），请手工处理后继续`};
+    return null;
   };
   let stage='page',sent=false,turnMarker='';
   try{
@@ -198,14 +271,17 @@ export async function askWebImage({page,imagePath,prompt,shouldStop,freshChat=fa
     const continuingDraft=!!owned&&samePrompt(state.editorText,prompt)&&await read(()=>hasComposerAttachment(page,provider));
     if(!waitingOwned&&!continuingDraft){
     const inputs=()=>read(()=>composer.locator('input[type="file"]').evaluateAll(inputs=>inputs.map((e,i)=>({i,accept:e.accept,selected:e.files.length,testid:e.getAttribute('data-testid')}))));
-    if(await read(()=>hasComposerAttachment(page,provider)))return {ok:false,errorCode:'draft-attachment',error:`${provider.label}输入区已有附件，请先处理原草稿，避免混入其他题目`};
+    const blockedByResidue=await ensureComposerClean({prompt,editorText:state.editorText||''});
+    if(blockedByResidue)return blockedByResidue;
     createWebDraft(ownedKey,{prompt,basePrompt,pageUrl:page.url(),imagePath});
     stage='editor';await writeWebPrompt(page,provider,prompt,{shouldStop});
     stage='upload';
     // Doubao mounts its file inputs after the first focus/text update. Never use
     // the pre-input snapshot for the upload target.
     const existing=await inputs();
-    if(await read(()=>hasComposerAttachment(page,provider)))return {ok:false,errorCode:'draft-attachment',error:`${provider.label}输入区已有附件，请先处理原草稿，避免混入其他题目`};
+    // 这里只看附件（不看文本）：输入框里现在正是我们刚写入的提问，不能清掉。
+    const blockedByStaleAttachment=await ensureComposerClean({prompt,editorText:''});
+    if(blockedByStaleAttachment)return blockedByStaleAttachment;
     const input=existing.find(e=>e.testid==='upload-file-input')||existing.find(e=>/image|\.png/i.test(e.accept))||existing.find(e=>!e.accept);
     if(input){
       const target=composer.locator('input[type="file"]').nth(input.i);

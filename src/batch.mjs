@@ -14,6 +14,7 @@ import { runQuizTask, recordQuizResult,dropKeptPage } from './chaoxing/quizrun.m
 import {runDiscussionTask} from './chaoxing/discussion.mjs';
 import { selectedRunTasks } from './ui/run-scope.js';
 import {runWithTaskRestart,canRestartTask} from './task-recovery.mjs';
+import { classifyFailure, advanceStreaks, pauseDecision, formatPauseDetail, isBusyOnlyFailure } from './failure-policy.mjs';
 import {
   loadState,
   setTaskStatus,
@@ -27,8 +28,21 @@ import {
   mutateState,
 } from './state.mjs';
 
-/** 连续失败多少次就全局暂停（防雪崩式误操作） */
+/**
+ * 连续失败多少次就全局暂停（防雪崩式误操作）。
+ *
+ * ⚠ 这两个值现在只是**兜底默认值**，实际从设置 `batch.pauseAfterFailures` /
+ *   `batch.pauseAfterTransient` 读（见 failure-policy.mjs）。
+ *
+ * 为什么要拆成两条（用户实测反馈 2026-11-01）：
+ *   旧逻辑所有失败一视同仁，于是"读不到视频时长 / 截图超时 / 字体没加载好 /
+ *   输入区有残留草稿"这类**环境性失败**连撞 3 次就把整批停了 ——
+ *   用户看到的就是"前面好好的，跑一会儿莫名暂停，重试也不管用，
+ *   自己手动做完又恢复，然后再重复"。环境性失败应该单独计数、阈值更高，
+ *   而且它真正的修法是"重试前先清理状态"，不是停整批。
+ */
 const CONSECUTIVE_FAIL_LIMIT = 3;
+const CONSECUTIVE_TRANSIENT_LIMIT = 5;
 
 /**
  * 一次执行结果该怎么记账（**纯函数**，便于离线测试）。
@@ -69,6 +83,8 @@ export class BatchRunner {
       skipped: 0,
       handbook: 0,
       consecutiveFail: 0,
+      consecutiveTransient: 0,
+      recentFailures: [],
       startedAt: null,
       current: null,
     };
@@ -81,6 +97,19 @@ export class BatchRunner {
       log('收到停止请求，将在当前任务点结束后停止…', 'warn');
     }
     return { stopping: true };
+  }
+
+  /** 一次成功就同时清零两条连击（真失败 / 环境性失败） */
+  resetFailureStreaks() {
+    this.stats.consecutiveFail = 0;
+    this.stats.consecutiveTransient = 0;
+  }
+
+  /** 记下最近几次失败，供暂停原因里列出"该处理哪几题" */
+  rememberFailure(task, reason, tag) {
+    const list = Array.isArray(this.stats.recentFailures) ? this.stats.recentFailures : [];
+    list.push({ secNo: task?.secNo, name: task?.name, error: reason, tag });
+    this.stats.recentFailures = list.slice(-5);
   }
 
   /**
@@ -110,6 +139,8 @@ export class BatchRunner {
     this.stats.paused = false;
     this.stats.pauseReason = null;
     this.stats.consecutiveFail = 0;
+    this.stats.consecutiveTransient = 0;
+    this.stats.recentFailures = [];
     this.stats.skipReasons = {};
 
     // 只处理该处理的类型
@@ -267,7 +298,7 @@ export class BatchRunner {
         const kind = classifyTaskResult(r);
         if (kind === 'done') {
           this.stats.done += 1;
-          this.stats.consecutiveFail = 0;
+          this.resetFailureStreaks();
           if(pauseRecoveryUsed||lastTry>1){
             mutateState(s=>{s.handbook=(s.handbook||[]).filter(h=>h.key!==task.key);});
             dropKeptPage(task.key);
@@ -286,17 +317,45 @@ export class BatchRunner {
           }
         } else if (kind === 'review') {
           this.stats.review += 1;
-          this.stats.consecutiveFail = 0;
+          this.resetFailureStreaks();
           notifyUser('review-ready', {key:`review:${this.stats.startedAt}`});
         } else if (kind === 'needs-human' || kind === 'blocked') {
           if (task.type === 'work' && r.items?.length) this.stats.review += 1;
           /*
+           * 「AI 还在生成上一条」不是需要人来处理的障碍（实测 2026-11-01）：
+           *   真机验证时上一轮生成未结束 → already-generating → 旧逻辑直接暂停整批，
+           *   5 道题全变成空壳待审；而它通常几十秒就自己好了。
+           *   所以这类"忙碌"只记待人工、**不暂停整批**，继续跑下一个任务点。
+           *   真正需要人的（风控验证、未登录、草稿冲突）仍然暂停。
+           */
+          const busyHint = isBusyOnlyFailure(r);
+          if (busyHint) {
+            this.stats.handbook += 1;
+            this.resetFailureStreaks();
+            this.rememberFailure(task, String(r.error || 'AI 正在回答上一条'), 'ai-busy');
+            setTaskStatus(task.key, {
+              status: 'pending',
+              lastError: String(r.error || 'AI 忙'),
+              note: 'AI 正在回答上一条，稍后重试即可（未暂停整批）',
+              progress: r.progress,
+            });
+            log(`    ⏸ AI 正忙：记为「待续跑」，不暂停整批（${r.error || ''}）`, 'warn');
+            this.stats.processed += 1;
+            this.push();
+            continue;
+          }
+          /*
            * 保留任务并暂停整批，明确通知用户；不把人工处理记成失败或完成。
            */
           this.stats.handbook += 1;
-          this.stats.consecutiveFail = 0;
+          this.resetFailureStreaks();
+          this.rememberFailure(task, String(r.needsHuman || r.error || '任务需要人工处理'), 'needs-human');
           this.stats.paused = true;
-          this.stats.pauseReason = String(r.needsHuman || r.error || '任务需要人工处理');
+          this.stats.pauseReason = formatPauseDetail({
+            reason: String(r.needsHuman || r.error || '任务需要人工处理'),
+            recent: this.stats.recentFailures,
+            max: 2,
+          });
           this.stopRequested = true;
           setTaskStatus(task.key, {status:'manual',lastError:this.stats.pauseReason,note:'未完成，等待人工处理',progress:r.progress});
           addHandbook({key:task.key,course:task.courseName||task.courseId,secNo:task.secNo,sectionName:task.sectionName,type:task.type,name:task.name,reason:this.stats.pauseReason});
@@ -319,7 +378,7 @@ export class BatchRunner {
             note: '被用户中止，下次续跑',
           });
           this.stats.skipped += 1;
-          this.stats.consecutiveFail = 0;
+          this.resetFailureStreaks();
           log('    ⏸ 被用户中止：保留为「待续跑」（不计失败、不重试）', 'warn');
         } else {
           const reason = r ? r.error : '未执行';
@@ -336,10 +395,31 @@ export class BatchRunner {
           });
           this.stats.failed += 1;
           this.stats.handbook += 1;
-          this.stats.consecutiveFail += 1;
+          /*
+           * 失败分级（用户实测反馈 2026-11-01）：
+           *   "读不到视频时长 / 截图超时 / 字体没加载好 / 输入区残留草稿 /
+           *    AI 回答未能确认"这些是**环境性失败** —— 换个页面/清一下状态多半就过，
+           *   不该和"任务真做不出来"一样连撞 3 次就停整批。
+           *   所以两条连击分开记：真失败看 pauseAfterFailures，
+           *   环境性失败看 pauseAfterTransient（阈值更高）。
+           */
+          const failure = classifyFailure({ error: reason, errorCode: r?.aiErrorCode || r?.errorCode });
+          this.rememberFailure(task, reason, failure.tag);
+          const streaks = advanceStreaks({
+            consecutiveFail: this.stats.consecutiveFail,
+            consecutiveTransient: this.stats.consecutiveTransient,
+            outcome: 'failed',
+            failureKind: failure.kind,
+          });
+          this.stats.consecutiveFail = streaks.consecutiveFail;
+          this.stats.consecutiveTransient = streaks.consecutiveTransient;
           // 用**实际**尝试次数，别写死 maxRetries（用户中止时只试了 1 次，
           // 日志却写"已重试 3 次"，排查时会带偏）
-          log(`    ✗ 已尝试 ${lastTry || 1} 次仍未成功，转「待人工」：${reason}`, 'error');
+          log(
+            `    ✗ 已尝试 ${lastTry || 1} 次仍未成功，转「待人工」：${reason}` +
+              (failure.kind === 'transient' ? `（环境性失败 · ${failure.tag}，不计入"连续真失败"）` : ''),
+            'error',
+          );
           notifyUser('task-failed', {key:`failed:${this.stats.startedAt}:${task.key}`,detail:reason});
         }
 
@@ -347,12 +427,23 @@ export class BatchRunner {
         patchSummary({ started: this.stats.startedAt, done: this.stats.done, failed: this.stats.failed, skipped: this.stats.skipped });
         this.push();
 
-        // 连续失败过多 → 全局暂停
-        if (this.stats.consecutiveFail >= CONSECUTIVE_FAIL_LIMIT) {
-          log(`连续 ${this.stats.consecutiveFail} 个任务点失败，已全局暂停。请检查后手动继续。`, 'error');
+        // 连续失败过多 → 全局暂停（真失败与环境性失败各有一条阈值）
+        const decision = pauseDecision({
+          consecutiveFail: this.stats.consecutiveFail,
+          consecutiveTransient: this.stats.consecutiveTransient,
+          limits: {
+            pauseAfterFailures: settings.batch?.pauseAfterFailures ?? CONSECUTIVE_FAIL_LIMIT,
+            pauseAfterTransient: settings.batch?.pauseAfterTransient ?? CONSECUTIVE_TRANSIENT_LIMIT,
+          },
+        });
+        if (decision.pause) {
+          const reason = formatPauseDetail({ reason: decision.reason, recent: this.stats.recentFailures });
+          log(`${decision.reason}，已全局暂停。请按下面的条目处理后手动继续：`, 'error');
+          log(`    ${reason}`, 'error');
           this.stats.paused = true;
-          this.stats.pauseReason = `连续 ${this.stats.consecutiveFail} 个失败`;
-          notifyUser('batch-paused', {key:`batch-paused:${this.stats.startedAt}`});
+          this.stats.pauseReason = reason;
+          this.stats.pauseKind = decision.kind;
+          notifyUser('batch-paused', {key:`batch-paused:${this.stats.startedAt}`, detail: reason});
           break;
         }
       }

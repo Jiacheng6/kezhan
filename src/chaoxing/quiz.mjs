@@ -174,10 +174,28 @@ export async function getWorkMeta(workFrame) {
 }
 
 /**
+ * 纯函数：题目字体是否就绪（可离线测试）。
+ *
+ * 背景（2026-11-01 用户反馈"不管换成我的 API 还是豆包千问都是一样的问题"）：
+ *   所有 AI 通道共用同一条成像链（`shootQuestion`），而这一步旧代码**只被动查询**
+ *   `document.fonts.check()`，从不主动触发加载。内置网页被隐藏/后台渲染时，
+ *   字体可以一直停在"未加载"状态 → 8 秒后必抛
+ *   「题目截图超时（题目字体尚未加载）」（日志 18 次）或
+ *   「题目字体加载失败，请刷新题目后重试」（8 次）。
+ *   这与用哪个 AI 通道无关，所以"换什么都一样"。
+ */
+export function fontReadyVerdict({ pending = 0, failed = false, elapsedMs = 0, budgetMs = 15000 } = {}) {
+  if (failed) return { action: 'fail', code: 'font-failed' };
+  if (!pending) return { action: 'ready' };
+  if (elapsedMs >= budgetMs) return { action: 'fail', code: 'font-not-ready' };
+  return { action: 'wait' };
+}
+
+/**
  * 截取单道题的图片（精确裁剪）。
  * @returns {Promise<string>} 图片文件路径
  */
-export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, readTimeoutMs = 8000, onRecovery, selector = '.TiMu, .newTiMu', nativeCapture = embedded ? captureEmbeddedPage : null, allowCDPFallback = true } = {}) {
+export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, readTimeoutMs = 8000, fontTimeoutMs = 15000, onRecovery, selector = '.TiMu, .newTiMu', nativeCapture = embedded ? captureEmbeddedPage : null, allowCDPFallback = true } = {}) {
   throwIfStopped(shouldStop);
   fs.mkdirSync(outDir, { recursive: true });
   const read = async (stage, operation) => {
@@ -200,8 +218,9 @@ export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, r
   // toolbars. Wait only for text actually used in the question/options instead.
   // Never send an encrypted question rendered with a missing fallback font.
   const fontsStarted = Date.now();
+  let fontLoadCalls = 0;
   for (;;) {
-    const fonts = await read('检查题目字体', () => el.evaluate((node) => {
+    const fonts = await read('检查题目字体', () => el.evaluate(async (node) => {
       const roots = [...node.querySelectorAll('.Zy_TItle, .Zy_ulTop, .Zy_ulBottom')];
       const requests = new Map();
       for (const root of roots.length ? roots : [node]) {
@@ -215,6 +234,19 @@ export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, r
           requests.set(font, (requests.get(font) || '') + text);
         }
       }
+      /*
+       * 关键修复：`document.fonts.check()` 只是**被动查询**。
+       * 内置网页被隐藏/后台渲染时，字体可能一直不被请求，
+       * 于是永远 check 不过 → 8 秒后误判成"字体没加载/加载失败"。
+       * 这里对缺失的字体**主动**调用 fonts.load() 触发下载。
+       */
+      let loadAttempts = 0;
+      for (const [font, text] of requests) {
+        if (document.fonts.check(font, text)) continue;
+        loadAttempts += 1;
+        try { await document.fonts.load(font, text); } catch (e) { /* 交给下面的 failed 判定 */ }
+      }
+
       let pending = 0, failed = false;
       const normalize = (value) => value.replace(/["']/g, '').trim().toLowerCase();
       for (const [font, text] of requests) {
@@ -224,12 +256,28 @@ export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, r
           if ([...document.fonts].some(face => families.includes(normalize(face.family)) && face.status === 'error')) failed = true;
         }
       }
-      return { pending, failed };
+      return { pending, failed, loadAttempts };
     }));
-    if (fonts.failed) throw Object.assign(new Error('题目字体加载失败，请刷新题目后重试；未发送可能乱码的截图'), { captureStage: '题目字体' });
-    if (!fonts.pending) break;
-    if (Date.now() - fontsStarted >= readTimeoutMs) throw Object.assign(new Error('题目截图超时（题目字体尚未加载）'), { captureStage: '题目字体' });
-    await interruptibleSleep(100, shouldStop);
+    fontLoadCalls += fonts.loadAttempts || 0;
+
+    const verdict = fontReadyVerdict({
+      pending: fonts.pending,
+      failed: fonts.failed,
+      elapsedMs: Date.now() - fontsStarted,
+      budgetMs: fontTimeoutMs,
+    });
+    if (verdict.action === 'ready') break;
+    if (verdict.action === 'fail') {
+      throw Object.assign(
+        new Error(
+          verdict.code === 'font-failed'
+            ? `题目字体文件加载失败（已主动加载 ${fontLoadCalls} 次）；未发送可能乱码的截图`
+            : `题目字体未就绪（已主动加载 ${fontLoadCalls} 次，等待 ${Math.round((Date.now() - fontsStarted) / 1000)} 秒）`,
+        ),
+        { captureStage: '题目字体', code: verdict.code },
+      );
+    }
+    await interruptibleSleep(120, shouldStop);
   }
   await interruptibleSleep(100, shouldStop);
   const box = await read('读取题目坐标', () => el.boundingBox());

@@ -207,6 +207,30 @@ export async function send(page) {
  *
  * @returns {Promise<{text:string, len:number, generating:boolean, count:number}>}
  */
+/**
+ * 纯函数：判断"是否正在生成回答"。
+ *
+ * 实测踩坑（2026-11-01，真机验证）：
+ *   千问页面有两个装饰元素
+ *     `rn-right-navigator-loading-empty …--top/--bot`（253×0，右侧导航占位）
+ *   类名里带 "loading"，而 `checkVisibility()` 只判可见性、**不看尺寸**，
+ *   于是「页面上任何可见的 loading/generating/typing 元素」这条规则**恒为真** ——
+ *   每次提问都被判成"还在回答上一条"，AI 通道彻底堵死，
+ *   上层只能把题全丢进待审/待人工。用户看到的就是"后面一直报错、重试也不管用"。
+ *
+ * 现在的规则（同时满足才算生成中）：
+ *   1) 存在可见的"停止"按钮 → 一定在生成；或
+ *   2) 命中的 loading/generating/typing 元素 **有实际尺寸** 且 **位于回答卡片内**。
+ *
+ * 下面 readAnswer 里的内联判断与此规则保持一致（浏览器里跑，无法直接复用本函数）。
+ */
+export function generatingFrom({ stopButton = false, hits = [] } = {}) {
+  if (stopButton) return true;
+  return (hits || []).some(
+    (h) => h && h.visible !== false && Number(h.width) > 1 && Number(h.height) > 1 && h.inCard === true,
+  );
+}
+
 export async function readAnswer(page) {
   return page.evaluate(() => {
     const cards = Array.from(document.querySelectorAll('.chat-answers-card-wrap')).filter(e=>e.checkVisibility());
@@ -215,10 +239,18 @@ export async function readAnswer(page) {
     const visible=e=>!!e?.checkVisibility({checkOpacity:true,checkVisibilityCSS:true});
     const identities=globalThis[Symbol.for('xxt.qianwen-identities')] ||= {nodes:new WeakMap(),next:0,prefix:Date.now().toString(36)+Math.random().toString(36)};
     if(wrap&&!identities.nodes.has(wrap))identities.nodes.set(wrap,identities.prefix+':'+(++identities.next));
-    const generating =
-      Array.from(document.querySelectorAll('button')).some((x) =>
-        visible(x)&&/停止|stop/i.test((x.getAttribute('aria-label') || '') + (x.textContent || '')),
-      ) || [...document.querySelectorAll('[class*="loading"], [class*="generating"], [class*="typing"]')].some(visible);
+    /*
+     * ⚠ 与 generatingFrom() 保持一致的规则：必须"有实际尺寸 + 在回答卡片内"。
+     * 只看类名+可见性会被页面上的 253×0 装饰元素骗到（详见 generatingFrom 的说明）。
+     */
+    const stopButton = Array.from(document.querySelectorAll('button')).some((x) =>
+      visible(x)&&/停止|stop/i.test((x.getAttribute('aria-label') || '') + (x.textContent || '')),
+    );
+    const hits = [...document.querySelectorAll('[class*="loading"], [class*="generating"], [class*="typing"]')].map((e) => {
+      const r = e.getBoundingClientRect();
+      return { visible: visible(e), width: r.width, height: r.height, inCard: !!e.closest('.chat-answers-card-wrap') };
+    });
+    const generating = stopButton || hits.some((h) => h.visible && h.width > 1 && h.height > 1 && h.inCard);
     return { text: txt, len: txt.length, generating, count: cards.length,answerKey:wrap?identities.nodes.get(wrap):'' };
   });
 }
@@ -547,7 +579,34 @@ async function askImageCore({ page, imagePath, prompt = DEFAULT_PROMPT, freshCha
       }
       if(attempt===1){
         if(!(await readEditor(page)).empty)return {ok:false,errorCode:'draft-not-empty',error:'千问输入框已有草稿，请先处理，避免覆盖你的内容'};
-        if((await readAnswer(page)).generating)return {ok:false,errorCode:'already-generating',error:'千问仍在回答上一条消息，请等待结束后再开始'};
+        /*
+         * 「还在回答上一条」不要立刻当硬障碍（实测踩到，2026-11-01）：
+         *   真机验证时上一轮生成还没结束，第一次提问直接返回 already-generating，
+         *   上层把它当 needs-human → **暂停整批**，5 道题全部只留了个空壳待审。
+         *   而实际情况是：那条回答通常几十秒内就结束，等一下再问就能成。
+         *   所以先等它空下来（默认最多 60 秒），等不到才如实报告忙碌。
+         */
+        const busyWaitMs = Math.max(0, Number(loadSettings().ai?.busyWaitMs ?? 60000));
+        const busyStarted = Date.now();
+        let waitedLogged = false;
+        while ((await readAnswer(page)).generating) {
+          if (Date.now() - busyStarted >= busyWaitMs) {
+            return {
+              ok: false,
+              errorCode: 'already-generating',
+              error: `千问仍在回答上一条消息（已等 ${Math.round((Date.now() - busyStarted) / 1000)} 秒），请等它结束后再继续`,
+            };
+          }
+          if (!waitedLogged) {
+            waitedLogged = true;
+            log('    千问正在回答上一条，先等它空下来再提问…', 'info');
+          }
+          await new Promise((r) => setTimeout(r, 2000));
+          throwIfStopped(shouldStop);
+        }
+        if (waitedLogged) {
+          log(`    千问已空闲（等了 ${Math.round((Date.now() - busyStarted) / 1000)} 秒），继续提问`, 'info');
+        }
       }
 
       // 进任何操作前先看有没有风控验证挂着

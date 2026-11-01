@@ -87,8 +87,8 @@ const FINGERPRINTS = [
   {
     file: 'src/chaoxing/player.mjs',
     minLines: 400,
-    markers: ['watchUntilDone', 'guardResume', 'pause-storm', 'greenDotPatientMs', 'findVideoQuiz'],
-    why: '播放守卫：纠偏 / 暂停风暴 / 弹窗期间不纠偏',
+    markers: ['watchUntilDone', 'guardResume', 'pause-storm', 'greenDotPatientMs', 'findVideoQuiz', 'durationVerdict', 'xxtVideoMeta'],
+    why: '播放守卫：纠偏 / 暂停风暴 / 元数据等待（含 load 重试与 video.error）',
   },
   {
     file: 'src/chaoxing/videoquiz.mjs',
@@ -210,8 +210,32 @@ const FINGERPRINTS = [
   {
     file: 'src/batch.mjs',
     minLines: 250,
-    markers: ['classifyTaskResult', 'CONSECUTIVE_FAIL_LIMIT', 'batchRunner'],
-    why: '批量执行与记账分类',
+    markers: ['classifyTaskResult', 'CONSECUTIVE_FAIL_LIMIT', 'CONSECUTIVE_TRANSIENT_LIMIT', 'pauseDecision', 'batchRunner'],
+    why: '批量执行与记账分类（含两条失败连击的暂停策略）',
+  },
+  {
+    file: 'src/failure-policy.mjs',
+    minLines: 90,
+    markers: ['classifyFailure', 'advanceStreaks', 'pauseDecision', 'formatPauseDetail', 'transient'],
+    why: '失败分级 / 暂停策略（环境性失败不喂满"连续真失败"）',
+  },
+  {
+    file: 'src/ai/session-policy.mjs',
+    minLines: 80,
+    markers: ['shouldResetSession', 'sessionAction', 'nextSessionMemory', 'planComposerReset'],
+    why: 'AI 会话自愈（失败后换干净起点、输入区残留自清理判定）',
+  },
+  {
+    file: 'src/ai/composer-reset.mjs',
+    minLines: 50,
+    markers: ['clearComposerResidue', 'REMOVE_RE'],
+    why: 'AI 输入区自清理（让"重试"真的有意义）',
+  },
+  {
+    file: 'src/chaoxing/shot.mjs',
+    minLines: 60,
+    markers: ['screenshotPlan', 'clampClip', 'captureArea', 'embedded'],
+    why: '区域截图三级降级（不再裸调 30 秒超时的 element.screenshot）',
   },
   {
     file: 'src/state.mjs',

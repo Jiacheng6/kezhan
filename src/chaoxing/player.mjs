@@ -136,23 +136,122 @@ export async function getPlayerState(frame) {
 }
 
 /**
+ * 纯函数：这一轮"等元数据"该继续等、还是该报错收手。
+ *
+ * 背景（用户实测反馈 2026-11-01）：日志里 19 次
+ * `视频准备失败：读不到视频时长（duration）`，而同一条视频重试立刻成功
+ * （13:41:03 失败 → 13:41:07 读到 14分47秒）。说明是**元数据晚到**：
+ * 旧的 waitDuration 只轮询 `v.duration`，既不重新 `load()`，也不看 `v.error`。
+ *
+ * @param {object} o
+ * @param {number} o.elapsedMs 已经等了多久
+ * @param {number|null} o.duration 读到的时长（>0 即成功）
+ * @param {number|null} o.mediaError video.error.code（1..4；0/null 表示没错误）
+ * @param {number} o.budgetMs 总预算
+ * @param {boolean} o.loadRetried 是否已经重试过 load()
+ * @returns {{action:'done'|'retry-load'|'fail', reason?:string}}
+ */
+export function durationVerdict({ elapsedMs = 0, duration = null, mediaError = null, budgetMs = 20000, loadRetried = false } = {}) {
+  if (Number.isFinite(duration) && duration > 0) return { action: 'done' };
+  if (mediaError) {
+    // 1=ABORTED 2=NETWORK 3=DECODE 4=SRC_NOT_SUPPORTED
+    return { action: 'fail', reason: `media-error-${mediaError}` };
+  }
+  if (!loadRetried && elapsedMs >= 3000) return { action: 'retry-load' };
+  if (elapsedMs >= budgetMs) return { action: 'fail', reason: 'duration-timeout' };
+  return { action: 'wait' };
+}
+
+/**
  * 等 duration 就绪（元数据加载完成）。
- * @returns {Promise<number|null>} duration 秒数，失败返回 null
+ *
+ * 与旧版的区别（都在真实日志里踩过）：
+ *   · 3 秒还读不到就**重新 load() 一次**（懒加载/被拦截时这是最有效的办法）；
+ *   · 装一次 `loadedmetadata` / `error` 监听，把结果缓存到 window 上，
+ *     轮询读缓存 —— 避免"事件已经发生但 duration 仍读不到"的空窗；
+ *   · 一旦 `video.error` 有值就**立刻失败并带错误码**，不再白等 20 秒。
+ *
+ * @returns {Promise<{ok:boolean, duration?:number, errorCode?:string, waitedMs:number}>}
  */
 export async function waitDuration(frame, timeoutMs = 20000) {
   const t0 = Date.now();
-  while (Date.now() - t0 < timeoutMs) {
-    const d = await frame
+  let loadRetried = false;
+
+  // 监听只装一次；刷新页面后 window 是新的，会重新装。
+  await frame
+    .evaluate(() => {
+      const key = '__xxtVideoMetaWatch';
+      if (globalThis[key]) return;
+      globalThis[key] = true;
+      const bind = () => {
+        const v = document.querySelector('video');
+        if (!v || v.__xxtMetaBound) return;
+        v.__xxtMetaBound = true;
+        const stamp = () => {
+          globalThis.__xxtVideoMeta = { duration: Number.isFinite(v.duration) ? v.duration : null, error: v.error?.code || 0, at: Date.now() };
+        };
+        v.addEventListener('loadedmetadata', stamp);
+        v.addEventListener('durationchange', stamp);
+        v.addEventListener('error', stamp);
+        stamp();
+      };
+      bind();
+      const timer = setInterval(bind, 1000);
+      setTimeout(() => clearInterval(timer), 120000);
+    })
+    .catch(() => {});
+
+  for (;;) {
+    const probe = await frame
       .evaluate(() => {
         const v = document.querySelector('video');
-        if (!v) return null;
-        return Number.isFinite(v.duration) && v.duration > 0 ? v.duration : null;
+        if (!v) return { missing: true };
+        const meta = globalThis.__xxtVideoMeta || {};
+        return {
+          duration: Number.isFinite(v.duration) && v.duration > 0 ? v.duration : Number.isFinite(meta.duration) ? meta.duration : null,
+          mediaError: v.error?.code || meta.error || 0,
+          readyState: v.readyState,
+          networkState: v.networkState,
+        };
       })
-      .catch(() => null);
-    if (d) return d;
+      .catch(() => ({ missing: true }));
+
+    if (!probe.missing) {
+      const verdict = durationVerdict({
+        elapsedMs: Date.now() - t0,
+        duration: probe.duration,
+        mediaError: probe.mediaError,
+        budgetMs: timeoutMs,
+        loadRetried,
+      });
+      if (verdict.action === 'done') return { ok: true, duration: probe.duration, waitedMs: Date.now() - t0 };
+      if (verdict.action === 'retry-load') {
+        loadRetried = true;
+        // 只重试一次；失败也不抛，下一轮走超时分支给出明确原因
+        await frame
+          .evaluate(() => {
+            try {
+              document.querySelector('video')?.load();
+              return true;
+            } catch {
+              return false;
+            }
+          })
+          .catch(() => false);
+        log('    视频元数据迟迟没到，已重新触发加载（不是重新播放）', 'debug');
+      }
+      if (verdict.action === 'fail') {
+        return {
+          ok: false,
+          errorCode: verdict.reason || 'duration-timeout',
+          waitedMs: Date.now() - t0,
+        };
+      }
+    }
+
+    if (Date.now() - t0 >= timeoutMs) return { ok: false, errorCode: 'duration-timeout', waitedMs: Date.now() - t0 };
     await frame.waitForTimeout(400).catch(() => {});
   }
-  return null;
 }
 
 /**
@@ -218,9 +317,19 @@ export async function prepare(frame, page, settings = {}) {
    * 反而破坏这条视频。而且实测证明完整播放本身就有效，不需要 seek 辅助。
    */
   const dur = await waitDuration(frame, 20000);
-  if (!dur) {
-    return { ok: false, error: '读不到视频时长（duration）' };
+  if (!dur.ok) {
+    /*
+     * 错误码要带上（duration-timeout / media-error-N）：
+     *   · 便于 failure-policy 归类为"环境性失败"（这类换页面/重试多半能过）；
+     *   · 便于用户/日志一眼看出是"元数据没来"还是"视频源本身不可解码"。
+     */
+    return {
+      ok: false,
+      errorCode: dur.errorCode,
+      error: `读不到视频时长（duration）：${dur.errorCode || '未知原因'}（已等 ${Math.round((dur.waitedMs || 0) / 1000)} 秒）`,
+    };
   }
+  const duration = dur.duration;
 
   // 等元数据就绪
   const t0 = Date.now();
@@ -232,7 +341,7 @@ export async function prepare(frame, page, settings = {}) {
   }
 
   if (!state || !state.duration) {
-    return { ok: false, error: '视频元数据未就绪（duration 读不到）' };
+    return { ok: false, error: `视频元数据未就绪（duration 读不到；已读到 ${duration ?? 'null'}）` };
   }
 
   // 注意：起播位置前移只在"位置太后"时才做，且必须**在读 duration 之后**再写回，

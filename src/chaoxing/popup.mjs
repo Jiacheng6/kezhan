@@ -30,6 +30,7 @@ import { parseAnswer, confidenceLabel } from '../ai/parse.mjs';
 import { waitTurn, markAsked, reportSuccess, reportFailure } from '../ai/throttle.mjs';
 import { extractQuestions, shootQuestion, selectOptions, readSelection } from './quiz.mjs';
 import { submitWork } from './quizrun.mjs';
+import { captureArea } from './shot.mjs';
 
 /** 弹窗相关的选择器（实测） */
 const POPUP_SELECTORS = {
@@ -110,12 +111,15 @@ export async function shootPopup(page, outDir, tag = 'popup') {
   fs.mkdirSync(outDir, { recursive: true });
   const file = path.join(outDir, `${tag}-${Date.now()}.png`);
   const el = await page.$(POPUP_SELECTORS.mask);
-  if (el) {
-    await el.screenshot({ path: file });
-  } else {
-    await page.screenshot({ path: file });
-  }
-  return file;
+  /*
+   * 用带降级的 captureArea，别裸调 el.screenshot()：
+   * 裸调默认 30 秒超时且要求"元素稳定"，内置网页被隐藏/页面不出帧时会一直等
+   * （实测日志 `elementHandle.screenshot: Timeout 30000ms exceeded … waiting for
+   * element to be stable`），每题白等 30 秒 → 连续失败 → 全局暂停。
+   */
+  const target = el ? page.locator(POPUP_SELECTORS.mask).first() : null;
+  const shot = await captureArea(page, target, file);
+  return shot.file;
 }
 
 /**
