@@ -69,7 +69,7 @@ function sleep(ms) {
  *
  * @returns {Promise<object>} 含 question / imagePath / aiAnswer / parsed / validation
  */
-async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, shouldStop, taskKey }) {
+async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, shouldStop, taskKey,resendMissingConversation=false }) {
   const dir = archiveDir();
 
   // 截图（唯一可靠输入 —— 题干是自定义字体加密的）
@@ -92,6 +92,7 @@ async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, sh
     imagePath,
     prompt,
     freshChat: settings.ai?.freshChatPerQuestion ?? false,
+    resendMissingConversation,
     shouldStop,
   });
   throwIfStopped(shouldStop);
@@ -324,6 +325,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
       try {
         solved = previous ? {...previous,question:q,aiError:null,aiErrorCode:null} : await solve({
           taskKey:task.key,
+          resendMissingConversation:!restartTask,
           workFrame,
           domIndex: q.domIndex,
           qianwenPage,
@@ -348,6 +350,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
           try {
             solved = await solve({
               taskKey: task.key,
+              resendMissingConversation:!restartTask,
               workFrame,
               domIndex: q.domIndex,
               qianwenPage,

@@ -9,9 +9,10 @@ try{
  await ctx.route('**/*',route=>{const url=route.request().url();const body=url.includes('doubao.com')?'<div data-testid="chat_input"><div class="tiptap" contenteditable="true"> </div></div>':url.includes('/knowledge/cards')?`<div class="ans-attach-ct"><span class="ans-job-icon" aria-label="任务点未完成"></span><iframe data='{"name":"示例作业","jobid":"fixture-job"}' src="https://mooc1.chaoxing.com/mooc-ans/work/doHomeWorkNew?workId=fixture-work&workAnswerId=${attempt}"></iframe></div>`:`<h1>示例作业</h1>${[1,2,3].map(i=>`<div class="TiMu"><div class="newZy_TItle">【简答题】</div><div class="Zy_TItle"><p>独立测试题干 ${i}</p></div><textarea name="answerEditor${i}"></textarea></div>`).join('')}<button class="btnSubmit" onclick="window.submissions++">提交</button><script>window.submissions=0</script>`;return route.fulfill({contentType:'text/html; charset=utf-8',body});});
  const ai=await ctx.newPage();await ai.goto('https://www.doubao.com/chat/');
  const task={key:'partial-demo',name:'示例作业',type:'work',courseId:'fixture-course',clazzId:'fixture-class',knowledgeId:'fixture-section',secNo:'1.1'};
- const asked=[];
- const solve=async({question:q})=>{
+ const asked=[],retryPermissions=[];
+ const solve=async({question:q,resendMissingConversation})=>{
   asked.push(q.index);
+  retryPermissions.push(resendMissingConversation);
   if(q.index===3){const saved=loadState().reviewQueue.filter(i=>i.taskKey===task.key&&i.autoFilled);assert.equal(saved.length,2,'前两题必须在第三题开始前已写入磁盘');}
   const answer=q.index===3&&asked.length===3?'':`答案：这是第 ${q.index} 题的已保存简答内容。`;
   const parsed=parseAnswer(answer,q);return {question:q,imagePath:'',aiAnswer:answer,aiError:answer?null:'发送控件暂不可用',aiErrorCode:answer?null:'send-failed',parsed,validation:validateBeforeSubmit(parsed,q)};
@@ -23,18 +24,20 @@ try{
  reportFailure({errorCode:'empty-answer'});reportFailure({errorCode:'empty-answer'});
  result=await runQuizTask({ctx,qianwenPage:ai,task,personId:'fixture',reviewRetry:true},{solve});
  assert.deepEqual(asked,[1,2,3,3],'续跑只允许询问第三题，前两题复用并恢复');assert.equal(result.answered,3);assert.equal(result.phase,'awaiting-review');assert.equal(result.submitted,false);
+ assert.deepEqual(retryPermissions,[true,true,true,true],'正常开始和待审续跑都允许一次失效记录恢复');
  resetThrottle();
  const frame=result.workPage.frames().find(f=>f.url().includes('/work/'));assert.equal(await frame.evaluate(()=>window.submissions),0);assert.ok((await frame.locator('textarea').evaluateAll(es=>es.map(e=>e.value))).every(Boolean));
  await result.workPage.close();attempt='different-attempt';
  result=await runQuizTask({ctx,qianwenPage:ai,task,personId:'fixture',reviewRetry:true},{solve});
  assert.match(result.error,/作答次数改变/);assert.deepEqual(asked,[1,2,3,3],'作答次数改变时不得询问或覆盖旧答案');
  assert.equal(loadState().reviewQueue.filter(i=>i.taskKey===task.key&&i.aiAnswer).length,3,'身份变化不能把已存答案覆盖为空白占位题');
- const {BatchRunner}=await import('../../src/batch.mjs');attempt='one';asked.length=0;
+ const {BatchRunner}=await import('../../src/batch.mjs');attempt='one';asked.length=0;retryPermissions.length=0;
  const automaticTask={...task,key:'automatic-recovery-demo',willHandle:true,finished:false};
  const originalKey=task.key;task.key=automaticTask.key;
  const batch=new BatchRunner({runQuiz:args=>runQuizTask(args,{solve})});
  await batch.start({ctx,qianwenPage:ai,command:{personId:'fixture'},tasks:[automaticTask]});
  assert.deepEqual(asked,[1,2,3,3],'批量自动重启也只询问失败的第三题');
+ assert.deepEqual(retryPermissions,[true,true,true,false],'普通任务发生内部自动重启时，不继承额外重新发送权限');
  assert.equal(batch.stats.review,1);assert.equal(batch.stats.done,0);assert.equal(batch.stats.failed,0);
  const saved=loadState().reviewQueue.filter(i=>i.taskKey===automaticTask.key);assert.equal(saved.length,3);assert.ok(saved.every(i=>i.aiAnswer));
  task.key=originalKey;

@@ -233,3 +233,5 @@ android/app/src/main/assets/generated/
 docs/*交接文档*.md
 docs/qa/2026-11-01-ucampus-recon.md
 docs/qa/2026-11-02-ucampus-acceptance.md
+docs/qa/2026-11-03-ai-draft-recovery.md
+docs/qa/2026-11-04-normal-start-recovery.md

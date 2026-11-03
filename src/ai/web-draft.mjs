@@ -16,13 +16,20 @@ export function saveWebDraft(key,data){if(!key)return;mutateState(s=>{s.aiWebDra
 export function createWebDraft(key,{prompt,basePrompt,pageUrl,imagePath}){saveWebDraft(key,{prompt,promptHash:promptHash(basePrompt),pageUrl,imagePath,imageHash:hash(fs.readFileSync(imagePath)),phase:'prepared'});}
 export function clearWebDraft(key){if(key)mutateState(s=>{if(s.aiWebDrafts)delete s.aiWebDrafts[key];});}
 
+// Only a server conversation can be reopened after the renderer exits. The
+// optimistic /chat/local_* route is valid only while that send is in memory.
+export function durableWebConversation(url){
+ try{const saved=new URL(url);return saved.protocol==='https:'&&['www.doubao.com','doubao.com'].includes(saved.hostname)&&!saved.port&&!saved.username&&!saved.password&&/^\/chat\/\d+\/?$/.test(saved.pathname)&&!saved.search&&!saved.hash?saved.href:'';}catch{return '';}
+}
+
 // A process restart opens the provider homepage. Sent work belongs to the
 // original conversation, never whichever empty chat happens to be open now.
 export function savedWebConversation(item,currentUrl){
  if(!item||item.phase==='prepared')return '';
  try{
+  if(!durableWebConversation(item.pageUrl))return '';
   const saved=new URL(item.pageUrl),current=new URL(currentUrl);
-  if(saved.protocol!=='https:'||!['www.doubao.com','doubao.com'].includes(saved.hostname)||saved.origin!==current.origin||!/^\/chat\/\d+\/?$/.test(saved.pathname)||saved.search||saved.hash)return '';
+  if(saved.origin!==current.origin)return '';
   return saved.pathname.replace(/\/$/,'')===current.pathname.replace(/\/$/,'')?'':saved.href;
  }catch{return '';}
 }

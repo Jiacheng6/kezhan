@@ -124,7 +124,7 @@ export async function runZhihuishuQuiz({task,context,shouldStop,onProgress=()=>{
   const provider=selectedProvider(loadSettings()),aiPage=await ensureProviderPage(context,provider);
   const directory=path.join(PATHS.answers,'zhihuishu',Date.now()+'-'+Math.random().toString(36).slice(2,8));fs.mkdirSync(directory,{recursive:true});
   const result=await answerZhihuishuHomework({page,shouldStop,previous:previous?.paperKey?previous:undefined,imagePathFor:index=>path.join(directory,index+'.png'),
-   askImage:args=>ask({...args,page:aiPage,shouldStop,platform:'zhihuishu',taskKey:task.key,freshChat:true}),
+   askImage:args=>ask({...args,page:aiPage,shouldStop,platform:'zhihuishu',taskKey:task.key,freshChat:true,resendMissingConversation:!restartTask}),
    checkpoint:data=>checkpoint(task,{...data,url:page.url()}),onStage:stage=>onProgress({taskType:'work',phase:stage.stage,questionIndex:stage.index,questionTotal:stage.total})});
   await saveCurrent(page);await page.reload({waitUntil:'domcontentloaded'});const verify=await verifyZhihuishuDraft(page,result);if(!verify.ok)throw Error('保存后答案未匹配，已留在待审');
   checkpoint(task,{...result,url:page.url(),saved:true});

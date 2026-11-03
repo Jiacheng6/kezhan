@@ -9,7 +9,8 @@ import {beginWebTurn,endWebTurn,webRequestMarker} from './web-turn.mjs';
 import {AI_PROVIDERS} from './providers.mjs';
 import {recoverDoubaoImageTurn,readDoubaoImageCandidate} from './doubao-image-recovery.mjs';
 import {canPauseAI,waitForAIResume} from './resume.mjs';
-import {draftKey,readWebDraft,createWebDraft,saveWebDraft,clearWebDraft,savedWebConversation} from './web-draft.mjs';
+import {draftKey,readWebDraft,createWebDraft,saveWebDraft,clearWebDraft,savedWebConversation,durableWebConversation} from './web-draft.mjs';
+import {recoverWebConversation,hasConversationMarker} from './conversation-recovery.mjs';
 import {sessionAction,nextSessionMemory,shouldResetSession,planComposerReset} from './session-policy.mjs';
 import {clearComposerResidue} from './composer-reset.mjs';
 export const WEB_UI = {
@@ -168,7 +169,10 @@ export async function askWebImage(opts={}, provider) {
     sameCount: memory.sameCount || 0,
     resetFlag: !!memory.resetFlag,
   });
-  if (plan.reason) log(`    ${target.label} ${plan.reason}`, 'warn');
+  if (plan.reason) {
+    const pending=target.id==='doubao'&&readWebDraft(draftKey(target.id,opts.taskKey,opts.question),opts.prompt,opts.page.url());
+    log(`    ${target.label} ${pending?'上次提问已有记录，优先找回原回答；失效记录最多重新提问一次':plan.reason}`, 'warn');
+  }
 
   const result = await askWebImageInner(
     { ...opts, freshChat: !!opts.freshChat || plan.freshChat },
@@ -198,20 +202,27 @@ export function __resetChatMemory() {
   chatMemory.clear();
 }
 
-async function askWebImageInner({page,imagePath,prompt,shouldStop,freshChat=false,onSent=()=>{},taskKey,question},provider) {
+async function askWebImageInner({page,imagePath,prompt,shouldStop,freshChat=false,onSent=()=>{},taskKey,question,resendMissingConversation=false},provider) {
   // A unique user-turn marker also rejects remounted historical bubbles when
   // the virtual list recycles every DOM node. The model need not echo it.
-  const basePrompt=prompt,ownedKey=draftKey(provider.id,taskKey,question),owned=readWebDraft(ownedKey,prompt,page.url());
+  const basePrompt=prompt,capturedImagePath=imagePath,ownedKey=draftKey(provider.id,taskKey,question);
+  let owned=readWebDraft(ownedKey,prompt,page.url()),savedDurable='',orphanedSend=null;
   if(owned){prompt=owned.prompt;imagePath=owned.imagePath;freshChat=false;}
   else if(provider.id==='doubao')prompt+=`\n\n本次提问标记：${randomUUID()}。标记仅用于区分本次提问，答案中不要重复标记。`;
   let started=Date.now(),pausedMs=0;
   const ui=WEB_UI[provider.id],settings=loadSettings().ai||{};
   const read=operation=>waitForRead(operation,{shouldStop,timeoutMs:10000,message:`${provider.label}页面读取超时`});
+  const rememberConversation=state=>{
+    if(!ownedKey||!state.turnObserved||state.turnInvalidated||state.trackedMarker!==webRequestMarker(prompt))return;
+    const url=durableWebConversation(page.url());if(!url||url===savedDurable)return;
+    saveWebDraft(ownedKey,{pageUrl:url});savedDurable=url;if(owned)owned={...owned,pageUrl:url};
+  };
   const readState=async()=>{
     let state=await read(()=>webChatState(page,provider));
+    rememberConversation(state);
     while(state.verification&&canPauseAI()){
       const elapsed=await waitForAIResume({provider,page,shouldStop,check:async()=>{const next=await webChatState(page,provider);return !next.verification&&next.loggedIn;}});
-      started+=elapsed;pausedMs+=elapsed;state=await read(()=>webChatState(page,provider));
+      started+=elapsed;pausedMs+=elapsed;state=await read(()=>webChatState(page,provider));rememberConversation(state);
     }
     return state;
   };
@@ -250,6 +261,25 @@ async function askWebImageInner({page,imagePath,prompt,shouldStop,freshChat=fals
     throwIfStopped(shouldStop);
     await dismissWebObstructions(page);
     let state=await readyState(),blocked=webBlock(state,provider);if(blocked)return blocked;
+    if(owned&&owned.phase!=='prepared'&&!durableWebConversation(owned.pageUrl)&&!await read(()=>page.evaluate(hasConversationMarker,webRequestMarker(prompt)))){
+      if(state.generating)return {ok:false,errorCode:'already-generating',error:`${provider.label}当前对话仍在生成，请结束后恢复原题`};
+      if(state.editorText||await read(()=>hasComposerAttachment(page,provider)))return {ok:false,errorCode:'draft-not-empty',error:`${provider.label}当前输入区有草稿，已保留；请先处理再恢复原题`};
+      log('    豆包旧记录保存了临时会话地址，正在按本题标记找回原对话（不重复发送）','info');
+      const recovered=await recoverWebConversation(page,owned,{shouldStop,onProgress:n=>log(`    正在核对最近对话 ${n}/6，仅匹配本题提问标记`,'info')});
+      if(recovered.reason==='draft-present')return {ok:false,errorCode:'draft-not-empty',error:'豆包恢复时发现输入草稿或正在生成的回答，已停止切换页面；请处理后再恢复原题'};
+      if(!recovered.ok){
+        // The first execution of a user-started task may replace an orphaned
+        // send once. This includes normal Start and the review retry entry.
+        // Automatic task restarts must keep the no-duplicate-send guarantee.
+        if(owned.recoveryReasked)return {ok:false,errorCode:'conversation-unavailable',error:'本题已重新提问过一次，当前会话仍无法确认；请先在 AI 网页核对，不再重复发送'};
+        if(!resendMissingConversation)return {ok:false,errorCode:'conversation-unavailable',error:'豆包旧题保存的是临时会话地址，最近对话中未找到本题；请打开原对话，或在待审中点击“只重试未完成题目”重新提问，已答内容保留'};
+        orphanedSend={pageUrl:owned.pageUrl,marker:webRequestMarker(owned.prompt),at:owned.at};
+        prompt=basePrompt+`\n\n本次提问标记：${randomUUID()}。标记仅用于区分本次提问，答案中不要重复标记。`;
+        imagePath=capturedImagePath;owned=null;freshChat=true;
+        log('    原对话未找回，按本轮任务请求重新提问一次，已保存答案不变','warn');
+      }else{saveWebDraft(ownedKey,{pageUrl:recovered.url});owned={...owned,pageUrl:recovered.url};}
+      state=await readyState();blocked=webBlock(state,provider);if(blocked)return blocked;
+    }
     const savedConversation=savedWebConversation(owned,page.url());
     if(savedConversation){
       if(state.generating)return {ok:false,errorCode:'already-generating',error:`${provider.label}当前对话仍在生成回答，请等待结束后恢复原题`};
@@ -274,6 +304,7 @@ async function askWebImageInner({page,imagePath,prompt,shouldStop,freshChat=fals
     const blockedByResidue=await ensureComposerClean({prompt,editorText:state.editorText||''});
     if(blockedByResidue)return blockedByResidue;
     createWebDraft(ownedKey,{prompt,basePrompt,pageUrl:page.url(),imagePath});
+    if(orphanedSend)saveWebDraft(ownedKey,{recoveryReasked:true,previousSend:orphanedSend});
     stage='editor';await writeWebPrompt(page,provider,prompt,{shouldStop});
     stage='upload';
     // Doubao mounts its file inputs after the first focus/text update. Never use

@@ -6,7 +6,7 @@ const root=process.cwd(),data=fs.mkdtempSync(path.join(root,'.desktop-test/web-a
 const {findEdge}=await import('../../src/browser/launch.mjs');
 const {AI_PROVIDERS,providerForUrl,ensureProviderPage}=await import('../../src/ai/providers.mjs');
 const {askImage,checkLogin}=await import('../../src/ai/ai.mjs');
-const {webChatState,writeWebPrompt}=await import('../../src/ai/web-chat.mjs');
+const {webChatState,writeWebPrompt,__resetChatMemory}=await import('../../src/ai/web-chat.mjs');
 const {normalizeSettings}=await import('../../src/settings.mjs');
 const {loadSettings}=await import('../../src/config.mjs');
 // All traffic is intercepted below; account rate limits would only slow the
@@ -70,6 +70,10 @@ try{
     const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
   }});
   const brokenPage=new Proxy(page,{get(target,key){if(key==='locator')return(...args)=>brokenLocator(target.locator(...args));const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value}});
+  // This is an independent input-failure case; the preceding intentional
+  // attachment rejection otherwise starts a fresh chat and resets fixture DOM
+  // counters. Session-reset behavior has its own self-heal regression suite.
+  __resetChatMemory();
   const failedInput=await askImage({page:brokenPage,imagePath,prompt:'CANNOT TYPE',freshChat:false});
   assert.equal(failedInput.errorCode,'editor-unavailable');assert.equal(failedInput.sent,false);
   assert.match(failedInput.error,/填写输入框失败/);assert.equal(await page.evaluate(()=>window.sent),2);
