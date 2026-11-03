@@ -8,8 +8,8 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 const testRoot = path.join(root, '.desktop-test');
 fs.mkdirSync(testRoot, { recursive: true });
 const data = fs.mkdtempSync(path.join(testRoot, 'essay-editor-'));
-process.env.XXT_DATA_DIR = data;
-process.env.XXT_DESKTOP = '1';
+process.env.KEBO_DATA_DIR = data;
+process.env.KEBO_DESKTOP = '1';
 const { ensureDirs } = await import('../../src/config.mjs');
 const { findEdge } = await import('../../src/browser/launch.mjs');
 const { fillEssayAnswer, readEssayAnswer } = await import('../../src/chaoxing/essay.mjs');
@@ -29,7 +29,7 @@ try {
   context = await chromium.launchPersistentContext(path.join(data, 'empty-profile'), {
     executablePath: findEdge(), headless: false, args: ['--no-first-run', '--disable-sync'],
   });
-  await context.addInitScript(()=>localStorage.setItem('xxt-library-startup','skip'));
+  await context.addInitScript(()=>localStorage.setItem('kebo-library-startup','skip'));
   // 题目页的 URL 形状与真实作业一致，内容由 route 完全离线提供。
   await context.route('**/mooc-ans/work/doHomeWorkNew', (route) => route.fulfill({ contentType: 'text/html', body: `
     <div class="TiMu"><h3>【简答题】测试正文同步</h3><div id="container"><iframe id="ueditor_0"></iframe></div><textarea name="answerEditor0" hidden></textarea></div>

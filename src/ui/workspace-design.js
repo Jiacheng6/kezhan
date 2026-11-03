@@ -6,19 +6,19 @@ toggle.title = "切换工作台外观";
 document.querySelector("#desktopToolbar").before(toggle);
 let classic = false;
 try {
-  classic = localStorage.getItem("xxt-classic-workspace") === "true";
+  classic = localStorage.getItem("kebo-classic-workspace") === "true";
 } catch {}
 function sync() {
-  document.documentElement.dataset.workspaceAppearance = classic ? "classic" : "kezhan";
+  document.documentElement.dataset.workspaceAppearance = classic ? "classic" : "kebo";
   stylesheet.disabled = classic;
-  document.querySelector('#kezhanDesign').disabled = classic;
+  document.querySelector('#keboDesign').disabled = classic;
   toggle.textContent = classic ? "切换新版界面" : "切换经典界面";
   toggle.setAttribute("aria-pressed", String(classic));
 }
 toggle.onclick = () => {
   classic = !classic;
   try {
-    localStorage.setItem("xxt-classic-workspace", String(classic));
+    localStorage.setItem("kebo-classic-workspace", String(classic));
   } catch {}
   sync();
 };

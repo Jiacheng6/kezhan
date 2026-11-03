@@ -24,7 +24,7 @@ const restored=applyPlan(courses,saved);assert.equal(restored.missing,1);assert.
 assert.throws(()=>applyPlan(courses,{courses:[{}]}),/课程/);
 courses=make();const other=structuredClone(capturePlan(courses));other.courses[0].clazzId='other-class';assert.equal(applyPlan(courses,other).missing,5-1);assert.equal(courses[0].enabled,false);
 
-fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/plans-'));
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/plans-'));
 const {PATHS,setPersonId}=await import('../../src/config.mjs');
 const {changeSelectionPreset,listSelectionPresets}=await import('../../src/chaoxing/selection-presets.mjs');
 const {saveSelection}=await import('../../src/chaoxing/checklist.mjs');

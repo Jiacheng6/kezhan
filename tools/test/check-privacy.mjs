@@ -233,7 +233,7 @@ const TEXT_EXT = /\.(mjs|js|ts|tsx|json|md|html|css|bat|vbs|cs|txt|yml|yaml|sh|p
  * 为什么要支持后两种：导出的纯净副本里**没有 local.json**（那是隐私文件），
  * 于是副本自己的自检无法做精确匹配，只能扫通用模式 —— 实测踩到：
  * 副本自检报"没有发现敏感内容"，而副本里其实躺着一处真实 personId。
- * 所以导出脚本会用 `XXT_PERSON_ID=<真实ID>` 再跑一次副本自检。
+ * 所以导出脚本会用 `KEBO_PERSON_ID=<真实ID>` 再跑一次副本自检。
  *
  * 取不到时**不做正则兜底** —— 兜底只能靠"9 位数字"，会把 courseId/knowledgeId
  * 全算进来（实测 44 处误报），反而让人忽略真正的命中。
@@ -241,7 +241,7 @@ const TEXT_EXT = /\.(mjs|js|ts|tsx|json|md|html|css|bat|vbs|cs|txt|yml|yaml|sh|p
 function knownPersonId() {
   const arg = process.argv.find((a) => a.startsWith('--person-id='));
   if (arg) return { id: arg.slice('--person-id='.length).trim() || null, from: '命令行参数' };
-  if (process.env.XXT_PERSON_ID) return { id: process.env.XXT_PERSON_ID.trim() || null, from: '环境变量 XXT_PERSON_ID' };
+  if (process.env.KEBO_PERSON_ID) return { id: process.env.KEBO_PERSON_ID.trim() || null, from: '环境变量 KEBO_PERSON_ID' };
   try {
     const id = JSON.parse(readFileSync(path.join(ROOT, 'local.json'), 'utf8')).personId || null;
     return { id, from: 'local.json' };
@@ -252,13 +252,13 @@ function knownPersonId() {
 
 const known = knownPersonId();
 const personId = known.id;
-const learningTerms = loadLearningTerms(ROOT, [process.env.APPDATA && path.join(process.env.APPDATA, 'XuexitongAssistant')]);
+const learningTerms = loadLearningTerms(ROOT, ['Kebo','XuexitongAssistant'].map(name=>process.env.APPDATA && path.join(process.env.APPDATA,name)).filter(Boolean));
 console.log(`  · 本机学习信息精确检查：${learningTerms.length} 条（仅输出命中文件，不输出个人信息）`);
 
 /*
  * 明确打出"精确检查已启用"。这一行是给**调用方**看的：
  * 导出脚本会断言它存在 —— 否则"副本自检通过"可能只是因为
- * 副本里的扫描器不认识 XXT_PERSON_ID（副本过旧），属于假绿。
+ * 副本里的扫描器不认识 KEBO_PERSON_ID（副本过旧），属于假绿。
  * 只打尾号，避免把完整 ID 打进日志/截图。
  */
 if (personId) {
@@ -294,7 +294,7 @@ const SELF = 'tools/test/check-privacy.mjs';
 if (!personId) {
   console.log('\n  · 未找到 local.json（personId），跳过 personId 精确检查');
   console.log('    想让它精确检查的话：复制 local.example.json 为 local.json 并填上你的 personId，');
-  console.log('    或临时用环境变量指定：XXT_PERSON_ID=<你的ID> node tools/test/check-privacy.mjs');
+  console.log('    或临时用环境变量指定：KEBO_PERSON_ID=<你的ID> node tools/test/check-privacy.mjs');
 }
 
 console.log(`\n=== 敏感内容扫描（${files.length} 个文件）===`);

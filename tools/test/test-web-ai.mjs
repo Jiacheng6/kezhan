@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';
 import {chromium} from 'playwright-core';
 import {fixturePng} from './fixture-png.mjs';
-const root=process.cwd(),data=fs.mkdtempSync(path.join(root,'.desktop-test/web-ai-'));process.env.XXT_DATA_DIR=data;
+const root=process.cwd(),data=fs.mkdtempSync(path.join(root,'.desktop-test/web-ai-'));process.env.KEBO_DATA_DIR=data;
 const {findEdge}=await import('../../src/browser/launch.mjs');
 const {AI_PROVIDERS,providerForUrl,ensureProviderPage}=await import('../../src/ai/providers.mjs');
 const {askImage,checkLogin}=await import('../../src/ai/ai.mjs');

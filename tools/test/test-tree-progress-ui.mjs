@@ -27,10 +27,10 @@ const state = { version: 3, taskPoints: {
 fs.mkdirSync(path.join(data, 'data/probe-out'), { recursive: true });
 fs.writeFileSync(path.join(data, 'data/probe-out/task-report.json'), JSON.stringify(report));
 fs.writeFileSync(path.join(data, 'state.json'), JSON.stringify(state));
-const executablePath = process.env.XXT_TREE_TEST_EXE || path.join(root, 'node_modules/electron/dist/electron.exe');
+const executablePath = process.env.KEBO_TREE_TEST_EXE || path.join(root, 'node_modules/electron/dist/electron.exe');
 const application = await electron.launch({ executablePath,
-  args: [...(process.env.XXT_TREE_TEST_EXE ? [] : [root]), '--test-mode'],
-  env: { ...process.env, XXT_TEST_DATA_DIR: data } });
+  args: [...(process.env.KEBO_TREE_TEST_EXE ? [] : [root]), '--test-mode'],
+  env: { ...process.env, KEBO_TEST_DATA_DIR: data } });
 try {
   await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).showInactive());
   const page = await application.firstWindow();

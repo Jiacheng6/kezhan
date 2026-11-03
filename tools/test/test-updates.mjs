@@ -93,7 +93,7 @@ assert.equal(corrupt.installs, 0, '校验失败不可安装');
 assert.equal(corruption.snapshot().downloadReady, false);
 assert.match(corruption.snapshot().message, /校验失败/);
 
-const data = fs.mkdtempSync(path.join(process.env.XXT_DATA_DIR || '.desktop-test', 'update-data-'));
+const data = fs.mkdtempSync(path.join(process.env.KEBO_DATA_DIR || '.desktop-test', 'update-data-'));
 fs.mkdirSync(path.join(data, 'edge-profile'), { recursive: true });
 fs.mkdirSync(path.join(data, 'data', 'probe-out'), { recursive: true });
 const fixture = {

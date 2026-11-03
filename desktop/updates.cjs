@@ -230,12 +230,12 @@ class UpdateController {
 function createUpdates({ app, dataDir, testMode, onStatus, prepareInstall, recoverInstall }) {
   const { NsisUpdater } = require('electron-updater');
   let provider = { provider: 'github', owner: 'Jiacheng6', repo: 'kezhan-releases' };
-  const testSources = testMode && process.env.XXT_TEST_UPDATE_SOURCES ? JSON.parse(process.env.XXT_TEST_UPDATE_SOURCES) : null;
+  const testSources = testMode && process.env.KEBO_TEST_UPDATE_SOURCES ? JSON.parse(process.env.KEBO_TEST_UPDATE_SOURCES) : null;
   if (testSources) {
     if (!Array.isArray(testSources) || testSources.length !== 2 || testSources.some((source, i) =>
       source.id !== ['cnb', 'github'][i] || source.provider?.provider !== 'generic' || new URL(source.provider.url).hostname !== '127.0.0.1' || new URL(source.provider.url).protocol !== 'http:')) throw new Error('测试更新渠道只能使用本机回环地址');
   }
-  const testFeed = testMode && (process.env.XXT_TEST_UPDATE_FEED || testSources?.[0].provider.url);
+  const testFeed = testMode && (process.env.KEBO_TEST_UPDATE_FEED || testSources?.[0].provider.url);
   if (testFeed) {
     const url = new URL(testFeed);
     if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('测试更新源只能使用本机回环地址');
@@ -251,7 +251,7 @@ function createUpdates({ app, dataDir, testMode, onStatus, prepareInstall, recov
     updater.forceDevUpdateConfig = true;
     updater.disableDifferentialDownload = true;
   }
-  const installed = fs.existsSync(path.join(path.dirname(app.getPath('exe')), 'Uninstall 学习通助手.exe'));
+  const installed = ['课泊','学习通助手'].some(name=>fs.existsSync(path.join(path.dirname(app.getPath('exe')), `Uninstall ${name}.exe`)));
   return new UpdateController(updater, { version: app.getVersion(), enabled: app.isPackaged || !!testFeed, installed,
     startupEnabled: !testMode || !!testFeed,
     sources: testSources || (testFeed ? null : SOURCES), sourcePreference: readPreference(dataDir), savePreference: value => writePreference(dataDir, value),

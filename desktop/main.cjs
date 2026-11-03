@@ -7,17 +7,30 @@ const { CloseConfirmation } = require('./close-confirmation.cjs');
 const { EmbeddedBrowser } = require('./embedded-browser.cjs');
 const { NotificationCenter } = require('./notifications.cjs');
 const {createApiService}=require('./ai-api.cjs');
+require('../src/brand-env.cjs');
+const {BRAND,migrateProfile}=require('./brand.cjs');
 
-const title = '课栈';
+const title = '课泊';
 const smokeTest = process.argv.includes('--smoke-test');
 const embeddedTest = process.argv.includes('--embedded-test');
 const testMode = smokeTest || process.argv.includes('--test-mode') || embeddedTest;
-const dataDir = testMode && process.env.XXT_TEST_DATA_DIR
-  ? path.resolve(process.env.XXT_TEST_DATA_DIR)
-  : path.join(app.getPath('appData'), 'XuexitongAssistant');
-fs.mkdirSync(dataDir, { recursive: true });
+const requestedDataDir = testMode && process.env.KEBO_TEST_DATA_DIR
+  ? path.resolve(process.env.KEBO_TEST_DATA_DIR)
+  : path.join(app.getPath('appData'), 'Kebo');
+// Retain the legacy singleton as an upgrade interlock while its data exists.
+// Acquire it before copying databases: a running old installation must exit
+// normally before migration. The original profile is kept as a rollback copy.
+const legacyLockDir=path.join(app.getPath('appData'),BRAND.legacyDataName);
+const lockDir=!testMode&&fs.existsSync(legacyLockDir)?legacyLockDir:requestedDataDir;
+fs.mkdirSync(lockDir,{recursive:true});
+app.setName(BRAND.title);
+app.setPath('userData',lockDir);
+const ownsInstance=app.requestSingleInstanceLock();
+const migration=ownsInstance&&!testMode?migrateProfile(app.getPath('appData')):{directory:requestedDataDir,migrated:false};
+const dataDir=migration.directory;
+if(ownsInstance)fs.mkdirSync(dataDir, { recursive: true });
 app.setPath('userData', dataDir);
-app.setAppUserModelId('com.xuexitong.assistant');
+app.setAppUserModelId('com.kebo.app');
 app.commandLine.appendSwitch('remote-debugging-port', '0');
 app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
@@ -140,10 +153,10 @@ async function startWorker() {
   const debugPort = await internalDebugPort();
   const child = utilityProcess.fork(path.join(__dirname, 'worker.cjs'), [], {
     cwd: app.getAppPath(), stdio: 'pipe', serviceName: title + '后台服务',
-    env: { ...process.env, XXT_DATA_DIR: dataDir, XXT_DEBUG_PORT: String(debugPort), XXT_DESKTOP: '1', XXT_EMBEDDED_BROWSER: '1',
-      XXT_OWNER_PID: String(process.pid), XXT_EMBEDDED_TEST: embeddedTest ? '1' : '',
-      XXT_EMBEDDED_TEST_HOME: embeddedTest ? process.env.XXT_EMBEDDED_TEST_HOME || '' : '',
-      ...(testMode && !embeddedTest ? { XXT_SMOKE_TEST: '1' } : {}) },
+    env: { ...process.env, KEBO_DATA_DIR: dataDir, KEBO_DEBUG_PORT: String(debugPort), KEBO_DESKTOP: '1', KEBO_EMBEDDED_BROWSER: '1',
+      KEBO_OWNER_PID: String(process.pid), KEBO_EMBEDDED_TEST: embeddedTest ? '1' : '',
+      KEBO_EMBEDDED_TEST_HOME: embeddedTest ? process.env.KEBO_EMBEDDED_TEST_HOME || '' : '',
+      ...(testMode && !embeddedTest ? { KEBO_SMOKE_TEST: '1' } : {}) },
   });
   worker = child;
   child.on('error', (details) => showError(`后台进程异常：${details?.type || '未知错误'}`));
@@ -189,7 +202,7 @@ async function startWorker() {
       showError('后台服务意外退出，请点击重新启动。运行记录已保留。');
     }
   });
-  if (!(testMode && process.env.XXT_TEST_SKIP_HEARTBEAT === '1')) {
+  if (!(testMode && process.env.KEBO_TEST_SKIP_HEARTBEAT === '1')) {
     heartbeat = setInterval(() => { if (child.pid) child.postMessage({ type: 'heartbeat' }); }, 2000);
   }
   startupTimer = setTimeout(() => showError('服务启动超时，请查看数据文件夹中的 logs/desktop.log 后重试。'), 45000);
@@ -202,13 +215,14 @@ async function restartService() {
   finally { restarting = false; }
 }
 
-if (!app.requestSingleInstanceLock()) { app.quit(); }
+if (!ownsInstance) { app.quit(); }
 else {
   app.on('second-instance', showMain);
   app.on('activate', showMain);
   app.on('before-quit', (event) => { if (!quitting) { event.preventDefault(); requestClose(); } });
   app.on('window-all-closed', () => {});
   app.whenReady().then(async () => {
+    if(migration.warning)dialog.showErrorBox('课泊 · 数据迁移提示',migration.warning);
     Menu.setApplicationMenu(null);
     const icon = path.join(__dirname, 'assets', 'icon.png');
     mainWindow = new BrowserWindow({ title, width: 1240, height: 840, minWidth: 960, minHeight: 660,
@@ -218,7 +232,7 @@ else {
     });
     mainWindow.on('close', (event) => { if (!quitting) { event.preventDefault(); requestClose(); } });
     notifications = new NotificationCenter({ dataDir, Notification, icon, log,
-      nativeEnabled: !testMode || process.env.XXT_TEST_NATIVE_NOTIFICATIONS === '1',
+      nativeEnabled: !testMode || process.env.KEBO_TEST_NATIVE_NOTIFICATIONS === '1',
       onState: state => {
         if (!mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:notifications', state);
         tray?.setToolTip(state.unread ? `${title}：${state.unread} 条未读提醒` : title);
@@ -281,7 +295,7 @@ else {
     notifications.publish();
     tray.on('double-click', showMain);
     tray.setContextMenu(Menu.buildFromTemplate([
-      { label: '打开课栈', click: showMain },
+      { label: '打开课泊', click: showMain },
       { label: '通知与待处理', click: () => { showMain(); mainWindow.webContents.send('desktop:notice-open', {action:'notices'}); } },
       { label: '打开内置网页', click: () => { showMain(); internalBrowser.setVisible(true); } },
       { label: '返回工作台（任务继续运行）', click: () => internalBrowser.setVisible(false) },
@@ -317,8 +331,8 @@ else {
     handle('desktop:update-notified', () => updates.acknowledgeNotification());
     handle('desktop:update-source', source => updates.setSource(source));
     handle('desktop:update-local', () => updates.importLocal(async () => {
-      const selected = await dialog.showOpenDialog(mainWindow, { title: '选择课栈新版安装包',
-        properties: ['openFile'], filters: [{ name: '课栈安装包', extensions: ['exe'] }] });
+      const selected = await dialog.showOpenDialog(mainWindow, { title: '选择课泊新版安装包',
+        properties: ['openFile'], filters: [{ name: '课泊安装包', extensions: ['exe'] }] });
       if (selected.canceled || !selected.filePaths[0]) return null;
       const installer = selected.filePaths[0];
       let manifest = path.join(path.dirname(installer), 'release-manifest.json');

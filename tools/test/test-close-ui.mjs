@@ -6,7 +6,7 @@ import { requestTestExit, enterTestWorkspace, revealTestTools, openTestArchive }
 const root=process.cwd(),out=path.join(root,'.desktop-test/dialogs');fs.mkdirSync(out,{recursive:true});
 const data=fs.mkdtempSync(path.join(root,'.desktop-test/close-ui-'));
 fs.writeFileSync(path.join(data,'state.json'),JSON.stringify({version:3,taskPoints:{fixture:{status:'done'}},reviewQueue:[]}));
-const application=await electron.launch({executablePath:path.join(root,'node_modules/electron/dist/electron.exe'),args:[root,'--test-mode'],env:{...process.env,XXT_TEST_DATA_DIR:data}});
+const application=await electron.launch({executablePath:path.join(root,'node_modules/electron/dist/electron.exe'),args:[root,'--test-mode'],env:{...process.env,KEBO_TEST_DATA_DIR:data}});
 const errors=[];let exited=false;
 try {
   const page=await application.firstWindow();page.on('pageerror',error=>errors.push(error.message));

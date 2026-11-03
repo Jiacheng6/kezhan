@@ -1,4 +1,4 @@
-# 课栈（原学习通助手）
+# 课泊 · Kebo
 
 面向 Windows 的多平台学习工作台，支持学习通和智慧树共享课。汇总课程并标明来源，两个平台可独立启停，AI 辅助请求逐题排队。
 
@@ -14,12 +14,12 @@
 
 需要 **Windows 10 / 11，64 位（x64）**，并保持网络连接。桌面版自带网页引擎，无需另开浏览器。
 
-0.6.0 起使用「课栈」品牌，安装文件名和数据目录保留旧标识，兼容现有用户升级。当前版本为 **0.6.10**，提供两种使用方式：
+当前版本为 **0.7.0**，正式更名为「课泊」，程序文件名为 `课泊.exe`，安装包前缀为 `Kebo`。旧版数据首次启动时复制到 `Kebo` 目录，原目录保留；现有下载渠道沿用以保持老用户更新可达。
 
 | 版本 | 下载 | 打开方式 |
 | --- | --- | --- |
-| 安装版 | [下载安装程序](https://github.com/Jiacheng6/kezhan-releases/releases/download/v0.6.10/XuexitongAssistant-0.6.10-Setup.exe) | 按提示安装，从桌面或开始菜单打开「学习通助手」 |
-| 免安装版 | [下载 ZIP 压缩包](https://github.com/Jiacheng6/kezhan-releases/releases/download/v0.6.10/XuexitongAssistant-0.6.10-win-x64.zip) | 完整解压后，双击文件夹中的「学习通助手.exe」 |
+| 安装版 | [发行下载页](https://github.com/Jiacheng6/kezhan-releases/releases/latest) | 选择安装包，按提示安装 |
+| 免安装版 | [发行下载页](https://github.com/Jiacheng6/kezhan-releases/releases/latest) | 选择 ZIP，完整解压后运行程序 |
 
 免安装版请保留完整文件夹，不要只复制 EXE，也不要直接在压缩软件内运行。分享给朋友时，发送上面的下载链接或发布包即可。
 
@@ -100,7 +100,7 @@
 安装版与免安装版共享同一 Windows 用户的数据目录：
 
 ```text
-%APPDATA%\XuexitongAssistant
+%APPDATA%\Kebo
 ```
 
 点击软件内「数据与日志」即可打开。移动软件文件夹、更新软件或正常卸载默认不会清除这些数据；更新前的备份位于该目录的 `updates/backups/`。

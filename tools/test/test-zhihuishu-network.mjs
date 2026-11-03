@@ -5,7 +5,7 @@ import path from 'node:path';
 import { chromium } from 'playwright-core';
 
 fs.mkdirSync('.desktop-test', { recursive: true });
-process.env.XXT_DATA_DIR = fs.mkdtempSync(path.resolve('.desktop-test/zhs-network-'));
+process.env.KEBO_DATA_DIR = fs.mkdtempSync(path.resolve('.desktop-test/zhs-network-'));
 const { findEdge } = await import('../../src/browser/launch.mjs');
 const { runZhihuishuVideo } = await import('../../src/platforms/zhihuishu/runner.mjs');
 const { loadState } = await import('../../src/state.mjs');

@@ -22,8 +22,14 @@ export function canRestartTask(task,outcome,{thrown=false}={}){
   if(phase.startsWith('blocked-')||outcome.needsHuman)return outcome.retryable===true||/超时|Timeout|网络|连接|加载|未就绪|未渲染|未出现|上下文|已关闭|发送失败|上传失败/.test(text);
   return true;
 }
-export async function runWithTaskRestart(execute,{task,shouldStop=()=>false,onRestart=()=>{},retryWhen=()=>true,delayMs=1500}={}){
-  for(let attempt=0;attempt<2;attempt++){
+export async function runWithTaskRestart(execute,{task,shouldStop=()=>false,onRestart=()=>{},retryWhen=()=>true,delayMs=1500,maxAttempts=2}={}){
+  /*
+   * 用户反馈（2026-11-03）：「有时我手动做完剩下的题提交后就又正常了」——
+   * 说明字体/页面类问题**换一个页面就能好**，只是原实现只给了 1 次重开。
+   * 现在页面级重开次数可配（默认仍是 1 次重开，字体类调用方给 3 次）。
+   */
+  const attempts = Math.min(6, Math.max(1, Math.round(Number(maxAttempts) || 2)));
+  for(let attempt=0;attempt<attempts;attempt++){
     if(shouldStop())return {ok:false,phase:'stopped'};
     let result,error;
     try{result=await execute({restartTask:attempt===1,restartAttempt:attempt});}
@@ -33,11 +39,17 @@ export async function runWithTaskRestart(execute,{task,shouldStop=()=>false,onRe
       return {ok:false,phase:'stopped'};
     }
     const outcome=error||result;
-    if(attempt===1||!retryWhen(result,error)||!canRestartTask(task,outcome,{thrown:!!error})){
+    if(attempt===attempts-1||!retryWhen(result,error)||!canRestartTask(task,outcome,{thrown:!!error})){
       if(error)throw error;return result;
     }
-    await onRestart({task,result,error,attempt:1});
-    const deadline=Date.now()+delayMs;
+    /*
+     * 字体/页面类失败：重开前多等一会，让字体请求有机会恢复
+     * （用户实测：手动提交后页面一换就正常了，说明换页 + 等一会儿是关键）。
+     */
+    const text = String(outcome?.error || outcome?.needsHuman || outcome?.message || '');
+    const isFontish = /字体|fonts?|截图|capture/i.test(text);
+    await onRestart({task,result,error,attempt:attempt+1});
+    const deadline=Date.now()+(isFontish?Math.max(delayMs,4000):delayMs);
     while(Date.now()<deadline){if(shouldStop())return {ok:false,phase:'stopped'};await new Promise(resolve=>setTimeout(resolve,Math.min(100,deadline-Date.now())));}
   }
 }

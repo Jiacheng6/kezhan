@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {chromium} from 'playwright-core';
-fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/zhs-entry-'));
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/zhs-entry-'));
 const {findEdge}=await import('../../src/browser/launch.mjs');const {runZhihuishuVideo}=await import('../../src/platforms/zhihuishu/runner.mjs');const {loadState}=await import('../../src/state.mjs');
 const task={platform:'zhihuishu',type:'video',key:'zhihuishu:demo:term:video:1.1:t0',courseId:'zhihuishu:demo:term',platformTaskKey:'zhihuishu:demo:term:video:1.1',studyUrl:'https://studyvideoh5.zhihuishu.com/stuStudy?stale=1',name:'演示视频'};
 const b=await chromium.launch({executablePath:findEdge(),headless:true});let clicks=0,mode='complete';

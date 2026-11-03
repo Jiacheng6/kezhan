@@ -92,7 +92,7 @@ export async function probeVideoQuiz(page) {
     if (r && (r.visible || (r.exists && r.visible !== false))) {
       if (r.visible) return { frame: f, via: /modules\/video/.test(u) ? 'video-frame' : 'other-frame', probe: r };
       // 存在但不可见：仅用于日志诊断
-      if (process.env.XXT_QUIZ_DEBUG) log(`      [quiz-probe] 存在但不可见 (${r.why}) ${u.slice(0, 60)}`, 'debug');
+      if (process.env.KEBO_QUIZ_DEBUG) log(`      [quiz-probe] 存在但不可见 (${r.why}) ${u.slice(0, 60)}`, 'debug');
     }
   }
   return null;
@@ -209,19 +209,19 @@ export async function shootVideoQuiz(frame, outDir, {shouldStop,nativeCapture} =
         }
         el = el.parentElement;
       }
-      for (const e of Array.from(document.querySelectorAll('[data-xxt-shot]'))) e.removeAttribute('data-xxt-shot');
-      best.setAttribute('data-xxt-shot', '1');
+      for (const e of Array.from(document.querySelectorAll('[data-kebo-shot]'))) e.removeAttribute('data-kebo-shot');
+      best.setAttribute('data-kebo-shot', '1');
       const b = best.getBoundingClientRect();
       return { tag: best.tagName, cls: String(best.className || '').slice(0, 80), w: Math.round(b.width), h: Math.round(b.height) };
     }, QUIZ_SELECTOR)
     .catch(() => null);
 
   try {
-    file = await shootQuestion(frame, 0, outDir, {selector:'[data-xxt-shot="1"]',shouldStop,...(nativeCapture ? {nativeCapture} : {})});
+    file = await shootQuestion(frame, 0, outDir, {selector:'[data-kebo-shot="1"]',shouldStop,...(nativeCapture ? {nativeCapture} : {})});
   } finally {
     await frame
       .evaluate(() => {
-        for (const e of Array.from(document.querySelectorAll('[data-xxt-shot]'))) e.removeAttribute('data-xxt-shot');
+        for (const e of Array.from(document.querySelectorAll('[data-kebo-shot]'))) e.removeAttribute('data-kebo-shot');
       })
       .catch(() => {});
   }

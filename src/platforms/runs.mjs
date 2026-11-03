@@ -5,7 +5,7 @@ export function planPlatformRun(tasks, progress={}) {
   return {tasks:pending,skipped:tasks.length-pending.length,selected:tasks.length};
 }
 export class PlatformRuns {
-  constructor({ execute, changed = () => {}, onRestart=()=>{},restartDelayMs=1500 }) { this.execute = execute; this.changed = changed; this.onRestart=onRestart;this.restartDelayMs=restartDelayMs;this.sessions = new Map(); }
+  constructor({ execute, changed = () => {}, onRestart=()=>{},restartDelayMs=1500, restartMaxAttempts=3 }) { this.execute = execute; this.changed = changed; this.onRestart=onRestart;this.restartDelayMs=restartDelayMs;this.sessions = new Map(); }
   snapshot() { return Object.fromEntries([...this.sessions].map(([id, s]) => [id, { running: s.running, stopping: s.stop,
     done: s.done, skipped:s.skipped,review: s.review, total: s.total, current: s.current, progress: s.progress, error: s.error, phase: s.phase }])); }
   stop(id) { const s = this.sessions.get(id); if (s?.running) { s.stop = true; this.changed(this.snapshot()); } }
@@ -22,7 +22,7 @@ export class PlatformRuns {
           s.current = task.name; s.progress = null; this.changed(this.snapshot());
           const result = await runWithTaskRestart(recovery=>this.execute({ platform: id, task, context, ...recovery,shouldStop: () => s.stop,
             onProgress: progress => { s.progress = progress; this.changed(this.snapshot()); } }),{
-              task,shouldStop:()=>s.stop,delayMs:this.restartDelayMs,onRestart:info=>{s.progress=null;this.changed(this.snapshot());return this.onRestart({...info,platform:id});}
+              task,shouldStop:()=>s.stop,delayMs:this.restartDelayMs,maxAttempts:this.restartMaxAttempts,onRestart:info=>{s.progress=null;this.changed(this.snapshot());return this.onRestart({...info,platform:id});}
             });
           if (result?.phase === 'stopped') {s.stop=true;break;}
           if (result?.phase === 'awaiting-review') { s.review++; this.changed(this.snapshot()); continue; }

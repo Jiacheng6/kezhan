@@ -11,7 +11,7 @@ let visible = true;
 
 export async function startWindowControl(browser) {
   if (embedded) return;
-  if (process.env.XXT_DESKTOP !== '1') return;
+  if (process.env.KEBO_DESKTOP !== '1') return;
   const executable = path.join(PATHS.root, 'desktop', 'native', 'BrowserWindowControl.exe');
   if (!fs.existsSync(executable)) throw new Error('缺少浏览器窗口管理组件，请重新构建桌面版');
   const session = await browser.newBrowserCDPSession();

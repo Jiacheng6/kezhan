@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';
-fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/task-recovery-'));
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/task-recovery-'));
 const {runWithTaskRestart,canRestartTask}=await import('../../src/task-recovery.mjs');
 const {PlatformRuns}=await import('../../src/platforms/runs.mjs');
 const {BatchRunner}=await import('../../src/batch.mjs');

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 fs.mkdirSync('.desktop-test', { recursive: true });
-process.env.XXT_DATA_DIR = fs.mkdtempSync(path.resolve('.desktop-test/onboarding-api-'));
+process.env.KEBO_DATA_DIR = fs.mkdtempSync(path.resolve('.desktop-test/onboarding-api-'));
 const { PATHS, setPersonId } = await import('../../src/config.mjs');
 const { getOnboarding } = await import('../../src/onboarding.mjs');
 const { mutateState, invalidateCache, loadState } = await import('../../src/state.mjs');

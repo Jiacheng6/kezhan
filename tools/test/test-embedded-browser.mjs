@@ -8,7 +8,7 @@ import { _electron as electron, chromium } from 'playwright-core';
 import { requestTestExit } from './desktop-test-helpers.mjs';
 const root = process.cwd(); fs.mkdirSync('.desktop-test', { recursive: true });
 const data = fs.mkdtempSync(path.resolve('.desktop-test/embedded-full-'));
-process.env.XXT_DATA_DIR = data;
+process.env.KEBO_DATA_DIR = data;
 const { askImage, detectVerification, checkLogin } = await import('../../src/ai/ai.mjs');
 const { shootQuestion: shootQuestionCore } = await import('../../src/chaoxing/quiz.mjs');
 const { watchVideoQuiz: watchVideoQuizCore, handleVideoQuiz: handleVideoQuizCore } = await import('../../src/chaoxing/videoquiz.mjs');
@@ -49,11 +49,11 @@ async function poll(read, accept, timeout = 20000) {
   throw new Error('等待测试状态超时');
 }
 async function launch() {
-  app = await electron.launch({ executablePath: process.env.XXT_TEST_EXECUTABLE || path.join(root, 'node_modules/electron/dist/electron.exe'), args: process.env.XXT_TEST_EXECUTABLE ? ['--embedded-test'] : [root, '--embedded-test'],
-    env: { ...process.env, XXT_TEST_DATA_DIR: data, XXT_EMBEDDED_TEST_HOME: home }, timeout: 30000 });
+  app = await electron.launch({ executablePath: process.env.KEBO_TEST_EXECUTABLE || path.join(root, 'node_modules/electron/dist/electron.exe'), args: process.env.KEBO_TEST_EXECUTABLE ? ['--embedded-test'] : [root, '--embedded-test'],
+    env: { ...process.env, KEBO_TEST_DATA_DIR: data, KEBO_EMBEDDED_TEST_HOME: home }, timeout: 30000 });
   const page = await app.firstWindow(); page.setDefaultTimeout(15000); page.on('pageerror', e => errors.push(e.message));
   await page.waitForURL('http://127.0.0.1:*/');
-  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0); w.setContentSize(1320, 900); w.setTitle('学习通助手 · 自动回归（无需登录）'); w.showInactive(); });
+  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0); w.setContentSize(1320, 900); w.setTitle('课泊 · 自动回归（无需登录）'); w.showInactive(); });
   await poll(() => page.evaluate(() => fetch('/api/status').then(r => r.json())), s => s.ready);
   const port = fs.readFileSync(path.join(data, 'DevToolsActivePort'), 'utf8').split('\n')[0];
   browser = await chromium.connectOverCDP('http://127.0.0.1:' + port);

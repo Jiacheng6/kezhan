@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { _electron as electron } from 'playwright-core';
 const root=process.cwd();
-const output=process.env.XXT_UI_CAPTURE_DIR || path.join(root,'.desktop-test','ui-workspace');
+const output=process.env.KEBO_UI_CAPTURE_DIR || path.join(root,'.desktop-test','ui-workspace');
 fs.mkdirSync(output,{recursive:true});
 const round=process.argv.find(x=>x.startsWith('--round='))?.split('=')[1] || '1';
 const data=fs.mkdtempSync(path.join(root,'.desktop-test','design-'));
@@ -29,7 +29,7 @@ tasks['demo-course-0:demo-section-0-0:t1']={status:'manual'};
 const reviewQueue=[{id:'demo-essay',taskKey:'demo-course-0:demo-section-0-0:t1',course:names[0],secNo:'1.1',sectionName:sections[0],questionIndex:1,qtype:'essay',qtypeRaw:'简答题',confidence:'medium',confidenceLabel:'需要核对',status:'pending-review',autoFilled:true,textAnswer:'好的设计首先回应真实的使用需求。在日常空间中，清晰的动线、合适的照明和容易理解的标识，都能帮助人们更自然地完成活动。\n\n因此，观察使用者的行为，比先决定装饰风格更重要。',aiAnswer:'从实际使用场景出发，分析空间如何帮助人们行动与理解。',parseReason:'简答草稿已填写，仍需人工核对后提交。',validation:{safe:false,errors:['简答题需人工确认']}}];
 fs.writeFileSync(path.join(data,'state.json'),JSON.stringify({version:3,taskPoints:tasks,reviewQueue}));
 fs.writeFileSync(path.join(data,'data/probe-out/task-report.json'),JSON.stringify({at:'2026-01-01T00:00:00Z',courses}));
-const application=await electron.launch({executablePath:path.join(root,'node_modules/electron/dist/electron.exe'),args:[root,'--test-mode'],env:{...process.env,XXT_TEST_DATA_DIR:data}});
+const application=await electron.launch({executablePath:path.join(root,'node_modules/electron/dist/electron.exe'),args:[root,'--test-mode'],env:{...process.env,KEBO_TEST_DATA_DIR:data}});
 const errors=[];
 let keepOpen=false;
 try{
@@ -53,7 +53,7 @@ try{
     if(action==='startRecon')status.reconRunning=true;
     await route.fulfill({json:{ok:true,result:{started:true}}});sendStatus();
   });
-  await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);win.setContentSize(1240,800);win.setTitle('学习通助手 · 本地界面预览（演示数据）');win.showInactive();});
+  await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);win.setContentSize(1240,800);win.setTitle('课泊 · 本地界面预览（演示数据）');win.showInactive();});
   await page.reload();await revealTestTools(page);await page.locator('[data-tab=overview]').click();
   await revealTestTools(page);await page.locator('[data-tab=overview]').click();
   await page.locator('#overviewTaskCount').filter({hasText:'18'}).waitFor();
@@ -185,7 +185,7 @@ try{
   console.log('UI 验证通过；截图目录：'+output);
   if(process.argv.includes('--hold')){
     keepOpen=true;
-    await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);win.setTitle('学习通助手 · 本地界面预览（演示数据）');win.show();});
+    await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);win.setTitle('课泊 · 本地界面预览（演示数据）');win.show();});
     console.log('演示窗口已打开，使用隔离数据。');
     await new Promise(resolve=>application.process().once('exit',resolve));
   }

@@ -7,8 +7,8 @@ import {pathToFileURL} from 'node:url';
 import {chromium} from 'playwright-core';
 fs.mkdirSync('.desktop-test',{recursive:true});
 const data=fs.mkdtempSync(path.resolve('.desktop-test/review-browser-'));
-process.env.XXT_DATA_DIR=data;
-const moduleRoot=process.env.XXT_TEST_SOURCE_ROOT?pathToFileURL(path.resolve(process.env.XXT_TEST_SOURCE_ROOT)+path.sep):new URL('../../',import.meta.url);
+process.env.KEBO_DATA_DIR=data;
+const moduleRoot=process.env.KEBO_TEST_SOURCE_ROOT?pathToFileURL(path.resolve(process.env.KEBO_TEST_SOURCE_ROOT)+path.sep):new URL('../../',import.meta.url);
 const runtime=relative=>import(new URL(relative,moduleRoot).href);
 const {ensureDirs}=await runtime('src/config.mjs');ensureDirs();
 const {findEdge}=await runtime('src/browser/launch.mjs');
@@ -41,7 +41,7 @@ function seed(key,{mode='normal',missing=false,edited=false,append=false,pending
 }
 const browser=await chromium.launch({executablePath:findEdge(),headless:true});
 const context=await browser.newContext({viewport:{width:1280,height:960}});
-await context.addInitScript(()=>localStorage.setItem('xxt-library-startup','skip'));
+await context.addInitScript(()=>localStorage.setItem('kebo-library-startup','skip'));
 await context.exposeBinding('fixtureSubmitted',(_,value)=>confirmed.push(value));
 context.on('page',page=>{const wait=page.waitForTimeout.bind(page);page.waitForTimeout=ms=>wait(Math.min(ms,10));});
 await context.route('https://mooc1.chaoxing.com/**',async route=>{

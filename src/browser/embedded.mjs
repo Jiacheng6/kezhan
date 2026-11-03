@@ -1,7 +1,8 @@
+import '../brand-env.cjs';
 let sequence = 0;
 const pending = new Map();
 let state = { visible: false, tabs: [] };
-export const embedded = process.env.XXT_EMBEDDED_BROWSER === '1';
+export const embedded = process.env.KEBO_EMBEDDED_BROWSER === '1';
 if (embedded && process.parentPort) process.parentPort.on('message', ({ data }) => {
   if (data?.type === 'browser-state') state = data.state;
   if (data?.type !== 'browser-response') return;

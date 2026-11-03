@@ -75,7 +75,7 @@ const FINGERPRINTS = [
   {
     file: 'src/browser/inject.mjs',
     minLines: 150,
-    markers: ['__xxtDefence', 'document.hasFocus', '__xxtPauseLog', '__xxtPops', 'installDefence', 'checkDefence'],
+    markers: ['__keboDefence', 'document.hasFocus', '__keboPauseLog', '__keboPops', 'installDefence', 'checkDefence'],
     why: '抗失焦/反节流注入 + 弹窗题暂停取证钩子',
   },
   {
@@ -87,7 +87,7 @@ const FINGERPRINTS = [
   {
     file: 'src/chaoxing/player.mjs',
     minLines: 400,
-    markers: ['watchUntilDone', 'guardResume', 'pause-storm', 'greenDotPatientMs', 'findVideoQuiz', 'durationVerdict', 'xxtVideoMeta'],
+    markers: ['watchUntilDone', 'guardResume', 'pause-storm', 'greenDotPatientMs', 'findVideoQuiz', 'durationVerdict', 'keboVideoMeta'],
     why: '播放守卫：纠偏 / 暂停风暴 / 元数据等待（含 load 重试与 video.error）',
   },
   {

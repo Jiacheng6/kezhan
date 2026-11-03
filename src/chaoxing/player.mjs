@@ -127,7 +127,7 @@ export async function getPlayerState(frame) {
         // 页面可见性伪装是否生效（防御自检）
         hidden: document.hidden,
         visibilityState: document.visibilityState,
-        defence: !!window.__xxtDefence,
+        defence: !!window.__keboDefence,
       };
     });
   } catch {
@@ -180,15 +180,15 @@ export async function waitDuration(frame, timeoutMs = 20000) {
   // 监听只装一次；刷新页面后 window 是新的，会重新装。
   await frame
     .evaluate(() => {
-      const key = '__xxtVideoMetaWatch';
+      const key = '__keboVideoMetaWatch';
       if (globalThis[key]) return;
       globalThis[key] = true;
       const bind = () => {
         const v = document.querySelector('video');
-        if (!v || v.__xxtMetaBound) return;
-        v.__xxtMetaBound = true;
+        if (!v || v.__keboMetaBound) return;
+        v.__keboMetaBound = true;
         const stamp = () => {
-          globalThis.__xxtVideoMeta = { duration: Number.isFinite(v.duration) ? v.duration : null, error: v.error?.code || 0, at: Date.now() };
+          globalThis.__keboVideoMeta = { duration: Number.isFinite(v.duration) ? v.duration : null, error: v.error?.code || 0, at: Date.now() };
         };
         v.addEventListener('loadedmetadata', stamp);
         v.addEventListener('durationchange', stamp);
@@ -206,7 +206,7 @@ export async function waitDuration(frame, timeoutMs = 20000) {
       .evaluate(() => {
         const v = document.querySelector('video');
         if (!v) return { missing: true };
-        const meta = globalThis.__xxtVideoMeta || {};
+        const meta = globalThis.__keboVideoMeta || {};
         return {
           duration: Number.isFinite(v.duration) && v.duration > 0 ? v.duration : Number.isFinite(meta.duration) ? meta.duration : null,
           mediaError: v.error?.code || meta.error || 0,
@@ -624,10 +624,10 @@ export async function watchUntilDone({ page, settings = {}, onTick, shouldStop, 
       }
 
       /*
-       * 取证（XXT_CAPTURE=1 时开启）：被暂停的瞬间很可能正是弹窗题出现的时候，
+       * 取证（KEBO_CAPTURE=1 时开启）：被暂停的瞬间很可能正是弹窗题出现的时候，
        * 趁这个时候把现场抓下来，才知道真实弹窗长什么样。
        */
-      if (process.env.XXT_CAPTURE && resumes < 4) {
+      if (process.env.KEBO_CAPTURE && resumes < 4) {
         await capturePause(page, `pause-${(p * 100).toFixed(0)}pct`).catch(() => {});
       }
 

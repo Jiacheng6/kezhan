@@ -1,7 +1,7 @@
 import {pathToFileURL} from 'node:url';
 // Browser regression for a virtual list's disconnected ordering flags.
 import assert from 'node:assert/strict';import {chromium} from 'playwright-core';
-const moduleRoot=process.env.XXT_TEST_SOURCE_ROOT?pathToFileURL(process.env.XXT_TEST_SOURCE_ROOT.replace(/\\/g,'/')+'/'):new URL('../../',import.meta.url);
+const moduleRoot=process.env.KEBO_TEST_SOURCE_ROOT?pathToFileURL(process.env.KEBO_TEST_SOURCE_ROOT.replace(/\\/g,'/')+'/'):new URL('../../',import.meta.url);
 const runtime=relative=>import(new URL(relative,moduleRoot).href);
 const {findEdge}=await runtime('src/browser/launch.mjs');
 const {beginWebTurn,endWebTurn}=await runtime('src/ai/web-turn.mjs');

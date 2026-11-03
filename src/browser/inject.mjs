@@ -16,10 +16,10 @@
 /** 注入到每个页面/frame 的防御脚本 */
 function defenceSource() {
   return `(() => {
-  if (window.__xxtDefence) return 'already';
-  window.__xxtDefence = true;
+  if (window.__keboDefence) return 'already';
+  window.__keboDefence = true;
 
-  const log = (msg) => { try { console.debug('[xxt-defence] ' + msg); } catch (e) {} };
+  const log = (msg) => { try { console.debug('[kebo-defence] ' + msg); } catch (e) {} };
 
   // ---------- 1) 伪装页面永远可见 ----------
   try {
@@ -78,8 +78,8 @@ function defenceSource() {
       get: function () {
         return function (url) {
           try {
-            window.__xxtPops = window.__xxtPops || [];
-            window.__xxtPops.push({ t: Date.now(), how: 'showCustomPop', url: String(url || '').slice(0, 300) });
+            window.__keboPops = window.__keboPops || [];
+            window.__keboPops.push({ t: Date.now(), how: 'showCustomPop', url: String(url || '').slice(0, 300) });
           } catch (e) {}
           if (typeof _showOrig === 'function') return _showOrig.apply(this, arguments);
         };
@@ -91,8 +91,8 @@ function defenceSource() {
       get: function () {
         return function () {
           try {
-            window.__xxtPops = window.__xxtPops || [];
-            window.__xxtPops.push({ t: Date.now(), how: 'hideCustomPop' });
+            window.__keboPops = window.__keboPops || [];
+            window.__keboPops.push({ t: Date.now(), how: 'hideCustomPop' });
           } catch (e) {}
           if (typeof _hideOrig === 'function') return _hideOrig.apply(this, arguments);
         };
@@ -107,11 +107,11 @@ function defenceSource() {
   // 那就直接把调用栈记下来 —— 谁调用的、从哪调用的，一目了然。
   try {
     var _pauseOrig = HTMLMediaElement.prototype.pause;
-    window.__xxtPauseLog = [];
+    window.__keboPauseLog = [];
     HTMLMediaElement.prototype.pause = function () {
       try {
-        if (window.__xxtPauseLog.length < 25) {
-          window.__xxtPauseLog.push({
+        if (window.__keboPauseLog.length < 25) {
+          window.__keboPauseLog.push({
             t: Date.now(),
             ct: Math.round((this.currentTime || 0) * 10) / 10,
             rs: this.readyState,
@@ -196,7 +196,7 @@ export async function checkDefence(page) {
   for (const f of page.frames()) {
     try {
       const r = await f.evaluate(() => ({
-        installed: !!window.__xxtDefence,
+        installed: !!window.__keboDefence,
         hidden: document.hidden,
         visibilityState: document.visibilityState,
       }));

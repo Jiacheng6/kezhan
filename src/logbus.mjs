@@ -85,7 +85,7 @@ const status = {
   startedAt: Date.now(),
   // 环境信息（控制台展示用）
   root: PATHS.root,
-  edgeProfile: process.env.XXT_EMBEDDED_BROWSER === '1' ? PATHS.browserProfile : PATHS.edgeProfile,
+  edgeProfile: process.env.KEBO_EMBEDDED_BROWSER === '1' ? PATHS.browserProfile : PATHS.edgeProfile,
   debugPort: DEBUG_PORT,
   node: process.version,
   pid: process.pid,

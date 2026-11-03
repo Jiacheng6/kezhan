@@ -33,8 +33,8 @@ async function close(){if(!app)return;const current=app;app=null;await requestTe
 async function launch(name){
   const data=path.join(testRoot,name);fs.mkdirSync(data,{recursive:true});
   fs.writeFileSync(path.join(data,'state.json'),JSON.stringify({version:3,onboarding:{version:2,completedAt:'2026-01-01T00:00:00.000Z'},taskPoints:{sample:{status:'done'}}}));
-  const packagedExe=process.env.XXT_UPDATE_TEST_EXE;
-  app=await electron.launch({executablePath:packagedExe||path.join(root,'node_modules/electron/dist/electron.exe'),args:[...(packagedExe?[]:[root]),'--test-mode'],env:{...process.env,LOCALAPPDATA:path.join(data,'local-cache'),XXT_TEST_DATA_DIR:data,XXT_TEST_UPDATE_FEED:'',XXT_TEST_UPDATE_SOURCES:JSON.stringify(sources)}});
+  const packagedExe=process.env.KEBO_UPDATE_TEST_EXE;
+  app=await electron.launch({executablePath:packagedExe||path.join(root,'node_modules/electron/dist/electron.exe'),args:[...(packagedExe?[]:[root]),'--test-mode'],env:{...process.env,LOCALAPPDATA:path.join(data,'local-cache'),KEBO_TEST_DATA_DIR:data,KEBO_TEST_UPDATE_FEED:'',KEBO_TEST_UPDATE_SOURCES:JSON.stringify(sources)}});
   await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getOpacity()>0).showInactive());
   const page=await app.firstWindow();await page.waitForURL('http://127.0.0.1:*/');
   await page.locator('#desktopUpdatePanel[open]').waitFor();return {data,page};
@@ -59,7 +59,7 @@ try{
   await close();
   ({page}=await launch('offline'));
   await page.locator('.update-alternatives').evaluate(el=>el.open=true);
-  const installer=path.join(testRoot,'XuexitongAssistant-9.9.10-Setup.exe'),manifest=path.join(testRoot,'release-manifest.json');
+  const installer=path.join(testRoot,'Kebo-9.9.10-Setup.exe'),manifest=path.join(testRoot,'release-manifest.json');
   fs.writeFileSync(installer,body);fs.writeFileSync(manifest,JSON.stringify({version:'9.9.10',files:[{file:path.basename(installer),bytes:body.length,sha256:crypto.createHash('sha256').update(body).digest('hex')}]}));
   await app.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},installer);
   fs.writeFileSync(installer,Buffer.alloc(body.length,1));

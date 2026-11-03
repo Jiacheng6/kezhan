@@ -4,13 +4,14 @@
  * 读取时以 loadSettings() 的合并结果为准。
  */
 import path from 'node:path';
+import './brand-env.cjs';
 import os from 'node:os';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // 源码目录与用户数据分开，安装目录不需要写权限。
-export const DATA_ROOT = process.env.XXT_DATA_DIR ? path.resolve(process.env.XXT_DATA_DIR) : ROOT;
+export const DATA_ROOT = process.env.KEBO_DATA_DIR ? path.resolve(process.env.KEBO_DATA_DIR) : ROOT;
 
 export const PATHS = {
   root: ROOT,
@@ -33,11 +34,11 @@ export const PATHS = {
   probeOut: path.join(DATA_ROOT, 'data', 'probe-out'),
   /** 执行清单读的那份报告（侦察完成后写在这里） */
   taskReport: path.join(DATA_ROOT, 'data', 'probe-out', 'task-report.json'),
-  tmp: path.join(os.tmpdir(), 'xuexitong-auto'),
+  tmp: path.join(os.tmpdir(), 'kebo'),
 };
 
 /** Edge 调试端口：被脚本接管的关键 */
-export const DEBUG_PORT = Number(process.env.XXT_DEBUG_PORT || 9222);
+export const DEBUG_PORT = Number(process.env.KEBO_DEBUG_PORT || 9222);
 if (!Number.isInteger(DEBUG_PORT) || DEBUG_PORT < 1 || DEBUG_PORT > 65535) {
   throw new Error('浏览器调试端口无效');
 }
@@ -110,8 +111,8 @@ export const TARGETS = {
 };
 // Full desktop integration tests can use a local synthetic website. A packaged
 // normal launch never sets this flag; arbitrary remote overrides are rejected.
-if (process.env.XXT_EMBEDDED_TEST === '1' && process.env.XXT_EMBEDDED_TEST_HOME) {
-  const testHome = new URL(process.env.XXT_EMBEDDED_TEST_HOME);
+if (process.env.KEBO_EMBEDDED_TEST === '1' && process.env.KEBO_EMBEDDED_TEST_HOME) {
+  const testHome = new URL(process.env.KEBO_EMBEDDED_TEST_HOME);
   if (testHome.protocol !== 'http:' || testHome.hostname !== '127.0.0.1') throw new Error('内置网页测试仅允许本机地址');
   TARGETS.chaoxingHome = testHome.href;
 }

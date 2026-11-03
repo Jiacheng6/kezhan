@@ -1,6 +1,6 @@
 // Synthetic catalog, durable state and a queue that fails after a completed task.
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';
-fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/zhs-completed-'));
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/zhs-completed-'));
 const {savePlatformCourses,readPlatformCatalog}=await import('../../src/platforms/catalog.mjs');
 const {syncZhihuishuVideoCompletions}=await import('../../src/platforms/zhihuishu/catalog.mjs');
 const {PlatformRuns,planPlatformRun}=await import('../../src/platforms/runs.mjs');

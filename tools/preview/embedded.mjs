@@ -12,10 +12,10 @@ const data = process.argv[2] ? path.resolve(process.argv[2]) : reusable?saved:fs
 if (!data.startsWith(testRoot + path.sep) || !path.basename(data).startsWith('embedded-preview-') || !fs.statSync(data).isDirectory()) throw new Error('预览只能使用独立的 embedded-preview 数据目录');
 fs.writeFileSync(remembered,JSON.stringify({directory:path.basename(data)},null,2));
 const app = await electron.launch({ executablePath: path.join(root, 'node_modules/electron/dist/electron.exe'), args: [root, '--embedded-test'],
-  env: { ...process.env, XXT_TEST_DATA_DIR: data, XXT_EMBEDDED_TEST_HOME: '' }, timeout: 30000 });
+  env: { ...process.env, KEBO_TEST_DATA_DIR: data, KEBO_EMBEDDED_TEST_HOME: '' }, timeout: 30000 });
 try {
   const page = await app.firstWindow(); await page.waitForURL('http://127.0.0.1:*/');
-  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setContentSize(1360, 940); w.setTitle('课栈 · 修复验收（独立数据，保留登录）'); w.show(); w.focus(); });
+  await app.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.setContentSize(1360, 940); w.setTitle('课泊 · 修复验收（独立数据，保留登录）'); w.show(); w.focus(); });
   console.log(JSON.stringify({ url: page.url(), data, externalBrowser: false }));
   await new Promise(resolve => app.process().once('exit', resolve));
 } finally { await app.close().catch(() => {}); }

@@ -2,7 +2,7 @@ import { requestTestExit, enterTestWorkspace, revealTestTools, openTestArchive }
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {_electron as electron} from 'playwright-core';
 const root=process.cwd(),data=fs.mkdtempSync(path.join(root,'.desktop-test/ai-settings-'));
 fs.writeFileSync(path.join(data,'state.json'),JSON.stringify({version:3,taskPoints:{},reviewQueue:[],settings:{libraryShowOnStartup:false}}));
-const app=await electron.launch({executablePath:path.join(root,'node_modules/electron/dist/electron.exe'),args:[root,'--test-mode'],env:{...process.env,XXT_TEST_DATA_DIR:data}});
+const app=await electron.launch({executablePath:path.join(root,'node_modules/electron/dist/electron.exe'),args:[root,'--test-mode'],env:{...process.env,KEBO_TEST_DATA_DIR:data}});
 try{
  const page=await app.firstWindow();page.setDefaultTimeout(15000);const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.waitForURL('http://127.0.0.1:*/');
  await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);w.setContentSize(1320,900);w.showInactive();});

@@ -7,7 +7,7 @@ fs.mkdirSync('.desktop-test', { recursive: true });
 const data = fs.mkdtempSync(path.resolve('.desktop-test/platform-entry-'));
 const application = await electron.launch({
   executablePath: path.resolve('node_modules/electron/dist/electron.exe'),
-  args: [process.cwd(), '--test-mode'], env: { ...process.env, XXT_TEST_DATA_DIR: data },
+  args: [process.cwd(), '--test-mode'], env: { ...process.env, KEBO_TEST_DATA_DIR: data },
 });
 try {
   const result = await application.evaluate(async ({ app }) => {

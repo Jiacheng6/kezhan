@@ -78,8 +78,8 @@ export async function capturePause(page, tag = 'pause') {
         return {
           hidden: document.hidden,
           hasFocus: typeof document.hasFocus === 'function' ? document.hasFocus() : null,
-          pops: window.__xxtPops || null,
-          pauseLog: window.__xxtPauseLog || null,
+          pops: window.__keboPops || null,
+          pauseLog: window.__keboPauseLog || null,
           customPop: typeof window.showCustomPop,
           hits,
           bodyText: (document.body?.innerText || '').replace(/\s+/g, ' ').slice(0, 400),

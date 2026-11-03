@@ -1,4 +1,5 @@
 :root {
+  --surface: #ffffff;
   color-scheme: light;
   --ink: #20231f;
   --muted: #60746c;
@@ -572,6 +573,31 @@ footer small {
   transition: none !important;
   animation: none !important;
 }
+/* Shared workbench theme and a quieter archive information dock. */
+html[data-mode] { color-scheme:light; }
+html[data-mode=dark] { color-scheme:dark; }
+html[data-mode] .archive-brand { top:36px; left:36px; }
+html[data-mode] .archive-brand h1 { font-size:30px; letter-spacing:-1px; }
+html[data-mode] .array-copy { left:36px; right:auto; top:auto; bottom:130px; width:min(470px,calc(100vw - 72px)); padding:26px 28px; border:1px solid var(--line); border-radius:16px; background:var(--surface); box-shadow:0 12px 48px #0000000c; }
+html[data-mode] .array-copy h2 { font-size:32px; margin:12px 0 20px; letter-spacing:-.8px; }
+html[data-mode] .copy-rule { background:var(--line); }
+html[data-mode] .array-copy .text-action { margin-top:20px; background:var(--accent); color:var(--surface); border-radius:8px; padding:12px 16px; font-size:13px; }
+html[data-mode] .array-nav { left:36px; bottom:56px; padding:10px 16px; border:1px solid var(--line); border-radius:10px; background:var(--surface); gap:14px; }
+html[data-mode] .array-nav b { font-size:22px; }
+html[data-mode] .array-nav small { color:var(--muted); }
+html[data-mode] .hover-label { color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:7px; }
+html[data-mode] .surface-copy { background:var(--surface); color:var(--ink); padding:28px; border:1px solid var(--line); border-radius:16px; box-shadow:0 12px 48px #00000012; }
+html[data-mode] .course-surface .primary { background:var(--accent); color:var(--surface); border-radius:8px; }
+html[data-mode] .course-meta,html[data-mode] .muted,html[data-mode] .boot-caption,html[data-mode] .boot-state { color:var(--muted); }
+html[data-mode] .archive-boot { color:var(--muted); border-color:var(--line); }
+html[data-mode] .loading-screen { background:var(--paper); }
+html[data-mode] .loading-content p,html[data-mode] .loading-content button { color:var(--muted); }
+html[data-mode] .loading-track { background:var(--line); }
+html[data-mode] .loading-track i,html[data-mode] .section-fill { background:var(--accent); }
+html[data-mode] footer { color:var(--muted); }
+html[data-mode] button { transition:transform 150ms ease,background-color 150ms ease; }
+html[data-mode] button:active { transform:scale(.97); }
+@media(max-width:800px) { html[data-mode] .array-copy { left:20px; bottom:130px; width:min(400px,calc(100vw - 40px)); padding:20px; } html[data-mode] .array-nav { left:20px; } }
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;

@@ -1,9 +1,9 @@
 import {pathToFileURL} from 'node:url';
 // Intercepted synthetic pages; never accesses an account or submits coursework.
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {chromium} from 'playwright-core';
-const moduleRoot=process.env.XXT_TEST_SOURCE_ROOT?pathToFileURL(process.env.XXT_TEST_SOURCE_ROOT.replace(/\\/g,'/')+'/'):new URL('../../',import.meta.url);
+const moduleRoot=process.env.KEBO_TEST_SOURCE_ROOT?pathToFileURL(process.env.KEBO_TEST_SOURCE_ROOT.replace(/\\/g,'/')+'/'):new URL('../../',import.meta.url);
 const runtime=relative=>import(new URL(relative,moduleRoot).href);
-process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/document-judge-'));
+process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/document-judge-'));
 const {findEdge}=await runtime('src/browser/launch.mjs');
 const {readDocumentAttachment,openDocumentViewer}=await runtime('src/chaoxing/document.mjs');
 const {runDocTask}=await runtime('src/chaoxing/runner.mjs');

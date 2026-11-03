@@ -226,3 +226,10 @@ android/**/*.keystore
 android/app/src/main/assets/generated/
 !tools/test/test-update-sources.mjs
 !tools/test/test-update-sources-ui.mjs
+!tools/test/test-brand-migration.mjs
+!tools/test/test-brand-desktop.mjs
+!tools/test/test-question-font-recovery.mjs
+!tools/test/test-ucampus.mjs
+docs/*交接文档*.md
+docs/qa/2026-11-01-ucampus-recon.md
+docs/qa/2026-11-02-ucampus-acceptance.md

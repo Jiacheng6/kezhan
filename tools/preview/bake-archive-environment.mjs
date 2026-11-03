@@ -22,7 +22,7 @@ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const data=fs.mkdtempSync(path.join(root,'.desktop-test/bake-environment-'));
 let app;
 try{
-  app=await electron.launch({executablePath:path.join(root,'node_modules/electron/dist/electron.exe'),args:[root,'--test-mode'],env:{...process.env,XXT_TEST_DATA_DIR:data}});
+  app=await electron.launch({executablePath:path.join(root,'node_modules/electron/dist/electron.exe'),args:[root,'--test-mode'],env:{...process.env,KEBO_TEST_DATA_DIR:data}});
   const page=await app.firstWindow();page.on('pageerror',error=>console.error(error.message));
   await page.waitForURL('http://127.0.0.1:*/');
   await page.goto(`http://127.0.0.1:${server.address().port}/`);await page.waitForFunction(()=>window.baked,{},{timeout:60000});

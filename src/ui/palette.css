@@ -1,0 +1,220 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   课泊 · 配色收口 + 性能修正
+   1) 去掉残留的"品牌绿"硬编码 → 全部改用主题变量（切配色才真的全局生效）
+   2) 修卡顿：顶栏毛玻璃、过宽的 transition 列表、面板缩放动画
+   3) 修黑边：显式声明壳层背景与 color-scheme，避免 UA 画布/滚动条发黑
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── 1. 品牌绿 → 变量 ─────────────────────────────────────────────────── */
+.sidebar {
+  background: var(--bg3); /* 原来是 #e6eeea 绿灰 */
+  border-color: var(--line);
+}
+.sidebar .tab {
+  color: var(--fg2);
+  border-left-color: transparent;
+}
+.sidebar .tab:hover:not(.active):not(:disabled) {
+  background: var(--bg2);
+  color: var(--fg);
+}
+.sidebar .tab.active {
+  background: var(--acc-soft);
+  color: var(--acc);
+  border-left-color: var(--acc);
+}
+.sidebar .tab.active:hover:not(:disabled) {
+  background: var(--acc-soft);
+  color: var(--acc);
+}
+.sidebar .tab.active::after {
+  background: var(--acc);
+}
+
+/* 原来那块深绿任务面板 → 中性卡（黑白模式下都成立） */
+.task-sheet {
+  background: var(--bg2);
+  color: var(--fg);
+  border: 1px solid var(--line);
+}
+.task-sheet h3,
+.task-sheet p,
+.task-sheet small,
+.task-sheet strong {
+  color: inherit;
+}
+
+button {
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  color: var(--fg);
+}
+button:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: var(--bg3);
+}
+button.primary {
+  background: var(--acc);
+  border-color: var(--acc);
+  color: var(--acc-ink);
+}
+button.primary:hover:not(:disabled) {
+  background: var(--acc);
+  border-color: var(--acc);
+  filter: brightness(1.06);
+}
+button.stop-button {
+  background: var(--bg2);
+  border-color: var(--err);
+  color: var(--err);
+}
+
+.ledger-row:hover:not(:disabled) {
+  background: var(--bg3);
+}
+.review-note {
+  background: var(--acc-soft);
+  color: var(--fg);
+  border: 1px solid var(--line);
+}
+.platform-badge {
+  background: var(--acc-soft);
+  color: var(--acc);
+  border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent);
+}
+.sd-layout {
+  background: var(--bg2);
+}
+:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+}
+
+/* ── 2. 性能：去掉毛玻璃与过宽的 transition ──────────────────────────── */
+.topbar {
+  backdrop-filter: none !important; /* 固定头 + 模糊 = 滚动时整条重绘，卡顿主因 */
+  -webkit-backdrop-filter: none !important;
+  background: var(--bg);
+}
+/* 只给真正需要过渡的交互元素加过渡 */
+.sidebar,
+.topbar,
+.platform-strip,
+.platform-session,
+.platform-total,
+.card,
+.task-sheet,
+.treecourse,
+.treehead,
+.review-note,
+.reviewgroup,
+.settings-details,
+.ledger-row,
+.tprow,
+.pill,
+.chip,
+.platform-badge {
+  transition: none;
+}
+button,
+.tab,
+input:not([type="checkbox"]),
+textarea,
+select,
+.theme-mode,
+.theme-accent {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    transform 160ms var(--ease-out);
+}
+html,
+body {
+  transition:
+    background-color 200ms ease,
+    color 200ms ease;
+}
+/* 面板切换改成只淡入（缩放整个面板会让浏览器重绘整页） */
+.panel.active {
+  animation: panel-fade 200ms ease-out both;
+}
+@keyframes panel-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ── 3. 黑边：壳层背景与色彩方案双向声明 ─────────────────────────────── */
+html,
+body {
+  background-color: var(--bg);
+  color: var(--fg);
+  min-height: 100%;
+}
+html[data-mode="light"] {
+  color-scheme: light;
+  scrollbar-color: #c9c5b7 var(--bg);
+}
+html[data-mode="dark"] {
+  color-scheme: dark;
+  scrollbar-color: #3b3e43 var(--bg);
+}
+.workspace,
+main {
+  background-color: var(--bg);
+}
+/* 内容区两侧不再留出会露出窗底的空隙 */
+.workspace {
+  min-height: 100vh;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html,
+  body,
+  .panel.active,
+  .theme-panel {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ── 平台操作按钮：按平台成组（网页 / 扫描 成对）────────────────────── */
+.platform-web-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.platform-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 2px 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg2);
+}
+.platform-group .group-label {
+  margin-right: 6px;
+  color: var(--fg3);
+  font-size: 11px;
+  letter-spacing: 0.4px;
+}
+.platform-group button {
+  padding: 4px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--fg2);
+  font-size: 12px;
+  border-radius: 999px;
+}
+.platform-group button:hover:not(:disabled) {
+  background: var(--bg3);
+  color: var(--fg);
+}
+.platform-group button:active:not(:disabled) {
+  transform: scale(0.97);
+}

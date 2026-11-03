@@ -9,7 +9,7 @@ const testRoot = path.join(ROOT, '.desktop-test');
 fs.mkdirSync(testRoot, { recursive: true });
 const data = fs.mkdtempSync(path.join(testRoot, 'heartbeat-'));
 const application = await electron.launch({ executablePath: path.join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe'),
-  args: [ROOT, '--test-mode'], env: { ...process.env, XXT_TEST_DATA_DIR: data, XXT_TEST_SKIP_HEARTBEAT: '1' } });
+  args: [ROOT, '--test-mode'], env: { ...process.env, KEBO_TEST_DATA_DIR: data, KEBO_TEST_SKIP_HEARTBEAT: '1' } });
 try {
   const page = await application.firstWindow();
   await page.waitForURL('http://127.0.0.1:*/');

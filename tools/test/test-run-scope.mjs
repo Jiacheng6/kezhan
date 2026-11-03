@@ -15,7 +15,7 @@ const expanded=make();assert.throws(()=>assertRunScope(expanded,single),/不一�
 assert.throws(()=>selectOnlyTask(courses,'missing'),/不可选择/);
 courses[0].tasks[6].willHandle=true;courses[0].tasks[6].excluded=true;
 assert.deepEqual(selectedRunTasks(courses).map(t=>t.key),['a-7'],'排除任务即使遗留 willHandle=true 也不能执行');
-fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/run-scope-'));
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/run-scope-'));
 const {buildRunTasks,BatchRunner}=await import('../../src/batch.mjs');assert.deepEqual(buildRunTasks({courses}).map(t=>t.key),['a-7']);
 const {loadState}=await import('../../src/state.mjs');
 const calls=[];

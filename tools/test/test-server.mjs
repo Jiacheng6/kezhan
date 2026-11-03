@@ -6,7 +6,7 @@ import { PATHS, ensureDirs } from '../../src/config.mjs';
 import { bus } from '../../src/logbus.mjs';
 import { WebSocket } from 'ws';
 
-assert.ok(process.env.XXT_DATA_DIR, '请通过 npm test 在隔离数据目录运行');
+assert.ok(process.env.KEBO_DATA_DIR, '请通过 npm test 在隔离数据目录运行');
 ensureDirs();
 assert.equal(isPathInside(PATHS.answers, PATHS.answers + '-other/secret.png'), false);
 assert.equal(isPathInside(PATHS.answers, path.join(PATHS.answers, 'question.png')), true);

@@ -1,6 +1,6 @@
 import {interruptibleSleep,throwIfStopped,waitForRead} from '../control.mjs';
 let pending=null,listener=()=>{};
-export const canPauseAI=()=>process.env.XXT_DESKTOP==='1';
+export const canPauseAI=()=>process.env.KEBO_DESKTOP==='1';
 export const aiResumeStatus=()=>pending?{waiting:true,provider:pending.provider,label:pending.label,since:pending.since}:{waiting:false};
 export function onAIResumeChange(fn){listener=fn;}
 export async function waitForAIResume({provider,page,shouldStop,check}){

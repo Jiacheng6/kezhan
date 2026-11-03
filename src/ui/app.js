@@ -91,7 +91,7 @@ let readinessLayoutState = '';
 compactLayout.addEventListener('change', () => { if (state.status) renderReadinessLayout(state.status); });
 
 // 原生展开菜单可用键盘操作；点击外部或 Escape 时收起。
-const menuSelector = '.connection-menu[open], .inline-menu[open], .course-info[open], .selection-tools[open], .course-actions[open], .desktop-more[open], .workspace-utilities[open]';
+const menuSelector = '.connection-menu[open], .inline-menu[open], .course-info[open], .selection-tools[open], .course-actions[open], .sidebar .desktop-more[open], .sidebar .workspace-utilities[open]';
 document.addEventListener('click', (event) => {
   for (const menu of $$(menuSelector)) if (!menu.contains(event.target)) menu.open = false;
 });
@@ -216,6 +216,14 @@ function renderStatus(s) {
   $('#overviewSessionDetails').classList.toggle('hidden', !p.total && !s.running);
   $('#overviewProgressTitle').textContent = s.running ? '本次已完成' : '最近一次运行';
   renderOverviewSelection();
+  // Other platforms have independent workers; the overview must reflect them too.
+  const activePlatforms = Object.values(s.platforms || {}).filter(run => run.running);
+  if (activePlatforms.length && !s.running && !s.reconRunning) {
+    activity.textContent = '学习进行中';
+    activity.classList.add('running');
+    $('#overviewHeadline').textContent = `${activePlatforms.length} 个平台正在学习`;
+    $('#overviewSubtitle').textContent = '各平台独立运行；可在上方分别停止，或停止全部任务。';
+  }
 
   // 概览：本次运行范围（避免"以为只刷一门，其实刷了全部"）
   const sc = s.runScope;
@@ -289,6 +297,7 @@ function renderRunBar(s) {
   const p = s.progress || {};
   const st = s.runStats;
   const running = !!s.running || !!s.reconRunning;
+  const anyRunning = running || Object.values(s.platforms || {}).some(run => run.running);
   const hasSelectedTasks = !!tree.data && willSummary(tree.data.courses).tasks > 0;
 
   /*
@@ -296,12 +305,12 @@ function renderRunBar(s) {
    * 结果空闲时「开始」按钮保持 HTML 里的 disabled，"停止"反而可用，正好反了。
    */
   $$('[data-action="startRun"]').forEach((runBtn) => {
-    runBtn.disabled = running || !s.ready || !s.edge?.connected || !s.login?.loggedIn || !hasSelectedTasks;
+    runBtn.disabled = anyRunning || !s.ready || !s.edge?.connected || !s.login?.loggedIn || !hasSelectedTasks;
     const count = tree.data ? pendingRunTasks(tree.data.courses).length : 0;
     if(!count)runBtn.disabled=true;
-    runBtn.textContent = s.reconRunning ? '正在扫描课程…' : running ? '学习进行中…' : `开始学习（${count} 项）↗`;
+    runBtn.textContent = s.reconRunning ? '正在扫描课程…' : anyRunning ? '学习进行中…' : `开始学习（${count} 项）↗`;
   });
-  $$('[data-action="stopRun"]').forEach((stopBtn) => { stopBtn.disabled = !running; });
+  $$('[data-action="stopRun"]').forEach((stopBtn) => { stopBtn.disabled = !anyRunning; });
   $$('[data-action="startRecon"]').forEach((btn) => { btn.disabled = running || !s.ready || !s.edge?.connected || !s.login?.loggedIn; });
 
   if (!bar) return;

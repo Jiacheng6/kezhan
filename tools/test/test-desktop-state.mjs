@@ -5,7 +5,7 @@ import { ROOT, PATHS, DATA_ROOT, DEFAULT_SETTINGS, loadSettings } from '../../sr
 import { mutateState, loadState, invalidateCache } from '../../src/state.mjs';
 import { reconAll } from '../../src/chaoxing/recon.mjs';
 
-assert.ok(process.env.XXT_DATA_DIR, '请通过 npm test 在隔离数据目录运行');
+assert.ok(process.env.KEBO_DATA_DIR, '请通过 npm test 在隔离数据目录运行');
 assert.notEqual(ROOT, DATA_ROOT);
 for (const key of ['local', 'selection', 'state', 'logs', 'answers', 'edgeProfile', 'taskReport']) {
   assert.ok(PATHS[key].startsWith(DATA_ROOT + path.sep), `${key} 必须写入数据目录`);

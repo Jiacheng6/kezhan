@@ -5,7 +5,7 @@ const data=fs.mkdtempSync(path.resolve('.desktop-test/discussion-selection-'));
 fs.mkdirSync(path.join(data,'data/probe-out'),{recursive:true});
 fs.writeFileSync(path.join(data,'state.json'),JSON.stringify({onboarding:{version:2,completedAt:new Date().toISOString()},settings:{}}));
 fs.writeFileSync(path.join(data,'data/probe-out/task-report.json'),JSON.stringify({at:new Date().toISOString(),courses:[{courseId:'course',clazzId:'class',name:'示例课程',taskPoints:[{knowledgeId:'section',secNo:'1.1',sectionName:'示例章节',type:'video',name:'示例视频',finished:false},...['甲','乙'].map((n,i)=>({knowledgeId:'section',secNo:'1.1',sectionName:'示例章节',type:'discuss',name:'示例讨论'+n,discussionId:'topic-'+i,tracking:true,finished:false}))]}]}));
-const app=await electron.launch({executablePath:process.env.XXT_SELECTION_TEST_EXE||path.resolve('node_modules/electron/dist/electron.exe'),args:process.env.XXT_SELECTION_TEST_EXE?['--test-mode']:[process.cwd(),'--test-mode'],env:{...process.env,XXT_TEST_DATA_DIR:data}});
+const app=await electron.launch({executablePath:process.env.KEBO_SELECTION_TEST_EXE||path.resolve('node_modules/electron/dist/electron.exe'),args:process.env.KEBO_SELECTION_TEST_EXE?['--test-mode']:[process.cwd(),'--test-mode'],env:{...process.env,KEBO_TEST_DATA_DIR:data}});
 try{
  const ui=await app.firstWindow();await ui.waitForURL('http://127.0.0.1:*/');await enterTestWorkspace(ui);await ui.locator('[data-tab="courses"]').click();
  const first=ui.getByRole('checkbox',{name:'选择任务 示例讨论甲',exact:true});await first.waitFor();assert.equal(await first.isDisabled(),true);

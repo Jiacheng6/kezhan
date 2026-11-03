@@ -2,7 +2,7 @@
  * 编译桌面托盘启动器（P8）。
  *
  * 用 Windows 自带的 .NET Framework csc.exe 直接编译出 exe —— 不需要装任何东西。
- * 产物：desktop\学习通助手.exe
+ * 产物：desktop\课泊.exe
  *
  * 用法: node tools/build/build-desktop.mjs
  */
@@ -13,7 +13,7 @@ import { PATHS } from '../../src/config.mjs';
 
 const SRC = path.join(PATHS.root, 'desktop', 'App.cs');
 const OUT_DIR = path.join(PATHS.root, 'desktop');
-const OUT_EXE = path.join(OUT_DIR, '学习通助手.exe');
+const OUT_EXE = path.join(OUT_DIR, '课泊.exe');
 
 /** 找 csc.exe：优先 .NET Framework 自带（无需安装） */
 function findCsc() {

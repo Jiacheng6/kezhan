@@ -26,7 +26,7 @@ using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
-namespace XuexitongAssistant
+namespace Kebo
 {
     static class Program
     {
@@ -52,7 +52,7 @@ namespace XuexitongAssistant
         {
             // 单实例
             bool created;
-            _single = new Mutex(true, "Global\\XuexitongAssistantTray", out created);
+            _single = new Mutex(true, "Global\\KeboTray", out created);
             if (!created)
             {
                 MessageBox.Show("学习通刷课助手已经在运行了（看右下角托盘图标）。", AppTitle,

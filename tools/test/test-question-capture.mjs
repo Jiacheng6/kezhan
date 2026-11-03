@@ -28,9 +28,16 @@ try {
 
   await frame.addStyleTag({content:".Zy_TItle{font-family:EditorOnly}"});
   const before=fs.readdirSync(output).filter(name=>name.endsWith('.png')).length;
-  await assert.rejects(()=>shootQuestion(frame,0,output,{readTimeoutMs:250}),error=>error.captureStage==='题目字体'&&/字体尚未加载/.test(error.message));
+  const recoveries=[];const started=Date.now();
+  await assert.rejects(()=>shootQuestion(frame,0,output,{readTimeoutMs:250,fontTimeoutMs:600,onRecovery:message=>recoveries.push(message)}),error=>error.captureStage==='题目字体'&&error.code==='font-not-ready');
+  assert.ok(Date.now()-started<3000,'挂住的字体请求必须在字体总预算附近返回');
+  assert.ok(recoveries.some(message=>/恢复|重新加载/.test(message)),'必须真正进入恢复分支，不能先被页面读取超时打断');
   assert.equal(fs.readdirSync(output).filter(name=>name.endsWith('.png')).length,before,'must not save a potentially unreadable encrypted question');
   console.log('✓ 题干本身的字体未就绪时明确报错，不产生可能乱码的图片');
+  let stop=false;
+  await assert.rejects(()=>shootQuestion(frame,0,output,{readTimeoutMs:250,fontTimeoutMs:5000,shouldStop:()=>stop,onRecovery:()=>{stop=true;}}),{code:'STOPPED'});
+  assert.equal(fs.readdirSync(output).filter(name=>name.endsWith('.png')).length,before);
+  console.log('✓ 字体请求挂住及恢复期间仍可停止，停止后不保存图片');
   await frame.addStyleTag({content:'.Zy_TItle{font-family:Arial}'});
 
   let nativeCopies=0;

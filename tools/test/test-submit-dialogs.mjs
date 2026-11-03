@@ -1,6 +1,6 @@
 // All pages intercepted locally; no real assignment is submitted.
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {chromium} from 'playwright-core';
-fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/submit-dialogs-'));
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/submit-dialogs-'));
 const {findEdge}=await import('../../src/browser/launch.mjs');const {submitWork}=await import('../../src/chaoxing/quizrun.mjs');
 const browser=await chromium.launch({executablePath:findEdge(),headless:true});
 try{

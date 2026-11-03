@@ -5,7 +5,7 @@ import { chromium } from 'playwright-core';
 import { ROOT, EDGE_FLAGS } from '../../src/config.mjs';
 import { findEdge } from '../../src/browser/launch.mjs';
 import { shootQuestion } from '../../src/chaoxing/quiz.mjs';
-process.env.XXT_DESKTOP = '1';
+process.env.KEBO_DESKTOP = '1';
 const { startWindowControl, setBrowserVisible, stopWindowControl } = await import('../../src/browser/window-control.mjs');
 const data = path.join(ROOT, '.desktop-test', 'hidden-screenshot');
 fs.mkdirSync(data, { recursive: true });

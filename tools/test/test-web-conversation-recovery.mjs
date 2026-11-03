@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {chromium} from 'playwright-core';import {fixturePng} from './fixture-png.mjs';
-fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/conversation-recovery-'));
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/conversation-recovery-'));
 const {findEdge}=await import('../../src/browser/launch.mjs');const {askWebImage}=await import('../../src/ai/web-chat.mjs');const {AI_PROVIDERS}=await import('../../src/ai/providers.mjs');
 const {draftKey,createWebDraft,saveWebDraft,savedWebConversation}=await import('../../src/ai/web-draft.mjs');const {loadState}=await import('../../src/state.mjs');
 const b=await chromium.launch({executablePath:findEdge(),headless:true});
 try{
  const p=await b.newPage(),basePrompt='测试原题',marker='22222222-3333-4444-8555-666666666666',prompt=`${basePrompt}\n\n本次提问标记：${marker}。标记仅用于区分本次提问，答案中不要重复标记。`;
- const imagePath=path.join(process.env.XXT_DATA_DIR,'fixture.png');fs.writeFileSync(imagePath,fixturePng());
+ const imagePath=path.join(process.env.KEBO_DATA_DIR,'fixture.png');fs.writeFileSync(imagePath,fixturePng());
  const args={page:p,imagePath,prompt:basePrompt,taskKey:'restore-chat',question:{questionId:'q2',qtype:'single',options:[{letter:'A',text:'甲'},{letter:'B',text:'乙'}]}};
  const key=draftKey('doubao',args.taskKey,args.question),url='https://www.doubao.com/chat/123456';
  const seed=()=>{createWebDraft(key,{prompt,basePrompt,pageUrl:url,imagePath});saveWebDraft(key,{phase:'sent'});};

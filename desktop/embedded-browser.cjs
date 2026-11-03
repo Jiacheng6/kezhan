@@ -38,7 +38,7 @@ class EmbeddedBrowser {
     this.bounds = null; this.suspended = true; this.closeSuspended = false;
     this.lastContentSize = window.getContentSize();
     this.disposed = false; this.timer = null; this.cookiesReady=false;
-    this.session.setUserAgent(this.session.getUserAgent().replace(/\sElectron\/\S+/g, '').replace(/\sxuexitong-auto\/\S+/g, ''));
+    this.session.setUserAgent(this.session.getUserAgent().replace(/\sElectron\/\S+/g, '').replace(/\skebo\/\S+/g, ''));
     this.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     this.session.setPermissionCheckHandler(() => false);
     this.cookieChanged = () => { if(!this.cookiesReady)return;clearTimeout(this.timer); this.timer = setTimeout(() => this.saveCookies().catch(() => this.log('内置网页登录保存失败，下次可能需要重新登录')), 700); };

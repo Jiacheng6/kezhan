@@ -11,7 +11,7 @@ const site=http.createServer((_req,res)=>{res.setHeader('content-type','text/htm
 await new Promise(resolve=>site.listen(0,'127.0.0.1',resolve));
 let app;
 try {
- app=await electron.launch({executablePath:path.resolve('node_modules/electron/dist/electron.exe'),args:[process.cwd(),'--test-mode'],env:{...process.env,XXT_TEST_DATA_DIR:data}});
+ app=await electron.launch({executablePath:path.resolve('node_modules/electron/dist/electron.exe'),args:[process.cwd(),'--test-mode'],env:{...process.env,KEBO_TEST_DATA_DIR:data}});
  const port=Number(fs.readFileSync(path.join(data,'DevToolsActivePort'),'utf8').split('\n')[0]);
  const result=await app.evaluate(async({BrowserWindow,app},{port,url})=>{
   const require=process.getBuiltinModule('module').createRequire(app.getAppPath()+'/package.json');

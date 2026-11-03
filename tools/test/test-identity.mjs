@@ -244,7 +244,7 @@ console.log('\n=== 多来源投票（同一 ID 被印证优先）===');
 /* ---------------- 自动配置 + 持久化 ---------------- */
 console.log('\n=== 自动配置与持久化 ===');
 {
-  const dir = mkdtempSync(path.join(tmpdir(), 'xxt-identity-'));
+  const dir = mkdtempSync(path.join(tmpdir(), 'kebo-identity-'));
   const file = path.join(dir, 'local.json');
 
   // 先清空内存里的 ID，模拟"全新克隆、没有 local.json"

@@ -1,9 +1,9 @@
 {
-  "name": "xuexitong-auto",
-  "version": "0.6.11",
+  "name": "kebo",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
-  "description": "课栈：软件内网页、多平台课程管理与 AI 辅助",
+  "description": "课泊：软件内网页、多平台课程管理与 AI 辅助",
   "main": "desktop/main.cjs",
   "scripts": {
     "start": "electron .",
@@ -30,7 +30,7 @@
   },
   "build": {
     "releaseInfo": {
-      "releaseNotesFile": "docs/releases/0.6.11.md"
+      "releaseNotesFile": "docs/releases/0.7.0.md"
     },
     "publish": [
       {
@@ -40,9 +40,9 @@
       }
     ],
     "electronDist": "node_modules/electron/dist",
-    "appId": "com.xuexitong.assistant",
-    "productName": "学习通助手",
-    "copyright": "课栈",
+    "appId": "com.kebo.app",
+    "productName": "课泊",
+    "copyright": "课泊",
     "asar": false,
     "npmRebuild": false,
     "directories": {
@@ -63,7 +63,7 @@
     ],
     "win": {
       "icon": "desktop/assets/icon.ico",
-      "executableName": "学习通助手",
+      "executableName": "课泊",
       "signExecutable": false,
       "target": [
         {
@@ -79,16 +79,17 @@
           ]
         }
       ],
-      "artifactName": "XuexitongAssistant-${version}-win-${arch}.${ext}"
+      "artifactName": "Kebo-${version}-win-${arch}.${ext}"
     },
     "nsis": {
+      "guid": "498a0d80-d4f9-5e0f-b76b-f2eb2460b8bc",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "deleteAppDataOnUninstall": false,
-      "artifactName": "XuexitongAssistant-${version}-Setup.${ext}",
+      "artifactName": "Kebo-${version}-Setup.${ext}",
       "include": "desktop/installer.nsh"
     }
   }

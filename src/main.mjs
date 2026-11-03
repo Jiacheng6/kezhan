@@ -29,19 +29,136 @@ import { startWindowControl, setBrowserVisible, isBrowserVisible, stopWindowCont
 import { ownerState, startOwnerMonitor } from './browser/owner-lifecycle.mjs';
 import {selectedProvider, ensureProviderPage} from './ai/providers.mjs';
 import {aiResumeStatus,continueAI,onAIResumeChange} from './ai/resume.mjs';
-import {apiStatus} from './ai/api.mjs';
+import {apiStatus, askApiImage} from './ai/api.mjs';
+import {askImage, readAnswer, checkLogin} from './ai/ai.mjs';
+import {parseAnswer} from './ai/parse.mjs';
 import { PlatformRuns, planPlatformRun } from './platforms/runs.mjs';
 import { scanZhihuishuCourses } from './platforms/zhihuishu/scan.mjs';
+import { scanUcampusCourses, ensureUcampusPage } from './platforms/ucampus/scan.mjs';
+import { readStudentCourses } from './platforms/ucampus/api.mjs';
+import { runUcampusStudyNode } from './platforms/ucampus/runner.mjs';
+import { runUcampusQuizTab, openUnitTest, openQuizTab, openUcampusRequiredItem, openVocabularyLearning, clickByText, dismissUcampusDialog } from './platforms/ucampus/quiz.mjs';
+import { runUcampusTextQuiz } from './platforms/ucampus/textquiz.mjs';
+import { runUcampusCloze } from './platforms/ucampus/cloze.mjs';
+import { runUcampusVocab } from './platforms/ucampus/vocab.mjs';
 import { runZhihuishuVideo } from './platforms/zhihuishu/runner.mjs';
 import { runZhihuishuQuiz, restoreZhihuishuReview, submitZhihuishuReview, editZhihuishuReview, syncZhihuishuReviews } from './platforms/zhihuishu/quiz-task.mjs';
 import { platformOf } from './ui/platforms.js';
 import { onAIQueueChange } from './ai/queue.mjs';
 onAIQueueChange(aiQueue => patchStatus({ aiQueue }));
-const extraRuns = new PlatformRuns({ execute: args => args.task.type==='work'?runZhihuishuQuiz(args):runZhihuishuVideo(args), changed: sessions => patchStatus({ platformRuns: sessions }),
-  onRestart:({task,result,error})=>log(`【智慧树】当前任务暂停，保留进度并重启一次（1/1）：${task.name||''} · ${result?.error||error?.message||'页面暂未恢复'}`,'warn') });
+const extraRuns = new PlatformRuns({ execute: args => {
+    // 按平台分派：U校园 按题型走不同执行器（学习/自评/选择题/填空/翻译/单词卡），其余沿用智慧树实现
+    if (args.platform === 'ucampus' || platformOf(args.task) === 'ucampus') return runUcampusTask(args);
+    return args.task.type === 'work' ? runZhihuishuQuiz(args) : runZhihuishuVideo(args);
+  }, changed: sessions => patchStatus({ platformRuns: sessions }),
+  onRestart:({task,result,error})=>log(`【平台任务】当前任务暂停，保留进度并重启一次（1/1）：${task.name||''} · ${result?.error||error?.message||'页面暂未恢复'}`,'warn') });
 const startingPlatforms = new Set();
 const retryingReviews = new Set();
 const zhsScan = { running: false, stop: false };
+const ucampusScan = { running: false, stop: false };
+// 同一时间只允许一个 U校园 测验任务在跑（真机踩过：两次任务交错作答）
+let ucampusQuizBusy = false;
+/** 批量执行用：按题型把 U校园 的一个必修节点分派到对应执行器 */
+async function runUcampusTask(args) {
+  const task = args.task || {};
+  const kind = String(task.type || 'study');
+  const unit = Number(task.unitIndex || 0);
+  const stop = args.shouldStop || (() => shuttingDown);
+  const player = () => ctx().pages().find((p) => !p.isClosed() && p.url().startsWith('https://ucontent.unipus.com') || false) || ctx().pages().find((p) => !p.isClosed() && p.url().startsWith('https://ucontent.unipus.cn'));
+  const playerPage = (await_ => await_)(null);
+
+  // 学习节点 / 自评：沿用原来的执行器（真实鼠标勾选）
+  if (kind === 'review' || kind === 'study') return runUcampusStudyNode(args);
+
+  // 其余类型都要 AI；统一构造 ask（豆包/千问走网页，api 走接口）
+  const provider = selectedProvider(loadSettings());
+  const aiPage = provider?.id === 'api' ? null : await ensureProviderPage(ctx(), provider);
+  if (provider?.id !== 'api') {
+    const login = await checkLogin(aiPage).catch(() => ({ loggedIn: false }));
+    if (!login?.loggedIn) return { ok: false, phase: 'blocked-ai', error: `${provider.label}未登录，先登录再跑测验` };
+  }
+  const ask = async ({ imagePath, prompt, question }) => {
+    if (provider?.id === 'api') {
+      const r = await askApiImage({ imagePath, prompt, shouldStop: () => shuttingDown });
+      if (!r?.ok) return { ok: false, letters: [], confidence: 'none', error: r?.error };
+      const parsed = parseAnswer(r.answer, question || { qtype: 'single' });
+      return { ok: true, answer: r.answer, letters: parsed.letters || [], confidence: parsed.confidence || 'low' };
+    }
+    const r = await askImage({ page: aiPage, imagePath, prompt, shouldStop: () => shuttingDown, freshChat: false });
+    if (!r?.ok) return { ok: false, letters: [], confidence: 'none', error: r?.error };
+    const parsed = parseAnswer(r.answer, question || { qtype: 'single' });
+    return { ok: true, answer: r.answer, letters: parsed.letters || [], confidence: parsed.confidence || 'low' };
+  };
+  const readProgress = async () => {
+    const uai = (await ensureUcampusPage(ctx(), { create: false })) || (await ensureUcampusPage(ctx()));
+    const list = await readStudentCourses(uai, { shouldStop: () => shuttingDown });
+    for (const course of list) {
+      for (const tutorial of course.courseResourceList || []) {
+        if (String(tutorial.id) === String(task.courseResourceId)) return tutorial;
+      }
+    }
+    return null;
+  };
+
+  const page = ctx().pages().find((p) => !p.isClosed() && p.url().startsWith('https://ucontent.unipus.cn'));
+  if (!page) return { ok: false, phase: 'needs-human', error: '没有打开播放器页' };
+
+  if (kind === 'vocab-cards') {
+    const opened = await openVocabularyLearning(page, { unitOccurrence: (unit - 1) * 2, subTab: 'Vocabulary' });
+    if (!opened.ok) return { ok: false, phase: 'needs-human', error: opened.note };
+    const r = await runUcampusVocab({ page, apply: true, shouldStop: stop, readProgress, dwellMs: 1200 });
+    // 真机：单词卡的记账要**离开页面**才落库
+    await openUnitTest(page, unit).catch(() => {});
+    return r;
+  }
+  if (kind === 'video-quiz') {
+    const opened = await openVocabularyLearning(page, { unitOccurrence: (unit - 1) * 2, subTab: 'Quiz' });
+    if (!opened.ok) return { ok: false, phase: 'needs-human', error: opened.note };
+    return runUcampusQuizTab({ page, tab: null, limit: 99, apply: true, ask, shouldStop: stop, readProgress });
+  }
+  if (kind === 'unit-cloze') {
+    const opened = await openUnitTest(page, unit);
+    if (!opened.ok) return { ok: false, phase: 'needs-human', error: opened.note };
+    const tabOk = await clickByText(page, 'Banked cloze', { selector: '[class*="pc-header-task"], [class*="pc-task"]' });
+    if (!tabOk) return { ok: false, phase: 'needs-human', error: '找不到 Banked cloze 标签' };
+    await page.waitForTimeout(3000);
+    await dismissUcampusDialog(page);
+    return runUcampusCloze({ page, ask, apply: true, shouldStop: stop, readProgress });
+  }
+  const tabName = kind === 'unit-vocab' ? 'Vocabulary' : kind === 'unit-reading' ? 'Reading' : kind === 'unit-translation' ? 'Translation' : '';
+  const opened = await openUnitTest(page, unit);
+  if (!opened.ok) return { ok: false, phase: 'needs-human', error: opened.note };
+  if (kind === 'unit-translation') {
+    const tabbed = await openQuizTab(page, tabName);
+    if (!tabbed) return { ok: false, phase: 'needs-human', error: `找不到标签「${tabName}」` };
+    return runUcampusTextQuiz({ page, ask, apply: true, limit: 99, shouldStop: stop, readProgress });
+  }
+  const tabbed = await openQuizTab(page, tabName);
+  if (!tabbed) return { ok: false, phase: 'needs-human', error: `找不到标签「${tabName}」` };
+  return runUcampusQuizTab({ page, tab: null, limit: 99, apply: true, ask, shouldStop: stop, readProgress });
+}
+
+function startUcampusTasks(tasks) {
+  const plan = planPlatformRun(tasks, loadState().taskPoints);
+  if (plan.skipped) log(`【U校园】保留并跳过 ${plan.skipped} 个已完成节点，本次待完成 ${plan.tasks.length} 个`, 'info');
+  if (!plan.tasks.length) return { started: false, platform: 'ucampus', count: 0, skipped: plan.skipped, message: '所选节点均已完成，无需重复执行' };
+  const result = extraRuns.start('ucampus', plan.tasks, ctx());
+  log(`【U校园】开始 ${plan.tasks.length} 个必修节点；以平台 finishPointNum 增长为验收标准`, 'info');
+  void extraRuns.wait('ucampus').then((session) => {
+    if (session.error) {
+      const attention = session.phase === 'needs-human';
+      log(`【U校园】${attention ? '已暂停，需要处理' : '任务中断'}：` + session.error, attention ? 'warn' : 'error');
+      notifyUser(attention ? 'ucampus-attention' : 'batch-error', { key: `ucampus:${Date.now()}`, detail: 'U校园：' + session.error });
+    } else {
+      notifyUser(session.phase === 'stopped' ? 'batch-stopped' : 'batch-complete', {
+        key: `ucampus:${Date.now()}`,
+        detail: `U校园：完成 ${session.done}/${session.total} 个节点`,
+      });
+    }
+  });
+  return { ...result, skipped: plan.skipped, selected: plan.selected };
+}
+
 function startZhihuishuTasks(tasks) {
   const plan=planPlatformRun(tasks,loadState().taskPoints);
   if(plan.skipped)log(`【智慧树】保留并跳过 ${plan.skipped} 个已完成任务，本次待完成 ${plan.tasks.length} 个`, 'info');
@@ -150,7 +267,7 @@ async function boot() {
   const { url, port } = runtime.service;
   log(`控制台已就绪: ${url}`, 'ok');
   process.parentPort?.postMessage({ type: 'server-ready', url });
-  if (process.env.XXT_SMOKE_TEST === '1') {
+  if (process.env.KEBO_SMOKE_TEST === '1') {
     patchStatus({ ready: true, bootError: '离线打包自检：未启动浏览器、未连接账号' });
     return runtime;
   }
@@ -274,7 +391,7 @@ async function boot() {
   // 5) 打开控制台：优先在受控 Edge 里开（能和你并排看）
   let consoleOpenedInEdge = false;
   let consolePage = null;
-  if (process.env.XXT_DESKTOP !== '1') try {
+  if (process.env.KEBO_DESKTOP !== '1') try {
     // 同样先等一等：恢复会话可能已经带回了控制台标签页
     consolePage = await waitForPage(context, `127.0.0.1:${port}`, 5000);
     if (!consolePage) {
@@ -286,7 +403,7 @@ async function boot() {
   } catch {
     /* 忽略 */
   }
-  if (process.env.XXT_DESKTOP !== '1' && !consoleOpenedInEdge) openInDefaultBrowser(url);
+  if (process.env.KEBO_DESKTOP !== '1' && !consoleOpenedInEdge) openInDefaultBrowser(url);
 
   /*
    * 5.5) 再清一次场：把"恢复会话 + 我们新建"这轮竞态里可能多出来的重复页收掉。
@@ -532,7 +649,7 @@ function buildHooks() {
       if(selectedProvider(loadSettings()).id==='api')return {provider:'api',api:true};
       await refreshQianwenStatus({create:true});
       if(runtime.qianwenPage)await bringToFront(runtime.qianwenPage);
-      if(process.env.XXT_DESKTOP==='1'){await setBrowserVisible(true);patchStatus({browserVisible:true});}
+      if(process.env.KEBO_DESKTOP==='1'){await setBrowserVisible(true);patchStatus({browserVisible:true});}
       return {provider:selectedProvider(loadSettings()).id};
     },
 
@@ -618,7 +735,7 @@ function buildHooks() {
     },
 
     openChaoxing: async () => {
-      if (process.env.XXT_DESKTOP === '1') await setBrowserVisible(true);
+      if (process.env.KEBO_DESKTOP === '1') await setBrowserVisible(true);
       const page = runtime.coursePage && !runtime.coursePage.isClosed() ? runtime.coursePage : (await runtime.context.newPage());
       runtime.coursePage = page;
       if (!page.url().includes('chaoxing.com')) await page.goto(TARGETS.chaoxingHome, { waitUntil: 'domcontentloaded' }).catch(() => {});
@@ -639,8 +756,350 @@ function buildHooks() {
       finally { zhsScan.running = false; patchStatus({ zhihuishuScan: { running: false } }); }
     },
 
+    /** 在软件内打开 U校园 站点（让用户在受控浏览器里登录） */
+    openUcampus: async () => {
+      const page = await ensureUcampusPage(ctx());
+      if (!page) throw Error('打不开 U校园 页面');
+      await bringToFront(page);
+      log('已在受控浏览器中打开 U校园，请在其中登录后再扫描', 'info');
+      return { ok: true, url: 'https://uai.unipus.cn/portal' };
+    },
+
+    /**
+     * 读取 U校园 AI 版课程与必修节点（只读扫描）。
+     * 与智慧树扫描分开跑，互不影响；扫描结果写进平台清单。
+     */
+    readUcampus: async () => {
+      if (!ctx()) throw Error('网页尚未就绪');
+      if (ucampusScan.running) throw Error('U校园正在扫描');
+      if (extraRuns.snapshot().ucampus?.running) throw Error('请先停止 U校园 任务再读取课程');
+      ucampusScan.running = true; ucampusScan.stop = false;
+      try {
+        const result = await scanUcampusCourses({
+          context: () => ctx(),
+          shouldStop: () => ucampusScan.stop || shuttingDown,
+          onProgress: (progress) => patchStatus({ ucampusScan: { running: true, ...progress } }),
+        });
+        const nodes = result.courses.reduce((n, c) => n + c.taskPoints.length, 0);
+        log(`【U校园】扫描完成：${result.courses.length} 门课程、${nodes} 个必修节点`, 'ok');
+        return { courses: result.courses.length, nodes, detail: result };
+      } catch (error) {
+        notifyUser('batch-error', { key: 'ucampus-scan', detail: error.message });
+        throw error;
+      } finally {
+        ucampusScan.running = false;
+        patchStatus({ ucampusScan: { running: false } });
+      }
+    },
+
+    /**
+     * 执行 U校园 单个学习节点（用于验证与手动补跑；批量走 extraRuns）。
+     * 走界面真实播放，完成后以平台 finishPointNum 是否增长作为验收。
+     */
+    runUcampusNode: async (req) => {
+      if (!ctx()) throw Error('网页尚未就绪');
+      const body = await readJson(req);
+      const nodeId = String(body.nodeId || '');
+      const courseResourceId = String(body.courseResourceId || '');
+      if (!nodeId || !courseResourceId) throw Error('缺少 nodeId 或 courseResourceId');
+      const result = await runUcampusStudyNode({
+        task: { platformTaskKey: nodeId, courseResourceId, courseInstanceId: String(body.courseInstanceId || ''), name: body.name || nodeId },
+        context: () => ctx(),
+        shouldStop: () => shuttingDown,
+        continueUrl: String(body.continueUrl || ''),
+        onProgress: (progress) => patchStatus({ ucampusRun: { running: true, ...progress } }),
+      });
+      patchStatus({ ucampusRun: { running: false } });
+      return result;
+    },
+
+    /**
+     * U校园 测验节点：读题 → 问 AI →（全部高可靠时）点选并提交。
+     * 默认 apply=false：只算不点，返回每题的答案与可靠性，供人工核对。
+     */
+    runUcampusQuiz: async (req) => {
+      if (!ctx()) throw Error('网页尚未就绪');
+      const body = await readJson(req);
+      const provider = selectedProvider(loadSettings());
+      const aiPage = provider?.id === 'api' ? null : await ensureProviderPage(ctx(), provider);
+      const playerPage = (await ensureUcampusPage(ctx(), { create: false })) || (await ensureUcampusPage(ctx()));
+      const page = ctx().pages().find((p) => !p.isClosed() && p.url().startsWith('https://ucontent.unipus.cn'));
+      if (!page) throw Error('没有打开播放器页，请先在 U校园 教程里点「继续学习」');
+      void playerPage;
+      // 前置检查：通道没登录就直接说清楚，不要每题白等 30 秒节流后才发现
+      if (provider?.id !== 'api') {
+        const login = await checkLogin(aiPage).catch(() => ({ loggedIn: false }));
+        if (!login?.loggedIn) throw Error(`${provider.label}未登录，请先在受控浏览器里登录后再答题`);
+      }
+      // 指定单元时，先在播放器里打开该单元的 Unit test 节点
+      if (ucampusQuizBusy) throw Error('已有 U校园 测验任务在跑，请等它结束（同一页面并发作答会错乱）');
+      ucampusQuizBusy = true;
+      try {
+      if (body.unit && !body.required) {
+        const opened = await openUnitTest(page, Number(body.unit));
+        if (!opened.ok) throw Error(opened.note || '打不开该单元的 Unit test');
+      }
+      /*
+       * 视频区的必修（Vocabulary / Quiz）不在播放器目录里，
+       * 只能从 uai 教程页的必修清单点进去，会新开一个播放器标签页。
+       */
+      let quizPage = page;
+      // 视频区必修（Vocabulary / Quiz）：目录 → Reading the text → Vocabulary learning → 子标签
+      if (body.vocab) {
+        const opened = await openVocabularyLearning(page, {
+          unitOccurrence: Number(body.unitOccurrence ?? (Number(body.unit || 1) - 1) * 2),
+          subTab: String(body.sub || 'Quiz'),
+        });
+        if (!opened.ok) throw Error(opened.note || '打不开 Vocabulary learning');
+      }
+      if (body.required) {
+        const opened = await openUcampusRequiredItem(ctx(), String(body.required), { occurrence: Number(body.occurrence || 0), unit: body.unit ? Number(body.unit) : null });
+        if (!opened.ok) throw Error(opened.note || `打不开必修项「${body.required}」`);
+        quizPage = opened.page;
+      }
+      const ask = async ({ imagePath, prompt, question }) => {
+        if (provider?.id === 'api') {
+          const apiResult = await askApiImage({ imagePath, prompt, shouldStop: () => shuttingDown });
+          if (!apiResult?.ok) return { ok: false, letters: [], confidence: 'none', error: apiResult?.error };
+          const parsed = parseAnswer(apiResult.answer, question || { qtype: 'single' });
+          return { ok: true, answer: apiResult.answer, letters: parsed.letters || [], confidence: parsed.confidence || 'low' };
+        }
+        const webResult = await askImage({ page: aiPage, imagePath, prompt, shouldStop: () => shuttingDown, freshChat: body.freshChat === true });
+        if (!webResult?.ok) return { ok: false, letters: [], confidence: 'none', error: webResult?.error };
+        let answer = String(webResult.answer || '');
+        let parsed = parseAnswer(answer, question || { qtype: 'single' });
+        /*
+         * 真机踩到：千问把「深度思考已完成」和真正的答案放在**不同的块**里，
+         * readAnswer 只取最后一张卡，于是常常只读到思考摘要、解析不出字母。
+         * 这里改为把最后几张卡的文字拼起来解析，并从拿到回答后持续读 20 秒，
+         * 直到解析出字母或内容不再增长（不重复提问，省节流）。
+         */
+        const readCards = async () => {
+          try {
+            const raw = await aiPage.evaluate(() => {
+              const cards = [...document.querySelectorAll('.chat-answers-card-wrap')];
+              const texts = cards.map((c) => (c.innerText || '').trim()).filter(Boolean);
+              return JSON.stringify({ recent: texts.slice(-3) });
+            });
+            return String((JSON.parse(raw).recent || []).join('\n'));
+          } catch {
+            return '';
+          }
+        };
+        let lastSeen = answer;
+        for (let i = 0; i < 14 && !(parsed.letters || []).length; i += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          const combined = await readCards();
+          if (combined && combined !== lastSeen) {
+            lastSeen = combined;
+            answer = combined;
+            parsed = parseAnswer(answer, question || { qtype: 'single' });
+            continue;
+          }
+          if (!combined) {
+            const state = await readAnswer(aiPage).catch(() => null);
+            const next = String(state?.text || '');
+            if (next && next !== answer) {
+              answer = next;
+              parsed = parseAnswer(answer, question || { qtype: 'single' });
+            }
+          }
+        }
+        return { ok: true, answer, letters: parsed.letters || [], confidence: parsed.confidence || 'low' };
+      };
+      return runUcampusQuizTab({
+        page: quizPage,
+        tab: body.tab ? String(body.tab) : body.required || body.vocab ? null : 'Vocabulary',
+        limit: Number(body.limit || 99),
+        apply: body.apply === true,
+        ask,
+        shouldStop: () => shuttingDown,
+        // 验收回调：读平台口径的"已学任务"，涨了才算这个节点完成
+        readProgress: async () => {
+          const list = await readStudentCourses(playerPage || page, { shouldStop: () => shuttingDown });
+          for (const course of list) {
+            for (const tutorial of course.courseResourceList || []) {
+              if (String(tutorial.id) === String(body.courseResourceId || '20001230493')) return tutorial;
+            }
+          }
+          return null;
+        },
+      });
+      } finally {
+        ucampusQuizBusy = false;
+      }
+    },
+
+    /**
+     * U校园 文本作答（简答 / 翻译）：读题干 → AI 生成答案 → 填写 → 提交 → 验收。
+     * 默认 apply=false，只返回每题答案与可用性。
+     */
+    runUcampusTextQuiz: async (req) => {
+      if (!ctx()) throw Error('网页尚未就绪');
+      const body = await readJson(req);
+      if (ucampusQuizBusy) throw Error('已有 U校园 测验任务在跑，请等它结束');
+      ucampusQuizBusy = true;
+      try {
+        const provider = selectedProvider(loadSettings());
+        const aiPage = provider?.id === 'api' ? null : await ensureProviderPage(ctx(), provider);
+        const page = ctx().pages().find((p) => !p.isClosed() && p.url().startsWith('https://ucontent.unipus.cn'));
+        if (!page) throw Error('没有打开播放器页，请先在 U校园 教程里点「继续学习」');
+        const playerPage = (await ensureUcampusPage(ctx(), { create: false })) || (await ensureUcampusPage(ctx()));
+
+        if (provider?.id !== 'api') {
+          const login = await checkLogin(aiPage).catch(() => ({ loggedIn: false }));
+          if (!login?.loggedIn) throw Error(`${provider.label}未登录，请先在受控浏览器里登录后再答题`);
+        }
+        // 指定"单元 + 标签"时，先打开该单元的 Unit test，再切到指定标签
+        if (body.unit && body.tab) {
+          const opened = await openUnitTest(page, Number(body.unit));
+          if (!opened.ok) throw Error(opened.note || '打不开该单元的 Unit test');
+          const tabbed = await openQuizTab(page, String(body.tab));
+          if (!tabbed) throw Error(`播放器里找不到标签「${body.tab}」`);
+        }
+        // 指定目录条目时先打开它
+        if (body.nodeIndex !== undefined && body.nodeIndex !== null) {
+          await page.setViewportSize({ width: 1440, height: 900 }).catch(() => {});
+          await page.evaluate((i) => {
+            const tab = [...document.querySelectorAll('div,span,button,a,li')].find((el) => (el.innerText || '').trim() === '目录' && el.getClientRects().length);
+            if (tab) tab.click();
+            const list = [...document.querySelectorAll('span.pc-menu-node-name')];
+            if (list[i]) list[i].click();
+          }, Number(body.nodeIndex));
+          await page.waitForTimeout(5000);
+        }
+
+        const ask = async ({ imagePath, prompt }) => {
+          if (provider?.id === 'api') {
+            const apiResult = await askApiImage({ imagePath, prompt, shouldStop: () => shuttingDown });
+            if (!apiResult?.ok) return { ok: false, answer: '', error: apiResult?.error };
+            return { ok: true, answer: apiResult.answer };
+          }
+          const webResult = await askImage({ page: aiPage, imagePath, prompt, shouldStop: () => shuttingDown, freshChat: false });
+          if (!webResult?.ok) return { ok: false, answer: '', error: webResult?.error };
+          return { ok: true, answer: webResult.answer };
+        };
+
+        return await runUcampusTextQuiz({
+          page,
+          ask,
+          apply: body.apply === true,
+          limit: Number(body.limit || 99),
+          shouldStop: () => shuttingDown,
+          readProgress: async () => {
+            const list = await readStudentCourses(playerPage || page, { shouldStop: () => shuttingDown });
+            for (const course of list) {
+              for (const tutorial of course.courseResourceList || []) {
+                if (String(tutorial.id) === String(body.courseResourceId || '20001230493')) return tutorial;
+              }
+            }
+            return null;
+          },
+        });
+      } finally {
+        ucampusQuizBusy = false;
+      }
+    },
+
+    /**
+     * U校园 Banked cloze（选词填空）：读文章 → AI 选词 → fill → 提交 → 验收。
+     */
+    runUcampusCloze: async (req) => {
+      if (!ctx()) throw Error('网页尚未就绪');
+      const body = await readJson(req);
+      if (ucampusQuizBusy) throw Error('已有 U校园 测验任务在跑，请等它结束');
+      ucampusQuizBusy = true;
+      try {
+        const provider = selectedProvider(loadSettings());
+        const aiPage = provider?.id === 'api' ? null : await ensureProviderPage(ctx(), provider);
+        const page = ctx().pages().find((p) => !p.isClosed() && p.url().startsWith('https://ucontent.unipus.cn'));
+        if (!page) throw Error('没有打开播放器页');
+        const playerPage = (await ensureUcampusPage(ctx(), { create: false })) || (await ensureUcampusPage(ctx()));
+        if (provider?.id !== 'api') {
+          const login = await checkLogin(aiPage).catch(() => ({ loggedIn: false }));
+          if (!login?.loggedIn) throw Error(`${provider.label}未登录，请先登录`);
+        }
+        // 打开该单元的 Unit test → Banked cloze 表头
+        if (body.unit) {
+          const opened = await openUnitTest(page, Number(body.unit));
+          if (!opened.ok) throw Error(opened.note || '打不开该单元的 Unit test');
+          const tabOk = await clickByText(page, 'Banked cloze', { selector: '[class*="pc-header-task"], [class*="pc-task"]' });
+          if (!tabOk) throw Error('没找到「Banked cloze」表头');
+          await page.waitForTimeout(3000);
+          await dismissUcampusDialog(page);
+        }
+
+        const ask = async ({ imagePath, prompt }) => {
+          if (provider?.id === 'api') {
+            const r = await askApiImage({ imagePath, prompt, shouldStop: () => shuttingDown });
+            return { ok: !!r?.ok, answer: r?.answer || '', error: r?.error };
+          }
+          const r = await askImage({ page: aiPage, imagePath, prompt, shouldStop: () => shuttingDown, freshChat: false });
+          return { ok: !!r?.ok, answer: r?.answer || '', error: r?.error };
+        };
+
+        return await runUcampusCloze({
+          page,
+          ask,
+          apply: body.apply === true,
+          shouldStop: () => shuttingDown,
+          readProgress: async () => {
+            const list = await readStudentCourses(playerPage || page, { shouldStop: () => shuttingDown });
+            for (const course of list) {
+              for (const tutorial of course.courseResourceList || []) {
+                if (String(tutorial.id) === String(body.courseResourceId || '20001230493')) return tutorial;
+              }
+            }
+            return null;
+          },
+        });
+      } finally {
+        ucampusQuizBusy = false;
+      }
+    },
+
+    /**
+     * U校园 Vocabulary（单词卡片）：一路点「下一个」把 53 张走完，平台按完成度记账。
+     */
+    runUcampusVocab: async (req) => {
+      if (!ctx()) throw Error('网页尚未就绪');
+      const body = await readJson(req);
+      if (ucampusQuizBusy) throw Error('已有 U校园 测验任务在跑，请等它结束');
+      ucampusQuizBusy = true;
+      try {
+        const page = ctx().pages().find((p) => !p.isClosed() && p.url().startsWith('https://ucontent.unipus.cn'));
+        if (!page) throw Error('没有打开播放器页');
+        const playerPage = (await ensureUcampusPage(ctx(), { create: false })) || (await ensureUcampusPage(ctx()));
+
+        if (body.unit) {
+          const opened = await openVocabularyLearning(page, {
+            unitOccurrence: Number(body.unitOccurrence ?? (Number(body.unit) - 1) * 2),
+            subTab: 'Vocabulary',
+          });
+          if (!opened.ok) throw Error(opened.note || '打不开 Vocabulary learning');
+        }
+
+        return await runUcampusVocab({
+          page,
+          apply: body.apply === true,
+          shouldStop: () => shuttingDown,
+          readProgress: async () => {
+            const list = await readStudentCourses(playerPage || page, { shouldStop: () => shuttingDown });
+            for (const course of list) {
+              for (const tutorial of course.courseResourceList || []) {
+                if (String(tutorial.id) === String(body.courseResourceId || '20001230493')) return tutorial;
+              }
+            }
+            return null;
+          },
+        });
+      } finally {
+        ucampusQuizBusy = false;
+      }
+    },
+
     focusEdge: async () => {
-      if (process.env.XXT_DESKTOP === '1') await setBrowserVisible(true);
+      if (process.env.KEBO_DESKTOP === '1') await setBrowserVisible(true);
       const page = runtime.coursePage || runtime.context.pages()[0];
       if (page) await bringToFront(page);
       return { ok: true };
@@ -749,19 +1208,23 @@ function buildHooks() {
         return { ok: false, error: 'no-checklist' };
       }
       const request = await readJson(req, 2 * 1024 * 1024);
-      if (request.platform && !['chaoxing', 'zhihuishu'].includes(request.platform)) throw Error('此平台暂未接入执行');
+      if (request.platform && !['chaoxing', 'zhihuishu', 'ucampus'].includes(request.platform)) throw Error('此平台暂未接入执行');
       const selected = assertRunScope(request.platform ? cl.courses.filter(c => platformOf(c) === request.platform) : cl.courses, request);
       const zhsTasks = selected.filter(t => platformOf(t) === 'zhihuishu');
+      const uaiTasks = selected.filter(t => platformOf(t) === 'ucampus');
       const tasks = selected.filter(t => platformOf(t) === 'chaoxing');
-      if (tasks.length + zhsTasks.length !== selected.length) throw Error('选择中包含尚未接入执行的平台');
+      if (tasks.length + zhsTasks.length + uaiTasks.length !== selected.length) throw Error('选择中包含尚未接入执行的平台');
       const starting = [...new Set(selected.map(platformOf))];
       if (starting.some(id => startingPlatforms.has(id))) throw Error('此平台正在启动，请稍候');
       if (zhsTasks.length && extraRuns.snapshot().zhihuishu?.running) throw Error('智慧树已在运行，请使用独立停止按钮');
       if (zhsTasks.length && zhsScan.running) throw Error('请等待智慧树扫描完成');
+      if (uaiTasks.length && extraRuns.snapshot().ucampus?.running) throw Error('U校园已在运行，请使用独立停止按钮');
+      if (uaiTasks.length && ucampusScan.running) throw Error('请等待 U校园 扫描完成');
       if (tasks.length && batchRunner.running) throw Error('学习通已在运行，请使用独立停止按钮');
       starting.forEach(id => startingPlatforms.add(id));
       try {
       if (!tasks.length) {
+        if (uaiTasks.length) return startUcampusTasks(uaiTasks);
         if (!zhsTasks.length) throw Error('没有可执行任务');
         return startZhihuishuTasks(zhsTasks);
       }
@@ -937,7 +1400,7 @@ function buildHooks() {
         await readoptKeptPages();
         const {page,...result}=await reopenReviewWork(ctx(),taskKey,{personId:PERSON_ID});
         await bringToFront(page);
-        if(process.env.XXT_DESKTOP==='1'){await setBrowserVisible(true);patchStatus({browserVisible:true});}
+        if(process.env.KEBO_DESKTOP==='1'){await setBrowserVisible(true);patchStatus({browserVisible:true});}
         return result;
       });
     },
@@ -1065,14 +1528,14 @@ async function gracefulShutdown(signal) {
   // Windows 强杀进程不触发 SIGTERM，桌面端通过消息请求有序退出。
   stopWindowControl();
   ownerMonitor?.stop();
-  if (runtime.browser && process.env.XXT_DESKTOP === '1' && !embedded) {
+  if (runtime.browser && process.env.KEBO_DESKTOP === '1' && !embedded) {
     try {
       const session = await runtime.browser.newBrowserCDPSession();
       await session.send('Browser.close');
     } catch { /* Browser.close 后连接断开是正常现象 */ }
   }
   // Browser.close 后留时间给 Edge 写入登录会话，避免立即强杀打断落盘。
-  if (process.env.XXT_DESKTOP === '1' && !embedded) await stopOwnedEdge({ graceMs: 3000 });
+  if (process.env.KEBO_DESKTOP === '1' && !embedded) await stopOwnedEdge({ graceMs: 3000 });
   if (runtime.service) {
     for (const client of runtime.service.wss.clients) client.terminate();
     runtime.service.wss.close();
@@ -1084,7 +1547,7 @@ async function gracefulShutdown(signal) {
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 if (process.parentPort) {
-  ownerMonitor = startOwnerMonitor(process.env.XXT_OWNER_PID);
+  ownerMonitor = startOwnerMonitor(process.env.KEBO_OWNER_PID);
   let lastHeartbeat = Date.now();
   let lastOwnerState = 'alive';
   process.parentPort.on('message', ({ data }) => {
@@ -1092,7 +1555,7 @@ if (process.parentPort) {
     if (data?.type === 'shutdown') gracefulShutdown('桌面退出');
   });
   setInterval(() => {
-    const state = ownerState({ ownerPid: process.env.XXT_OWNER_PID, lastHeartbeat, probe: ownerMonitor.probe });
+    const state = ownerState({ ownerPid: process.env.KEBO_OWNER_PID, lastHeartbeat, probe: ownerMonitor.probe });
     if (state === 'gone') return gracefulShutdown('已确认桌面主进程退出');
     if (state === 'unresponsive' && state !== lastOwnerState) {
       log('桌面心跳暂时超时，但主进程仍在；后台继续运行', 'warn');

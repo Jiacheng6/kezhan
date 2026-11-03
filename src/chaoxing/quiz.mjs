@@ -1,3 +1,4 @@
+import { inspectQuestionFonts } from './question-fonts.mjs';
 /**
  * 测验/作业的题目提取与截图（P4）。
  *
@@ -184,9 +185,30 @@ export async function getWorkMeta(workFrame) {
  *   「题目字体加载失败，请刷新题目后重试」（8 次）。
  *   这与用哪个 AI 通道无关，所以"换什么都一样"。
  */
-export function fontReadyVerdict({ pending = 0, failed = false, elapsedMs = 0, budgetMs = 15000 } = {}) {
-  if (failed) return { action: 'fail', code: 'font-failed' };
-  if (!pending) return { action: 'ready' };
+export function fontReadyVerdict({
+  stalled = false,
+  pending = 0,
+  failed = false,
+  elapsedMs = 0,
+  budgetMs = 25000,
+  recoverAttempts = 0,
+  recoverBudget = 3,
+} = {}) {
+  /*
+   * 用户反馈（2026-11-03）：跑到 3.1 的第 4 题后停住，报
+   * 「题目字体文件加载失败（已主动加载 1 次）；未发送可能乱码的截图」。
+   *
+   * 原因是旧逻辑一看到 failed（某个字体 face 状态是 error）就立刻抛错；
+   * 而浏览器里字体请求失败是**可恢复的**（再请求一次通常就好了）。
+   * 现在改成：先尝试 recover（强制重新请求字体）若干次，仍不行才判失败。
+   */
+  if (!pending && !failed) return { action: 'ready' };
+  if (elapsedMs >= budgetMs) return { action: 'fail', code: failed ? 'font-failed' : 'font-not-ready' };
+  if (failed) {
+    if (recoverAttempts < recoverBudget && elapsedMs < budgetMs * 2) return { action: 'recover' };
+    return { action: 'fail', code: 'font-failed' };
+  }
+  if (stalled && recoverAttempts < recoverBudget && elapsedMs < budgetMs) return { action: 'recover' };
   if (elapsedMs >= budgetMs) return { action: 'fail', code: 'font-not-ready' };
   return { action: 'wait' };
 }
@@ -195,7 +217,7 @@ export function fontReadyVerdict({ pending = 0, failed = false, elapsedMs = 0, b
  * 截取单道题的图片（精确裁剪）。
  * @returns {Promise<string>} 图片文件路径
  */
-export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, readTimeoutMs = 8000, fontTimeoutMs = 15000, onRecovery, selector = '.TiMu, .newTiMu', nativeCapture = embedded ? captureEmbeddedPage : null, allowCDPFallback = true } = {}) {
+export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, readTimeoutMs = 8000, fontTimeoutMs = 30000, onRecovery, selector = '.TiMu, .newTiMu', nativeCapture = embedded ? captureEmbeddedPage : null, allowCDPFallback = true, fontNotes = null } = {}) {
   throwIfStopped(shouldStop);
   fs.mkdirSync(outDir, { recursive: true });
   const read = async (stage, operation) => {
@@ -219,62 +241,48 @@ export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, r
   // Never send an encrypted question rendered with a missing fallback font.
   const fontsStarted = Date.now();
   let fontLoadCalls = 0;
+  let recoverAttempts = 0;
   for (;;) {
-    const fonts = await read('检查题目字体', () => el.evaluate(async (node) => {
-      const roots = [...node.querySelectorAll('.Zy_TItle, .Zy_ulTop, .Zy_ulBottom')];
-      const requests = new Map();
-      for (const root of roots.length ? roots : [node]) {
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-        while (walker.nextNode()) {
-          const text = walker.currentNode.textContent.trim(), parent = walker.currentNode.parentElement;
-          if (!text || !parent || !parent.getClientRects().length) continue;
-          const style = getComputedStyle(parent);
-          if (style.visibility !== 'visible' || style.display === 'none') continue;
-          const font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-          requests.set(font, (requests.get(font) || '') + text);
-        }
-      }
-      /*
-       * 关键修复：`document.fonts.check()` 只是**被动查询**。
-       * 内置网页被隐藏/后台渲染时，字体可能一直不被请求，
-       * 于是永远 check 不过 → 8 秒后误判成"字体没加载/加载失败"。
-       * 这里对缺失的字体**主动**调用 fonts.load() 触发下载。
-       */
-      let loadAttempts = 0;
-      for (const [font, text] of requests) {
-        if (document.fonts.check(font, text)) continue;
-        loadAttempts += 1;
-        try { await document.fonts.load(font, text); } catch (e) { /* 交给下面的 failed 判定 */ }
-      }
-
-      let pending = 0, failed = false;
-      const normalize = (value) => value.replace(/["']/g, '').trim().toLowerCase();
-      for (const [font, text] of requests) {
-        const families = font.slice(font.indexOf('px') + 2).split(',').map(normalize);
-        if (!document.fonts.check(font, text)) {
-          pending++;
-          if ([...document.fonts].some(face => families.includes(normalize(face.family)) && face.status === 'error')) failed = true;
-        }
-      }
-      return { pending, failed, loadAttempts };
-    }));
+    const fonts = await read('检查题目字体', () => el.evaluate(inspectQuestionFonts, { stallMs: Math.min(2000, Math.max(100, fontTimeoutMs / 4)) }));
     fontLoadCalls += fonts.loadAttempts || 0;
 
     const verdict = fontReadyVerdict({
       pending: fonts.pending,
+      stalled: fonts.stalled,
       failed: fonts.failed,
       elapsedMs: Date.now() - fontsStarted,
       budgetMs: fontTimeoutMs,
+      recoverAttempts,
     });
     if (verdict.action === 'ready') break;
+    if (verdict.action === 'recover') {
+      recoverAttempts += 1;
+      onRecovery?.(`题目字体尚未就绪，正在尝试恢复（${recoverAttempts}/3）`);
+      await read('恢复题目字体', () => el.evaluate(inspectQuestionFonts, { recover: true, stallMs: 0 }));
+      await interruptibleSleep(Math.min(800, Math.max(20, fontTimeoutMs / 10)), shouldStop);
+      continue;
+    }
     if (verdict.action === 'fail') {
+      const fontHint = (fonts.failedFonts || []).length ? `；失败的字体：${fonts.failedFonts.join(' , ')}` : '';
+      /*
+       * 真机取证（2026-11-03）：这门课截图里的文字是**完全可读**的，
+       * 说明"字体加载失败"只是某个辅助字体（图标/公式）没加载，
+       * 题目本身并没有乱码。这种误报不该拦住整道题。
+       * 传了 fontNotes 的调用方（章节测验）允许**带警告继续截图**，
+       * 只是这题的答案不自动填、转待审。
+       */
+      if (fontNotes) {
+        fontNotes.push(`题目字体未完全加载${fontHint}（已继续截图，答案不自动填）`);
+        onRecovery?.(fontNotes[fontNotes.length - 1]);
+        break;
+      }
       throw Object.assign(
         new Error(
           verdict.code === 'font-failed'
-            ? `题目字体文件加载失败（已主动加载 ${fontLoadCalls} 次）；未发送可能乱码的截图`
-            : `题目字体未就绪（已主动加载 ${fontLoadCalls} 次，等待 ${Math.round((Date.now() - fontsStarted) / 1000)} 秒）`,
+            ? `题目字体文件加载失败（已主动加载 ${fontLoadCalls} 次、强制恢复 ${recoverAttempts} 次）${fontHint}`
+            : `题目字体未就绪（已主动加载 ${fontLoadCalls} 次、强制恢复 ${recoverAttempts} 次，等待 ${Math.round((Date.now() - fontsStarted) / 1000)} 秒）${fontHint}`,
         ),
-        { captureStage: '题目字体', code: verdict.code },
+        { captureStage: '题目字体', code: verdict.code, failedFonts: fonts.failedFonts || [] },
       );
     }
     await interruptibleSleep(120, shouldStop);

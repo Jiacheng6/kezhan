@@ -45,6 +45,15 @@ export const TYPE_POLICY = {
   audio: { handle: false, label: '音频', action: '暂不处理' },
   vote: { handle: false, label: '问卷', action: '跳过 → 记入待人工' },
   other: { handle: false, label: '未识别', action: '跳过 → 记入待人工' },
+  // U校园（uai）的题型：都能自动处理，不需要人工
+  review: { handle: true, label: '自评', action: '逐条勾选' },
+  'vocab-cards': { handle: true, label: '单词卡', action: '走完卡片' },
+  'video-quiz': { handle: true, label: '选择题', action: '截图问 AI → 点选提交' },
+  'unit-vocab': { handle: true, label: '选择题', action: '截图问 AI → 点选提交' },
+  'unit-reading': { handle: true, label: '选择题', action: '截图问 AI → 点选提交' },
+  'unit-cloze': { handle: true, label: '选词填空', action: 'AI 选词 → 填写提交' },
+  'unit-translation': { handle: true, label: '翻译', action: 'AI 翻译 → 填写提交' },
+  study: { handle: true, label: '学习节点', action: '播放器内完成' },
 };
 
 /** 名称里出现这些字样 → 视为「章节测验」（可做） */
@@ -281,6 +290,8 @@ function toCourseEntry(c, sel, summary, progress) {
         willHandleBase = workKind === 'quiz';
       }
       if (c.platform === 'zhihuishu' && !['video','work'].includes(t.type)) willHandleBase = false;
+      // U校园：题型都已在 TYPE_POLICY 里声明；表里没有的也不拦，避免被误标成「待人工」
+      if (c.platform === 'ucampus') willHandleBase = TYPE_POLICY[t.type] ? TYPE_POLICY[t.type].handle === true : true;
 
       const isExcluded = excluded.has(key);
       const blockedReason=t.type==='discuss'&&!willHandleBase?'需开启讨论草稿':null;

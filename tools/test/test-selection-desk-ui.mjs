@@ -17,13 +17,13 @@ courses.push({courseId:'fixture-finished',clazzId:'fixture-finished-class',name:
   {courseId:'fixture-unknown',clazzId:'fixture-unknown-class',name:'待读取的示例课程',sectionTreeKnown:true,sections:[{knowledgeId:'unknown-sec',secNo:'1.1',name:'未读取小节',done:false,probed:false,pending:1}],taskPoints:[]});
 const report={at:'2026-01-01T00:00:00Z',courses};
 const reportFile=path.join(data,'data/probe-out/task-report.json');fs.writeFileSync(reportFile,JSON.stringify(report));
-const packagedExe=process.env.XXT_SELECTION_TEST_EXE;
-const application=await electron.launch({executablePath:packagedExe||path.join(root,'node_modules/electron/dist/electron.exe'),args:[...(packagedExe?[]:[root]),'--test-mode'],env:{...process.env,XXT_TEST_DATA_DIR:data}});
+const packagedExe=process.env.KEBO_SELECTION_TEST_EXE;
+const application=await electron.launch({executablePath:packagedExe||path.join(root,'node_modules/electron/dist/electron.exe'),args:[...(packagedExe?[]:[root]),'--test-mode'],env:{...process.env,KEBO_TEST_DATA_DIR:data}});
 const errors=[],actions=[],runRequests=[];let holding=false;
 try {
   const page=await application.firstWindow();page.on('pageerror',error=>errors.push(error.message));
   await page.waitForURL('http://127.0.0.1:*/');
-  await page.evaluate(()=>localStorage.setItem('xxt-library-startup','skip'));
+  await page.evaluate(()=>localStorage.setItem('kebo-library-startup','skip'));
   const initial=await page.evaluate(()=>fetch('/api/status').then(r=>r.json()));
   const status={...initial,bootError:null,ready:true,edge:{connected:true},login:{loggedIn:true},qianwen:{loggedIn:true},account:{},running:false,reconRunning:false};
   const sockets=new Set();
@@ -164,7 +164,7 @@ try {
   await page.locator('#deskScan').click();assert.deepEqual(actions,['startRun','stopRun','startRecon']);
   fs.writeFileSync(path.join(output,'checks.json'),JSON.stringify({switchPreservesSelection:true,previewBeforeApply:true,undo:true,saveAndReload:true,missingTaskProtection:true,completedAndUnknownVisible:true,rangeValidation:true,runningGuard:true,persistenceFailure:true,legacyView:true,selectionNeverStarts:true,startStopMocked:true,saveFailureBlocksStart:true,loginHelp:true,responsive:true,pageErrors:errors,data},null,2));
   console.log('✓ 实际桌面：三栏选课、规则预览与应用、撤销、方案保存/改名/重载、变化任务保护、运行锁定、错误提示及窄屏验证通过；未执行任何课程任务。截图：'+output);
-  if(process.argv.includes('--hold')){holding=true;await page.reload();await enterTestWorkspace(page);await page.locator('[data-tab=courses]').click();await application.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);w.setTitle('学习通助手 · 三栏选课预览（隔离演示数据）');w.show();});await new Promise(resolve=>application.process().once('exit',resolve));}
+  if(process.argv.includes('--hold')){holding=true;await page.reload();await enterTestWorkspace(page);await page.locator('[data-tab=courses]').click();await application.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);w.setTitle('课泊 · 三栏选课预览（隔离演示数据）');w.show();});await new Promise(resolve=>application.process().once('exit',resolve));}
 } finally {
   if(!holding){const exited=new Promise(resolve=>application.process().once('exit',resolve));await requestTestExit(application).catch(()=>{});let timer;await Promise.race([exited,new Promise(resolve=>{timer=setTimeout(resolve,15000)})]);clearTimeout(timer);await application.close().catch(()=>{});}
 }

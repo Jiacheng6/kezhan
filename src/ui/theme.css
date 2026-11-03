@@ -1,0 +1,339 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   课泊 · 主题系统
+   · 两套模式：白天（浅色纸感，默认）/ 黑夜（中性深灰）
+   · 五套配色：绿 / 粉 / 黄 / 蓝 / 白（只换强调色，不改布局）
+   · 切换有过渡：背景、文字、边框、按钮同步渐变
+   挂载方式：html[data-mode][data-accent]，由 theme.js 写入。
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* ── 白天（默认）：回到之前的暖白纸感 ───────────────────────────────────── */
+:root,
+html[data-mode="light"] {
+  --bg: #f4f5f7;
+  --bg2: #ffffff;
+  --bg3: #eef0f3;
+  --fg: #222631;
+  --fg2: #59616f;
+  --fg3: #717987;
+  --line: #e0e4ea;
+  --line-strong: #c5ccd6;
+  --ok: #34613f;
+  --warn: #8a622d;
+  --err: #9a4236;
+  --shadow: 0 16px 48px rgba(22, 30, 48, 0.12);
+  --radius: 8px;
+  --sidebar: 210px;
+  --serif: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --switch: 240ms;
+}
+
+/* ── 黑夜：中性深灰，不用暖墨，保证和浅色是同一种"简单" ─────────────── */
+html[data-mode="dark"] {
+  --bg: #17181a;
+  --bg2: #1e1f22;
+  --bg3: #24262a;
+  --fg: #ecebe6;
+  --fg2: #b3b3ac;
+  --fg3: #8b8b84;
+  --line: #2e3034;
+  --line-strong: #3b3e43;
+  --ok: #7bb28d;
+  --warn: #d5a55f;
+  --err: #d97a68;
+  --shadow: 0 12px 34px rgba(0, 0, 0, 0.45);
+}
+
+/* ── 五套配色（只改强调色与其可读文字色）────────────────────────────── */
+html[data-accent="green"] {
+  --acc: #3f7d5a;
+  --acc-soft: #e6efe8;
+  --acc-ink: #ffffff;
+}
+html[data-accent="pink"] {
+  --acc: #c2547f;
+  --acc-soft: #fbe9f0;
+  --acc-ink: #ffffff;
+}
+html[data-accent="yellow"] {
+  --acc: #b4832b;
+  --acc-soft: #fbf1dc;
+  --acc-ink: #ffffff;
+}
+html[data-accent="blue"] {
+  --acc: #3a6ea8;
+  --acc-soft: #e6eef8;
+  --acc-ink: #ffffff;
+}
+html[data-accent="mono"] {
+  --acc: #4a4a46;
+  --acc-soft: #ecebe6;
+  --acc-ink: #ffffff;
+}
+
+/* 黑夜下强调色的柔和底与文字色要压暗/提亮，避免刺眼 */
+html[data-mode="dark"][data-accent="green"] {
+  --acc: #6fb68e;
+  --acc-soft: #22322b;
+  --acc-ink: #10201a;
+}
+html[data-mode="dark"][data-accent="pink"] {
+  --acc: #e08aac;
+  --acc-soft: #331f28;
+  --acc-ink: #2b1420;
+}
+html[data-mode="dark"][data-accent="yellow"] {
+  --acc: #e0b263;
+  --acc-soft: #332a18;
+  --acc-ink: #2a2010;
+}
+html[data-mode="dark"][data-accent="blue"] {
+  --acc: #7aa9dd;
+  --acc-soft: #1e2833;
+  --acc-ink: #101b26;
+}
+html[data-mode="dark"][data-accent="mono"] {
+  --acc: #cfcec7;
+  --acc-soft: #2a2b2e;
+  --acc-ink: #1a1a18;
+}
+
+/* ── 切换过渡：让"换主题/换模式"看得见 ─────────────────────────────── */
+html,
+body {
+  background: var(--bg);
+  color: var(--fg);
+  transition:
+    background-color var(--switch) var(--ease-out),
+    color var(--switch) var(--ease-out);
+}
+/*
+ * 真机踩到：切回白天时变量已还原，但底色被更早的样式层压住没有回来。
+ * 这里按 data-mode 再加一层显式声明（两个方向都钉住），并同步 color-scheme，
+ * 避免 UA 画布沿用上一次的深色。
+ */
+html[data-mode="light"] {
+  color-scheme: light;
+}
+html[data-mode="dark"] {
+  color-scheme: dark;
+}
+html[data-mode="light"],
+html[data-mode="light"] body {
+  background-color: var(--bg) !important;
+  color: var(--fg) !important;
+}
+html[data-mode="dark"],
+html[data-mode="dark"] body {
+  background-color: var(--bg) !important;
+  color: var(--fg) !important;
+}
+.sidebar,
+.topbar,
+.platform-strip,
+.platform-session,
+.platform-total,
+.card,
+.task-sheet,
+.treecourse,
+.treehead,
+.review-note,
+.reviewgroup,
+.settings-details,
+.ledger-row,
+.tprow,
+button,
+input:not([type="checkbox"]),
+textarea,
+select,
+.pill,
+.chip,
+.platform-badge {
+  transition:
+    background-color var(--switch) var(--ease-out),
+    border-color var(--switch) var(--ease-out),
+    color var(--switch) var(--ease-out);
+}
+
+/* ── 强调色套用（保持"简单"：只在关键操作与状态上用色）─────────────── */
+button.primary {
+  background: var(--acc);
+  border-color: var(--acc);
+  color: var(--acc-ink);
+}
+button.primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+.tab.active {
+  box-shadow: inset 2px 0 var(--acc);
+  background: var(--bg3);
+  color: var(--fg);
+}
+.text-button {
+  color: var(--acc);
+}
+.tp-fill,
+.progress-track > div,
+.runbar-fill {
+  background: var(--acc);
+}
+.tp-percent strong {
+  color: var(--acc);
+}
+#platformFilters button[aria-pressed="true"] {
+  background: var(--acc);
+  border-color: var(--acc);
+  color: var(--acc-ink);
+}
+.platform-session[data-platform="chaoxing"] {
+  border-left-color: var(--acc);
+}
+.ledger-arrow {
+  color: var(--acc);
+}
+.activity-state i,
+.tp-state i {
+  background: var(--acc);
+}
+input:not([type="checkbox"]):focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  border-color: var(--acc);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 18%, transparent);
+}
+
+/* ── 面板切换动效：更明显（淡入 + 上移），仍守 300ms 内 ─────────────── */
+.panel.active {
+  animation: panel-switch 300ms var(--ease-out) both;
+}
+@keyframes panel-switch {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── 主题选择器本体 ─────────────────────────────────────────────────── */
+.theme-menu > summary {
+  cursor: pointer;
+  color: var(--fg2);
+  font-size: 12px;
+  letter-spacing: 0.4px;
+  list-style: none;
+}
+.theme-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.theme-menu[open] > summary {
+  color: var(--acc);
+}
+.theme-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 60;
+  min-width: 232px;
+  padding: 12px 14px 14px;
+  border-radius: 10px;
+  background: var(--bg2);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  animation: theme-pop 180ms var(--ease-out) both;
+  transform-origin: top right;
+}
+@keyframes theme-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.theme-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.theme-row + .theme-row {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.theme-label {
+  color: var(--fg3);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+.theme-modes {
+  display: inline-flex;
+  gap: 4px;
+}
+.theme-mode {
+  padding: 5px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--fg2);
+}
+.theme-mode[aria-pressed="true"] {
+  background: var(--acc-soft);
+  border-color: var(--acc);
+  color: var(--acc);
+}
+.theme-accents {
+  display: inline-flex;
+  gap: 8px;
+}
+.theme-accent {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--dot);
+  transition:
+    transform 160ms var(--ease-out),
+    box-shadow 160ms var(--ease-out);
+}
+.theme-accent[aria-pressed="true"] {
+  box-shadow:
+    0 0 0 2px var(--bg2),
+    0 0 0 4px var(--dot);
+  transform: scale(1.06);
+}
+.theme-accent:active {
+  transform: scale(0.92);
+}
+.theme-accent[data-accent="green"] {
+  --dot: #3f7d5a;
+}
+.theme-accent[data-accent="pink"] {
+  --dot: #c2547f;
+}
+.theme-accent[data-accent="yellow"] {
+  --dot: #b4832b;
+}
+.theme-accent[data-accent="blue"] {
+  --dot: #3a6ea8;
+}
+.theme-accent[data-accent="mono"] {
+  --dot: #6f6f69;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html,
+  body,
+  .panel.active,
+  .theme-panel {
+    transition: none !important;
+    animation: none !important;
+  }
+}

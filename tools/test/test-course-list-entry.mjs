@@ -1,6 +1,6 @@
 // Local replicas of personal-space navigation and its cross-origin course iframe.
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {chromium}from 'playwright-core';
-fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/course-entry-'));
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/course-entry-'));
 const {findEdge}=await import('../../src/browser/launch.mjs');const {listCourses}=await import('../../src/chaoxing/recon.mjs');
 const b=await chromium.launch({executablePath:findEdge(),headless:true});let mode='new',allClicks=0;
 const card='<div class="course clearfix learnCourse" id="c_demo" info="class_demo_student_demo"><input class="courseId" value="course-demo"><input class="clazzId" value="class-demo"><input class="curPersonId" value="student-demo"><p class="course-name" title="示例课程">示例课程</p><div class="btm-cover"><span class="l-txt">2/3</span></div></div>';

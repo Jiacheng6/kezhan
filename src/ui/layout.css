@@ -1,0 +1,266 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   课泊 · 布局归整层
+   目的：style.css / kebo.css / workspace-design.css 三代布局规则叠在一起，
+        导致间距、圆角、栅格各说各话。这里做**最后一次统一**，只改排版不改功能。
+   原则：单一间距尺度、单一圆角、清晰三带（顶栏 / 平台条 / 内容），
+        平台操作与课程筛选分开，会话卡压成紧凑读数条。
+   ───────────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --r-card: 10px;
+  --r-ctl: 7px;
+  --gutter: 32px;
+}
+
+/* ── 壳层：统一左右留白与垂直节奏 ─────────────────────────────────────── */
+.topbar,
+.platform-strip,
+main {
+  padding-inline: var(--gutter);
+}
+.workspace > .platform-sessions {
+  margin: var(--s4) var(--gutter) 0;
+}
+main {
+  padding-block: var(--s5) var(--s6);
+}
+main > .panel.active {
+  max-width: 1560px;
+  margin-inline: auto;
+}
+
+/* ── 顶栏：信息降噪 ────────────────────────────────────────────────────── */
+.topbar {
+  min-height: 52px;
+  gap: var(--s4);
+}
+.topbar .header-right {
+  gap: var(--s3);
+  align-items: center;
+}
+#phaseLine {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--fg3);
+  opacity: 0.85;
+}
+@media (max-width: 1180px) {
+  #phaseLine {
+    display: none;
+  }
+}
+
+/* ── 平台条：筛选 | 操作 两组分开 ─────────────────────────────────────── */
+.platform-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3) var(--s5);
+  padding-block: var(--s3);
+  border-bottom: 1px solid var(--line);
+}
+.platform-strip .platform-label {
+  margin-right: calc(var(--s2) * -1);
+}
+#platformFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+#platformFilters button {
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.platform-web-actions {
+  display: flex;
+  gap: var(--s2);
+  margin-left: auto;
+  padding-left: var(--s4);
+  border-left: 1px solid var(--line);
+}
+.platform-web-actions button {
+  padding: 5px 11px;
+  border-radius: var(--r-ctl);
+  font-size: 12px;
+}
+#platformMessage {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 11.5px;
+}
+
+/* ── 会话区：三张卡压成紧凑读数条 ─────────────────────────────────────── */
+.platform-sessions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s3);
+  align-items: stretch;
+}
+.platform-total {
+  grid-column: 1 / -1;
+}
+.platform-session {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--bg2);
+  box-shadow: none;
+}
+.platform-session h3,
+.platform-session .platform-session-name {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.platform-session small {
+  font-size: 11.5px;
+  color: var(--fg3);
+}
+.platform-session button {
+  align-self: flex-start;
+  padding: 5px 11px;
+  font-size: 12px;
+}
+.platform-total {
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--bg2);
+}
+@media (max-width: 900px) {
+  .platform-sessions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── 主内容：两栏，间距统一 ───────────────────────────────────────────── */
+.overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.85fr);
+  gap: var(--s5);
+  align-items: start;
+}
+.overview-primary,
+.overview-rail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+@media (max-width: 1100px) {
+  .overview-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s4);
+  }
+}
+
+/* ── 卡片：统一内边距/圆角/边框，去掉多余投影 ────────────────────────── */
+.task-sheet,
+.card,
+.reviewgroup,
+.review-note,
+.settings-details {
+  padding: var(--s5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--bg2);
+  box-shadow: none;
+}
+.task-sheet {
+  padding: var(--s5) var(--s5) var(--s4);
+}
+.task-sheet::before {
+  display: none; /* 去掉装饰竖条，减少噪音 */
+}
+.section-title {
+  margin: 0 0 var(--s3);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--line);
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  color: var(--fg3);
+  text-transform: uppercase;
+}
+
+/* ── 标题层级：收敛字号，一屏只留一个主标题 ───────────────────────────── */
+.page-heading {
+  margin-bottom: var(--s4);
+  align-items: flex-end;
+}
+.page-heading h2 {
+  font-size: 26px;
+  line-height: 1.25;
+  letter-spacing: 0.4px;
+  margin: 0;
+}
+.task-sheet h3 {
+  font-size: 19px;
+  line-height: 1.35;
+  margin: 0 0 var(--s2);
+}
+
+/* ── 课程清单：行高与分隔统一 ─────────────────────────────────────────── */
+.course-ledger {
+  padding: 0;
+}
+.ledger-row {
+  padding: 13px 0;
+  gap: var(--s3);
+  border-top: 1px solid var(--line);
+}
+.ledger-row:first-child {
+  border-top: 0;
+}
+.ledger-row:hover:not(:disabled) {
+  padding-inline: 0;
+  transform: none; /* 归整层里取消位移，避免和清单对齐打架 */
+}
+.ledger-name b {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+.ledger-meta,
+.ledger-name small {
+  font-size: 11.5px;
+  color: var(--fg3);
+}
+
+/* ── 平台卡内部的进度条压细 ───────────────────────────────────────────── */
+.platform-session .progress-track,
+.platform-session .tp-track {
+  height: 3px;
+  margin-top: var(--s2);
+}
+
+/* ── 窄屏收缩 ─────────────────────────────────────────────────────────── */
+@media (max-width: 1180px) {
+  :root {
+    --gutter: 20px;
+  }
+}
+@media (max-width: 800px) {
+  :root {
+    --gutter: 14px;
+  }
+  .platform-web-actions {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
+    flex-basis: 100%;
+  }
+}

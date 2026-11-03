@@ -1060,3 +1060,50 @@ main {
     animation: none !important;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Motion & interaction polish（依据 emil-design-eng skill 的评审清单）
+   • 不再动画 padding（会触发 layout），列表行 hover 改用 transform
+   • 触屏上禁用 transform 型 hover（否则点完会"粘住"）
+   • 可点行补 :active 按压反馈
+   ───────────────────────────────────────────────────────────────────────── */
+.ledger-row {
+  transition:
+    transform 200ms var(--ease-out),
+    background 180ms,
+    color 180ms;
+}
+.ledger-row:hover:not(:disabled) {
+  padding-left: 0;
+  padding-right: 0;
+  transform: translateX(7px);
+}
+.ledger-row:active:not(:disabled) {
+  transform: translateX(4px) scale(0.997);
+}
+.tprow:active:not(:disabled),
+.sd-course:active:not(:disabled),
+.sd-task:active:not(:disabled),
+.treehead:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+/* 触屏默认关闭 transform 型 hover（触屏没有"悬停"这回事） */
+.tab:hover:not(:disabled),
+.ledger-row:hover:not(:disabled),
+button.primary:hover:not(:disabled) {
+  transform: none;
+}
+
+/* 真鼠标才给 hover 位移，且幅度收敛（3px → 2px） */
+@media (hover: hover) and (pointer: fine) {
+  .tab:hover:not(:disabled) {
+    transform: translateX(2px);
+  }
+  .ledger-row:hover:not(:disabled) {
+    transform: translateX(7px);
+  }
+  button.primary:hover:not(:disabled) {
+    transform: translateY(-2px);
+  }
+}

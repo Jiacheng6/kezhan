@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { courseCompletion, sectionCompletion, mergeTaskCompletion } from '../../src/ui/task-status.js';
 fs.mkdirSync('.desktop-test',{recursive:true});
-process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/course-groups-'));
+process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/course-groups-'));
 const {PATHS,ensureDirs}=await import('../../src/config.mjs');
 const {buildChecklist,loadReconReport}=await import('../../src/chaoxing/checklist.mjs');
 const {reconToTaskReport}=await import('../../src/chaoxing/recon.mjs');

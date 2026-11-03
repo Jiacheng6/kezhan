@@ -5,7 +5,6 @@ const app = window.desktopApp;
 if (app?.webState) {
   const shortcuts = document.createElement('div'); shortcuts.className = 'web-shortcuts';
   shortcuts.innerHTML = '<button id="webOpenLearning">学习通网页 <span>↗</span></button><button id="webOpenAI">AI 网页 <span>↗</span></button>';
-  document.querySelector('.sidebar .tabs').after(shortcuts);
   const pane = document.createElement('section'); pane.id = 'embeddedBrowser'; pane.className = 'embedded-pane'; pane.hidden = true;
   pane.setAttribute('aria-label', '软件内网页');
   pane.innerHTML = `<div class="embedded-heading"><div><span class="embedded-caption">软件内网页</span><span id="webDomain"></span></div><button id="webReturn">返回工作台 →</button></div>
@@ -20,6 +19,8 @@ if (app?.webState) {
     <div class="wp-list-heading"><b>已打开的网页</b><span id="webPagesTotal"></span></div><div id="webPagesList" class="wp-list"></div>
     <p id="webPagesMessage" role="status"></p><div class="wp-actions"><button id="webPagesLearning">打开学习通</button><button id="webPagesAI">打开 AI 网页</button></div>`;
   document.body.append(picker);
+  // Keep legacy handlers available without duplicating shortcuts in the sidebar.
+  shortcuts.hidden = true; picker.append(shortcuts);
   const $ = id => document.getElementById(id);
   let state = { visible: false, tabs: [], active: null }, busy = false, connected = false, layoutFrame = null, tabsKey = '', pagesKey = '';
   $('viewWebPages').hidden = false;

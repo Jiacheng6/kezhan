@@ -4,7 +4,8 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="color-scheme" content="light" />
-<title>课栈 · 学习工作台</title>
+<title>课泊 · 学习工作台</title>
+<script src="/brand-storage.js"></script>
 <link rel="stylesheet" href="/style.css" />
 <link rel="stylesheet" href="/workspace-design.css" id="workspaceDesign" />
 <link rel="stylesheet" href="/selection-desk.css" />
@@ -15,13 +16,13 @@
 <link rel="stylesheet" href="/workbench-restore.css" />
 <link rel="stylesheet" href="/task-progress.css" />
 <link rel="stylesheet" href="/notifications.css" />
-<link rel="stylesheet" href="/kezhan.css" id="kezhanDesign" />
+<link rel="stylesheet" href="/kebo.css" id="keboDesign" />
 <link rel="stylesheet" href="/platforms.css" />
 <link rel="icon" href="/icon.svg" type="image/svg+xml" />
 </head>
 <body data-panel="overview">
 <aside class="sidebar">
-  <div class="brand"><span class="logo" aria-hidden="true"><img src="/icon.svg" alt="" width="32" height="32" /></span><div><h1>课栈<span class="brand-en">KEZHAN</span></h1><span class="brand-note">把学习，接着往下做。</span></div></div>
+  <div class="brand"><span class="logo" aria-hidden="true"><img src="/icon.svg" alt="" width="32" height="32" /></span><div><h1>课泊<span class="brand-en">KEBO</span></h1><span class="brand-note">把学习，接着往下做。</span></div></div>
   <p class="nav-label">学习空间</p>
   <nav class="tabs" aria-label="主导航">
     <button class="tab active" aria-current="page" data-tab="overview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10H3Z"/><path d="M9 20v-7h6v7"/></svg><span>学习工作台</span></button>
@@ -29,7 +30,7 @@
     <button class="tab" data-tab="review"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H5v18h14V9Z"/><path d="M14 3v6h5M8 13h8m-8 4h5"/></svg><span>待审答案</span><span class="badge" id="reviewCount">0</span></button>
 <button class="tab" data-tab="logs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4Zm4 4 3 3-3 3m5 0h4"/></svg><span>运行记录</span></button><button class="tab" data-tab="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/></svg><span>偏好设置</span></button>  </nav>
   <div class="sidebar-bottom">
-    <details id="workspaceUtilities" class="workspace-utilities"><summary>外观与软件工具 <span>⌄</span></summary><div class="utilities-content">
+    <details id="workspaceUtilities" class="workspace-utilities"><summary>软件与数据 <span>⌄</span></summary><div class="utilities-content">
       <div id="libraryTools"></div>
     <div id="desktopToolbar" class="desktop-toolbar hidden">
       <p class="nav-label">软件内网页</p>
@@ -46,9 +47,9 @@
 <div class="workspace">
   <header class="topbar">
     <div class="breadcrumb"><span>学习空间</span><span class="breadcrumb-slash">/</span><strong id="pageTitle">学习工作台</strong></div>
-    <div class="header-right"><button id="viewWebPages" class="web-pages-entry" hidden aria-haspopup="dialog" title="查看软件内已打开的网页"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M7 6.5h.1m3 0h.1"/></svg><span>查看网页</span><small id="webPageCount" aria-hidden="true">0</small></button><span id="phaseLine" class="sub">正在连接后台服务…</span><details class="connection-menu"><summary>连接状态 <span aria-hidden="true">⌄</span></summary><div class="topright"><span class="pill" id="pillEdge">浏览器未连接</span><span class="pill" id="pillLogin">登录未知</span><span class="pill" id="pillRecon">提交模式未知</span><span class="pill" id="pillQuiz">答题通道未知</span></div></details></div>
+    <div class="header-right"><button id="viewWebPages" class="web-pages-entry" hidden aria-haspopup="dialog" title="查看软件内已打开的网页"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M7 6.5h.1m3 0h.1"/></svg><span>查看网页</span><small id="webPageCount" aria-hidden="true">0</small></button><span id="phaseLine" class="sub">正在连接后台服务…</span><button id="modeToggle" class="mode-toggle" aria-label="切换到黑夜" aria-pressed="false" title="切换日夜模式"><span class="mode-sun" aria-hidden="true">☀</span><span class="mode-moon" aria-hidden="true">☾</span></button><details class="connection-menu"><summary>连接状态 <span aria-hidden="true">⌄</span></summary><div class="topright"><span class="pill" id="pillEdge">浏览器未连接</span><span class="pill" id="pillLogin">登录未知</span><span class="pill" id="pillRecon">提交模式未知</span><span class="pill" id="pillQuiz">答题通道未知</span></div></details></div>
   </header>
-  <div class="platform-strip" aria-label="学习平台"><span class="platform-label">课程来源</span><div id="platformFilters" role="group" aria-label="筛选课程平台"></div><div class="platform-web-actions"><button id="openZhihuishu">智慧树网页 ↗</button><button id="readZhihuishu">扫描智慧树课程</button></div><span id="platformMessage" role="status"></span></div>
+  <div class="platform-strip" aria-label="学习平台"><span class="platform-label">课程来源</span><div id="platformFilters" role="group" aria-label="筛选课程平台"></div><div class="platform-web-actions"><div class="platform-group" data-platform="zhihuishu"><span class="group-label">智慧树</span><button id="openZhihuishu">网页 ↗</button><button id="readZhihuishu">扫描课程</button></div><div class="platform-group" data-platform="ucampus"><span class="group-label">U校园</span><button id="openUcampus">网页 ↗</button><button id="readUcampus">扫描课程</button></div></div><span id="platformMessage" role="status"></span></div>
   <section id="platformSessions" class="platform-sessions" aria-label="各平台独立运行状态"></section>
   <div id="bootError" class="banner error hidden" role="alert"></div>
   <main>
@@ -108,7 +109,7 @@
       <div class="page-heading"><div><p class="eyebrow">让助手按你的习惯工作</p><h2>偏好设置<span class="heading-period">.</span></h2></div><div class="actions"><span class="pill" id="settingsDirty">未修改</span><button id="saveSettings" class="primary">保存设置</button></div></div>
       <div class="settings-intro"><p>改动保存后，从下一个任务开始生效。切换 AI 通道前请先停止任务。</p><div class="actions"><button data-action="openAI">打开所选 AI 网页 ↗</button><button data-action="checkQianwen">检测 AI 登录</button><button id="resetSettings" class="text-button">恢复默认</button><button id="reloadSettings" class="text-button">重新读取</button></div></div>
       <p><button id="reopenOnboarding">重新打开使用向导</button></p>
-      <div id="settingsForm" class="settingsform"></div>
+      <section class="settings-section appearance-section"><div class="settings-section-heading"><h3>界面与显示</h3><p>选择强调色，日夜模式可在右上角独立切换。</p></div><div id="themeMenu" class="theme-settings"><span>主题配色</span><div class="theme-accents"><button type="button" class="theme-accent" data-accent="green" aria-label="森林"><i></i><span>森林</span></button><button type="button" class="theme-accent" data-accent="pink" aria-label="蔷薇"><i></i><span>蔷薇</span></button><button type="button" class="theme-accent" data-accent="yellow" aria-label="琥珀"><i></i><span>琥珀</span></button><button type="button" class="theme-accent" data-accent="blue" aria-label="海蓝"><i></i><span>海蓝</span></button><button type="button" class="theme-accent" data-accent="mono" aria-label="素白"><i></i><span>素白</span></button></div></div></section><div id="settingsForm" class="settingsform"></div>
       <details class="settings-details"><summary>高级设置 <span>提问词、等待与重试参数</span></summary><div id="settingsAdvanced" class="settingsform"></div></details>
       <details class="settings-details"><summary>运行信息与维护 <span>连接、数据位置与故障排查</span></summary>
         <div class="maintenance-grid"><section><h3>浏览器连接</h3><dl class="kv"><dt>内核版本</dt><dd id="kEdgeVersion">—</dd><dt>调试端口</dt><dd id="kDebugPort">—</dd><dt>浏览器数据</dt><dd id="kProfile" class="mono small">—</dd><dt>登录说明</dt><dd id="kLoginReason">—</dd><dt>账号标识</dt><dd id="kPersonId">—</dd><dt>当前页面</dt><dd id="kLoginTitle">—</dd></dl><div class="actions"><button data-action="openChaoxing">打开学习通</button><button data-action="cleanupPages">清理临时页面</button></div></section>
@@ -129,6 +130,8 @@
   <p class="hint">下载不影响任务；确认安装时会保存、备份数据并退出。</p>
 </dialog>
 <script src="/close-dialog.js"></script><script type="module" src="/app.js"></script><script type="module" src="/onboarding.js"></script><script type="module" src="/embedded-browser.js"></script><script type="module" src="/desktop.js"></script><script type="module" src="/notifications.js"></script><script type="module" src="/workspace-design.js"></script><script type="module" src="/library/home.js"></script>
-<link rel="stylesheet" href="/ai-controls.css"><script type="module" src="/ai-controls.js"></script><script type="module" src="/kezhan.js"></script>
+<link rel="stylesheet" href="/ai-controls.css">
+<link rel="stylesheet" href="/theme.css" />
+<link rel="stylesheet" href="/workbench.css" /><script type="module" src="/ai-controls.js"></script><script type="module" src="/theme.js"></script><script type="module" src="/kebo.js"></script><script type="module" src="/interaction-polish.js"></script>
 </body>
 </html>

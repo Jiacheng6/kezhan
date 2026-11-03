@@ -26,10 +26,10 @@ import fs from 'node:fs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 // 自检不读写用户实际的课程、登录信息与进度。
-if (!process.env.XXT_DATA_DIR) {
+if (!process.env.KEBO_DATA_DIR) {
   const testRoot = path.join(ROOT, '.desktop-test');
   fs.mkdirSync(testRoot, { recursive: true });
-  process.env.XXT_DATA_DIR = fs.mkdtempSync(path.join(testRoot, 'offline-'));
+  process.env.KEBO_DATA_DIR = fs.mkdtempSync(path.join(testRoot, 'offline-'));
 }
 
 const suite = [
@@ -59,8 +59,13 @@ const suite = [
   ['本地服务边界 / 异常请求 / 释放监听', 'tools/test/test-server.mjs'],
   ['模块完整性 / 内容指纹', 'tools/test/check-modules.mjs'],
   ['失败分级 / 暂停策略', 'tools/test/test-pause-policy.mjs'],
+  ['题目字体恢复', 'tools/test/test-font-recovery.mjs'],
+  ['课泊品牌与旧数据迁移', 'tools/test/test-brand-migration.mjs'],
+  ['真实字体网络恢复 / 精确来源', 'tools/test/test-question-font-recovery.mjs'],
+  ['字体阻塞 / 截图恢复与中止', 'tools/test/test-question-capture.mjs'],
   ['失败自愈 / 截图降级 / 视频元数据', 'tools/test/test-self-heal.mjs'],
   ['API 回答提取（各种返回形状）', 'tools/test/test-api-answer.mjs'],
+  ['U校园 平台层（清单/进度/节点类型）', 'tools/test/test-ucampus.mjs'],
   ['侦察报告路径', 'tools/test/check-report-path.mjs'],
   ['账号 ID 自动识别', 'tools/test/test-identity.mjs'],
   ['任务点完成判定（小节不绿≠没完成）', 'tools/test/test-completion.mjs'],

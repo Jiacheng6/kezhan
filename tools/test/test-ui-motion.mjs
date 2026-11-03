@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { _electron as electron } from 'playwright-core';
 const root = process.cwd();
-const output = process.env.XXT_LIBRARY_CAPTURE_DIR || path.join(root, '.desktop-test/library-ui');
+const output = process.env.KEBO_LIBRARY_CAPTURE_DIR || path.join(root, '.desktop-test/library-ui');
 fs.mkdirSync(output, { recursive: true }); fs.mkdirSync(path.join(root, '.desktop-test'), { recursive: true });
 const data = fs.mkdtempSync(path.join(root, '.desktop-test/library-ui-'));
 fs.mkdirSync(path.join(data, 'data/probe-out'), { recursive: true });
@@ -22,16 +22,17 @@ const records = { version: 3, taskPoints: {
 }, reviewQueue: [] };
 fs.writeFileSync(path.join(data, 'state.json'), JSON.stringify(records));
 fs.writeFileSync(path.join(data, 'data/probe-out/task-report.json'), JSON.stringify(report));
-const application = await electron.launch({ executablePath: path.join(root, 'node_modules/electron/dist/electron.exe'), args: [root, '--test-mode'], env: { ...process.env, XXT_TEST_DATA_DIR: data } });
+const application = await electron.launch({ executablePath: path.join(root, 'node_modules/electron/dist/electron.exe'), args: [root, '--test-mode'], env: { ...process.env, KEBO_TEST_DATA_DIR: data } });
 const checks = {}, errors = [];
 try {
   const page = await application.firstWindow(); page.on('pageerror', error => errors.push(error.message));
   await page.waitForURL('http://127.0.0.1:*/');
   await openTestArchive(page);await page.locator('#libraryHome #appearance').click(); await page.locator('#libraryHome #showOnStartup').uncheck(); await enterTestWorkspace(page);
   await application.evaluate(({ BrowserWindow }) => { const win = BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0); win.setContentSize(1240, 800); win.showInactive(); });
-  await page.locator('.tab[data-tab=courses]').click();await page.locator('#deskLegacy').click();
+  await page.locator('.tab[data-tab=courses]').click();
   const panelMotion = await page.locator('#panel-courses').evaluate(el => ({ animations: el.getAnimations().length, transform: getComputedStyle(el).transform }));
   assert.ok(panelMotion.animations > 0); assert.notEqual(panelMotion.transform, 'none'); checks.realPanelTransition = true;
+  await page.locator('#deskLegacy').click();
   await revealTestTools(page);for (const tab of ['settings', 'review', 'courses']) await page.locator('.tab[data-tab=' + tab + ']').click();
   await page.waitForTimeout(450); assert.equal(await page.locator('.panel.active').count(), 1); assert.equal(await page.locator('#panel-courses').evaluate(el => el.getAnimations().length), 0); checks.interruptedNavigationSettles = true;
   await page.locator('.treehead .caret').first().click(); await page.waitForTimeout(70);

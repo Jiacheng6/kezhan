@@ -1,5 +1,5 @@
 import fs from 'node:fs';import path from 'node:path';import assert from 'node:assert/strict';import {chromium} from 'playwright-core';
-fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/review-reconcile-'));
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/review-reconcile-'));
 const {findEdge}=await import('../../src/browser/launch.mjs');const {reconcileReviewResults,zhihuishuResultUrl,matchesLegacySubmittedQuestions}=await import('../../src/review-reconcile.mjs');const {mutateState,loadState,listReviewItems}=await import('../../src/state.mjs');const {reviewOperationBlock}=await import('../../src/review-policy.mjs');
 assert.equal(reviewOperationBlock({taskKey:'zhihuishu:a'},{chaoxingRunning:true}),null);
 assert.match(reviewOperationBlock({taskKey:'zhihuishu:a'},{zhihuishuRunning:true}),/智慧树/);

@@ -2,9 +2,9 @@
 // is visible to the inner document, but clipped by the outer web view.
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {chromium} from 'playwright-core';
 import {pathToFileURL} from 'node:url';
-fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/submit-offscreen-'));
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/submit-offscreen-'));
 const {findEdge}=await import('../../src/browser/launch.mjs');
-const runtime=process.env.XXT_TEST_SOURCE_ROOT?pathToFileURL(path.join(process.env.XXT_TEST_SOURCE_ROOT,'src/chaoxing/quizrun.mjs')).href:new URL('../../src/chaoxing/quizrun.mjs',import.meta.url).href;
+const runtime=process.env.KEBO_TEST_SOURCE_ROOT?pathToFileURL(path.join(process.env.KEBO_TEST_SOURCE_ROOT,'src/chaoxing/quizrun.mjs')).href:new URL('../../src/chaoxing/quizrun.mjs',import.meta.url).href;
 const {submitWork}=await import(runtime);
 const browser=await chromium.launch({executablePath:findEdge(),headless:true});
 try{

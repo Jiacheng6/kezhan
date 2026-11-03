@@ -1,5 +1,5 @@
 import fs from 'node:fs';import path from 'node:path';import assert from 'node:assert/strict';import {chromium} from 'playwright-core';
-fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/zhs-auto-submit-'));
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/zhs-auto-submit-'));
 const {findEdge}=await import('../../src/browser/launch.mjs');const {runZhihuishuQuiz}=await import('../../src/platforms/zhihuishu/quiz-task.mjs');const {mutateState,loadState,listReviewItems}=await import('../../src/state.mjs');const {zhihuishuHomeworkKey}=await import('../../src/platforms/zhihuishu/quiz.mjs');
 const b=await chromium.launch({executablePath:findEdge(),headless:true});try{
  const context=await b.newContext();let confirms=0,opens=0,asks=0,graded=false;

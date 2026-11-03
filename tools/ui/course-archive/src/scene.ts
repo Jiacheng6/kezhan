@@ -6,7 +6,7 @@ import { RenderState } from "./render-state";
 import { SharedDepthAO, SharedDepthBokeh } from "./shared-depth";
 import { disposeThreeTree } from "./three-resources";
 import { ThemeWave } from "./theme-motion";
-import { themeMaterial, themeEnvironment } from "./theme-material";
+import { themeMaterial, themeEnvironment, getArchiveAccent } from "./theme-material";
 import { RhythmMotion, rhythmDisplacement, quietBands, type MusicBands, type RhythmStyle } from "./archive-play-motion";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { createArchiveLighting, type LightingLook } from "./archive-lighting";
@@ -117,8 +117,8 @@ export class ArchiveScene {
   }
   setSelectedIndexAccent(onlySelected: boolean) { this.selectedIndexOnly = onlySelected; }
   private themeAttribute?: THREE.InstancedBufferAttribute;
-  get themeAmount() { return this.theme.background(performance.now() / 1000); }
-  setTheme(dark: boolean, immediate = false) { this.theme.set(dark, performance.now() / 1000, this.selectedCell, immediate); }
+  get themeAmount() { return this.theme.background(this.clock); }
+  setTheme(dark: boolean, immediate = false) { this.theme.set(dark, this.clock, this.selectedCell, immediate); }
   private playfield = { enabled: false, bands: quietBands(), strength: 1, flatten: 0, target: null as string | null, breathing: true };
   private flatMix = 0;
   private rhythm = new RhythmMotion();
@@ -1821,6 +1821,7 @@ export class ArchiveScene {
     } else {
       state.begin();
       state.floats(...this.camera.projectionMatrix.elements, ...this.camera.matrixWorldInverse.elements,
+        ...getArchiveAccent().toArray(),
         ...this.camera.position.toArray(),
         fog.near, fog.far, this.themeAmount, this.subduedIndex.value,
         bokehUniforms.focus.value, bokehUniforms.aperture.value);

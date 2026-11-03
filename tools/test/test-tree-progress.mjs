@@ -6,7 +6,7 @@ import { batchSelect } from '../../src/ui/selection.js';
 
 const root = path.resolve('.desktop-test');
 fs.mkdirSync(root, { recursive: true });
-process.env.XXT_DATA_DIR = fs.mkdtempSync(path.join(root, 'tree-progress-'));
+process.env.KEBO_DATA_DIR = fs.mkdtempSync(path.join(root, 'tree-progress-'));
 const { PATHS, ensureDirs } = await import('../../src/config.mjs');
 const { buildChecklist } = await import('../../src/chaoxing/checklist.mjs');
 const { setTaskStatus } = await import('../../src/state.mjs');

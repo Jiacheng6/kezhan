@@ -1,8 +1,8 @@
 // Synthetic intercepted pages only. Never accesses accounts or posts coursework.
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {chromium} from 'playwright-core';
 import {pathToFileURL} from 'node:url';
-fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/discussion-test-'));
-const moduleRoot=process.env.XXT_TEST_SOURCE_ROOT?pathToFileURL(path.resolve(process.env.XXT_TEST_SOURCE_ROOT)+path.sep):new URL('../../',import.meta.url);
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/discussion-test-'));
+const moduleRoot=process.env.KEBO_TEST_SOURCE_ROOT?pathToFileURL(path.resolve(process.env.KEBO_TEST_SOURCE_ROOT)+path.sep):new URL('../../',import.meta.url);
 const runtime=relative=>import(new URL(relative,moduleRoot).href);
 const {ensureDirs,PATHS}=await runtime('src/config.mjs');ensureDirs();
 const {findEdge}=await runtime('src/browser/launch.mjs');
@@ -96,7 +96,7 @@ try{
  mutateState(s=>{s.reviewQueue=[];s.keptPages={};s.onboarding={version:2,completedAt:new Date().toISOString()};});
  await runDiscussionTask({ctx,task:task('ui-demo'),personId:'learner'},{askAI});
  service=await startServer({listKeptPages,openReview:async({taskKey})=>{const {page,...result}=await reopenReviewWork(ctx,taskKey,{personId:'learner'});return result;},editReviewAnswer:body=>saveDiscussionDraft(body.id,body.textAnswer),submitReviews:scope=>submitPendingReviews(ctx,scope,{personId:'learner'})});
- await ctx.addInitScript(()=>localStorage.setItem('xxt-library-startup','skip'));
+ await ctx.addInitScript(()=>localStorage.setItem('kebo-library-startup','skip'));
  const ui=await ctx.newPage();await ui.goto(service.url);await ui.locator('[data-tab="review"]').click();
  await ui.getByText('讨论题目',{exact:true}).waitFor();await ui.getByText('草稿来源',{exact:true}).waitFor();
  const beforeUI=calls.length;

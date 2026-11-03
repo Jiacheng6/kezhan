@@ -9,7 +9,7 @@ const { UpdateController } = require('../../desktop/updates.cjs');
 const { prepareOfflineUpdate, readPreference, writePreference, SOURCES } = require('../../desktop/update-sources.cjs');
 const root=fs.mkdtempSync(path.join(process.cwd(),'.desktop-test','update-sources-'));
 const sources=SOURCES.map(source=>({...source}));
-const info=(version='9.9.9',hash='same-hash')=>({version,files:[{url:`XuexitongAssistant-${version}-Setup.exe`,sha512:hash,size:512}]});
+const info=(version='9.9.9',hash='same-hash')=>({version,files:[{url:`Kebo-${version}-Setup.exe`,sha512:hash,size:512}]});
 class Updater extends EventEmitter {
   calls=[]; checks={}; downloads={}; current='';
   setFeedURL(provider) {this.current=provider.provider==='github'?'github':'cnb';}
@@ -74,7 +74,7 @@ for(const [alternate, failure] of [[info('9.9.8'),/版本或校验值不同/],[i
 }
 // Copy + checksum + loopback feed is the actual offline path, without executing an installer.
 const body=Buffer.alloc(256*1024,77),version='9.9.9';
-const installer=path.join(root,`XuexitongAssistant-${version}-Setup.exe`),manifest=path.join(root,'release-manifest.json');
+const installer=path.join(root,`Kebo-${version}-Setup.exe`),manifest=path.join(root,'release-manifest.json');
 const meta={version,files:[{file:path.basename(installer),bytes:body.length,sha256:crypto.createHash('sha256').update(body).digest('hex')}]};
 fs.writeFileSync(installer,body);fs.writeFileSync(manifest,JSON.stringify(meta));
 const local=await prepareOfflineUpdate({installer,manifest},{dataDir:root,currentVersion:'0.6.9'});
@@ -93,7 +93,7 @@ for(const version of ['0.6.8','9.9.9-beta.1','09.9.9']){
   fs.writeFileSync(manifest,JSON.stringify({...meta,version}));
   await assert.rejects(()=>prepareOfflineUpdate({installer,manifest},{dataDir:root,currentVersion:'0.6.9'}),/比当前版本更新/);
 }
-const nextInstaller=path.join(root,'XuexitongAssistant-0.6.10-Setup.exe');fs.writeFileSync(nextInstaller,body);
+const nextInstaller=path.join(root,'Kebo-0.6.10-Setup.exe');fs.writeFileSync(nextInstaller,body);
 fs.writeFileSync(manifest,JSON.stringify({version:'0.6.10',files:[{...meta.files[0],file:path.basename(nextInstaller)}]}));
 const numericVersion=await prepareOfflineUpdate({installer:nextInstaller,manifest},{dataDir:root,currentVersion:'0.6.9'});await numericVersion.close();
 meta.files[0].file='../arbitrary.exe';fs.writeFileSync(manifest,JSON.stringify(meta));

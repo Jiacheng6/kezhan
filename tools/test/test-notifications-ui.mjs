@@ -11,8 +11,8 @@ const push=notice=>app.evaluate(({app},notice)=>{
  return require(appRoot+'/desktop/main.cjs').notificationCenter.push(notice);
 },notice);
 try{
- const packagedExe=process.env.XXT_NOTIFICATIONS_TEST_EXE;
- app=await electron.launch({executablePath:packagedExe||path.join(root,'node_modules/electron/dist/electron.exe'),args:[...(packagedExe?[]:[root]),'--test-mode'],env:{...process.env,XXT_TEST_DATA_DIR:data}});
+ const packagedExe=process.env.KEBO_NOTIFICATIONS_TEST_EXE;
+ app=await electron.launch({executablePath:packagedExe||path.join(root,'node_modules/electron/dist/electron.exe'),args:[...(packagedExe?[]:[root]),'--test-mode'],env:{...process.env,KEBO_TEST_DATA_DIR:data}});
  const page=await app.firstWindow();page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(e.message));
  await page.waitForURL('http://127.0.0.1:*/');
  await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).showInactive());

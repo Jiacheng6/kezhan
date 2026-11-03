@@ -3,7 +3,9 @@
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 const animations = new WeakMap();
 const scrollPositions = new Map();
-export const motionEnabled = () => !reduced.matches && !document.documentElement.classList.contains('reduce-motion');
+export const motionEnabled = () => !reduced.matches && document.documentElement.dataset.input !== 'keyboard' && !document.documentElement.classList.contains('reduce-motion');
+document.addEventListener('keydown', () => { document.documentElement.dataset.input = 'keyboard'; }, true);
+document.addEventListener('pointerdown', () => { document.documentElement.dataset.input = 'pointer'; }, true);
 export function animate(element, frames, options = {}) {
   if (!element) return;
   animations.get(element)?.cancel();
@@ -17,7 +19,7 @@ export function changePanel(previous, next) {
   if (!next || previous === next) return;
   if (previous) scrollPositions.set(previous.id, window.scrollY);
   window.scrollTo({ top: scrollPositions.get(next.id) || 0, behavior: 'instant' });
-  animate(next, [{ opacity: .25, transform: 'translateY(12px)' }, { opacity: 1, transform: 'translateY(0)' }], { duration: 340 });
+  animate(next, [{ opacity: .5, transform: 'translateY(6px)' }, { opacity: 1, transform: 'translateY(0)' }], { duration: 200 });
 }
 export function expandCourse(wrap, open) {
   if (wrap.classList.contains('open') === open) return;

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import path from 'node:path';
 import {chromium} from 'playwright-core';
-fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/quiz-blocked-'));
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/quiz-blocked-'));
 const {findEdge}=await import('../../src/browser/launch.mjs');
 const {ensureDirs}=await import('../../src/config.mjs');ensureDirs();
 const {mutateState,loadState}=await import('../../src/state.mjs');

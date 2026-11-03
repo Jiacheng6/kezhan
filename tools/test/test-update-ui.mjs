@@ -13,7 +13,7 @@ const sha512 = crypto.createHash('sha512').update(body).digest('base64');
 let badHash = false;
 let feedVersion='9.9.9',checks=0,downloads=0;
 const notes='• 启动时检查新版本\n• 课程完成状态显示修复\n• 登录与学习进度保留';
-let feedNotes = '# 学习通助手 9.9.9\n\n## 本次更新\n\n' + notes + '\n• 更多细节说明\n\n## 下载与升级\n\n- Windows 10 / 11，64 位\n- 安装版：fixture-Setup.exe';
+let feedNotes = '# 课泊 9.9.9\n\n## 本次更新\n\n' + notes + '\n• 更多细节说明\n\n## 下载与升级\n\n- Windows 10 / 11，64 位\n- 安装版：fixture-Setup.exe';
 const server = http.createServer((request, response) => {
   if (request.url.startsWith('/latest.yml')) {
     checks++;
@@ -53,9 +53,9 @@ async function closeApplication() {
   await current.close().catch(() => {});
 }
 async function launch(testData) {
-  const packagedExe=process.env.XXT_UPDATE_TEST_EXE;
+  const packagedExe=process.env.KEBO_UPDATE_TEST_EXE;
   const instance = await electron.launch({ executablePath: packagedExe||path.join(root, 'node_modules/electron/dist/electron.exe'), args: [...(packagedExe?[]:[root]), '--test-mode'],
-    env: { ...process.env, LOCALAPPDATA: path.join(testData, 'cache-local'), XXT_TEST_DATA_DIR: testData, XXT_TEST_UPDATE_FEED: feed } });
+    env: { ...process.env, LOCALAPPDATA: path.join(testData, 'cache-local'), KEBO_TEST_DATA_DIR: testData, KEBO_TEST_UPDATE_FEED: feed } });
   await instance.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).showInactive());
   return instance;
 }

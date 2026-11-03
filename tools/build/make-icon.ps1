@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $assetDirectory = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../desktop/assets'))
 [xml]$source = Get-Content -LiteralPath (Join-Path $assetDirectory 'icon.svg') -Raw

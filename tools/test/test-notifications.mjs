@@ -5,7 +5,7 @@ import path from 'node:path';
 import {EventEmitter} from 'node:events';
 import {createRequire} from 'node:module';
 const root=process.cwd();fs.mkdirSync('.desktop-test',{recursive:true});
-const data=fs.mkdtempSync(path.join(root,'.desktop-test/notice-unit-'));process.env.XXT_DATA_DIR=data;
+const data=fs.mkdtempSync(path.join(root,'.desktop-test/notice-unit-'));process.env.KEBO_DATA_DIR=data;
 const {NotificationCenter,catalog}=createRequire(import.meta.url)('../../desktop/notifications.cjs');
 const shown=[];
 class FakeNotification extends EventEmitter {

@@ -4,6 +4,7 @@ import { recalc, willSummary, matchesQuery, courseVisible } from './selection.js
 import { completionOf, courseCompletion, sectionCompletion } from './task-status.js';
 import { selectOnlyTask, clearRunSelection, selectCourseTasks } from './run-scope.js';
 import {runSummaryLabel} from './task-progress.js';
+import { animate } from './motion.js';
 
 const node = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const types = { video: '视频', work: '测验', doc: '文档', read: '阅读',discuss:'讨论' };
@@ -97,7 +98,9 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
     if (focus) [...element.querySelectorAll('[data-sd-focus]')].find(e => e.dataset.sdFocus === focus)?.focus({ preventScroll: true });
   }
   function focusCourse(id) {
+    const changed = active !== id;
     active = id; $('deskCourseSearch').value = ''; $('deskTaskSearch').value = ''; $('deskTasks').scrollTop = 0; render();
+    if(changed)animate(root.querySelector('.sd-tasks'),[{opacity:.35,transform:'translateY(9px)'},{opacity:1,transform:'translateY(0)'}],{duration:240});
   }
   function drawCourses() {
     const courses = visibleCourses(), q = $('deskCourseSearch').value;
@@ -294,7 +297,7 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
     root.hidden = treeView; legacy.hidden = !treeView;
     document.getElementById('viewColumns')?.setAttribute('aria-pressed', String(!treeView));
     document.getElementById('viewTree')?.setAttribute('aria-pressed', String(treeView));
-    try { localStorage.setItem('xxt-course-view', treeView ? 'tree' : 'columns'); } catch {}
+    try { localStorage.setItem('kebo-course-view', treeView ? 'tree' : 'columns'); } catch {}
     if (!treeView) render();
     if (focus) (treeView ? document.getElementById('deskReturn') : $('deskLegacy')).focus();
   }
@@ -308,7 +311,7 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
     drawCourses(); drawTasks(); drawSummary(); drawRule(); lockControls();
   }
   render();
-  try { setView(localStorage.getItem('xxt-course-view')); } catch {}
+  try { setView(localStorage.getItem('kebo-course-view')); } catch {}
   return { render, focusCourse, updateStatus() {
     const nextAccount = snapshot().status?.account?.personId || '';
     if (account !== nextAccount) { account = nextAccount; presets = []; $('deskPresetName').value = ''; loadPresets(); }

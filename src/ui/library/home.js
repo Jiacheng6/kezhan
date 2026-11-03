@@ -6,14 +6,14 @@ import { platformOf, platformInfo } from '../platforms.js';
 const preferences = {
   read(key, fallback = null) {
     try {
-      return localStorage.getItem("xxt-library-" + key) ?? fallback;
+      return localStorage.getItem("kebo-library-" + key) ?? fallback;
     } catch {
       return fallback;
     }
   },
   write(key, value) {
     try {
-      localStorage.setItem("xxt-library-" + key, value);
+      localStorage.setItem("kebo-library-" + key, value);
     } catch {}
   },
 };
@@ -76,11 +76,16 @@ function courses() {
 function publish(force = false) {
   if (!frameReady) return;
   const value = {
-    type: "xxt-archive-state",
+    type: "kebo-archive-state",
     active,
     visible: windowVisible && !document.hidden,
     reduced,
     quality,
+    theme: {
+      mode: document.documentElement.dataset.mode || 'light',
+      accent: document.documentElement.dataset.accent || 'green',
+      colors: Object.fromEntries(['bg','bg2','fg','fg2','line','acc'].map(key=>[key,getComputedStyle(document.documentElement).getPropertyValue('--'+key).trim()])),
+    },
     status: { running: !!model.status?.running, loading: !!model.loading },
     courses: courses(),
   };
@@ -93,6 +98,7 @@ workspace.subscribe((next) => {
   model = next;
   publish();
 });
+document.addEventListener('kebo-theme-change',()=>publish(true));
 function inert(value) {
   for (const el of [
     document.querySelector(".sidebar"),
@@ -183,6 +189,14 @@ async function show() {
   host.style.removeProperty("pointer-events");
   document.documentElement.style.overflow = "hidden";
   inert(true);
+  if (!root.querySelector('#sharedArchiveTheme')) {
+    const style=document.createElement('style');style.id='sharedArchiveTheme';
+    style.textContent=':host{background:var(--bg)}.toolbar{top:28px;right:32px;gap:8px;padding:6px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 24px #0000000a}.toolbar button{padding:9px 12px;border-radius:7px;color:var(--fg);transition:background 160ms}.toolbar button:hover{background:var(--bg3)}.toolbar #enterWorkspace{background:var(--acc);color:var(--acc-ink)}.options{background:var(--bg2);border-color:var(--line);color:var(--fg);border-radius:12px;top:58px}.options select,.options #motion{background:var(--bg3);border-color:var(--line);color:var(--fg)}.options small{color:var(--fg2)}#skip{display:none}input{accent-color:var(--acc)}';
+    root.append(style);
+    const themeButton=document.createElement('button');themeButton.textContent='切换日夜';themeButton.onclick=()=>document.querySelector('#modeToggle')?.click();
+    const colorButton=document.createElement('button');colorButton.textContent='主题配色';colorButton.onclick=()=>{enterWorkspace();workspace.navigate('settings');};
+    root.querySelector('.toolbar').prepend(themeButton,colorButton);
+  }
   $("#showOnStartup").checked = startup;
   $("#quality").value = quality;
   syncMotion();
@@ -239,13 +253,13 @@ window.addEventListener("message", (event) => {
     event.origin !== location.origin
   )
     return;
-  if (event.data?.type === "xxt-archive-ready") {
+  if (event.data?.type === "kebo-archive-ready") {
     frameReady = true;
     $("#frameLoading").hidden = true;
     publish(true);
     return;
   }
-  if (event.data?.type !== "xxt-archive-action" || !active) return;
+  if (event.data?.type !== "kebo-archive-action" || !active) return;
   const { action, courseId } = event.data;
   if (action === "workspace") {
     enterWorkspace();

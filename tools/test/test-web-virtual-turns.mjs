@@ -1,7 +1,7 @@
 // Real browser DOM, synthetic Doubao virtualization. No account or external requests.
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {chromium} from 'playwright-core';
 import {fixturePng} from './fixture-png.mjs';
-const root=process.cwd();const data=fs.mkdtempSync(path.join(root,'.desktop-test/virtual-turns-'));process.env.XXT_DATA_DIR=data;
+const root=process.cwd();const data=fs.mkdtempSync(path.join(root,'.desktop-test/virtual-turns-'));process.env.KEBO_DATA_DIR=data;
 const {findEdge}=await import('../../src/browser/launch.mjs');const {askImage}=await import('../../src/ai/ai.mjs');const {webChatState}=await import('../../src/ai/web-chat.mjs');const {mutateState}=await import('../../src/state.mjs');
 mutateState(s=>{s.settings||={};s.settings.ai={...s.settings.ai,minIntervalMs:0,jitterMs:0,stuckCooldownMs:0,answerStuckMs:15000,answerTimeoutMs:60000}});
 const browser=await chromium.launch({executablePath:findEdge(),headless:true});

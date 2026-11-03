@@ -1,0 +1,35 @@
+import fs from 'node:fs';import assert from 'node:assert/strict';import {chromium} from 'playwright-core';
+import {dismissTestOnboarding,openTestArchive} from '../test/desktop-test-helpers.mjs';
+const meta=JSON.parse(fs.readFileSync('.desktop-test/design-preview-current.json','utf8'));assert.match(meta.data,/design-preview-/);
+const b=await chromium.connectOverCDP(`http://127.0.0.1:${meta.cdpPort}`);
+const p=b.contexts().flatMap(c=>c.pages()).find(p=>/^http:\/\/127\.0\.0\.1:\d+\/$/.test(p.url()));
+const errors=[];p.on('pageerror',e=>errors.push(e.message));const out='.desktop-test/ui-polish-1103';fs.mkdirSync(out,{recursive:true});
+const snap=async name=>{await p.waitForTimeout(550);await p.screenshot({path:`${out}/${name}.png`,timeout:12000});};
+try{
+await p.reload();await dismissTestOnboarding(p);
+assert.equal(await p.locator('.sidebar .web-shortcuts').count(),0);assert.equal(await p.locator('.sidebar #workspaceUtilities').count(),0);
+assert.equal(await p.locator('.header-right #themeMenu').count(),0);
+await p.locator('[data-tab=logs]').hover();
+assert.ok(await p.locator('.tabs .moving-surface').evaluate(e=>e.getAnimations().length>0));
+await p.locator('#modeToggle').click();await snap('mode');
+await p.locator('[data-tab=settings]').click();await snap('settings');
+await p.locator('.theme-accent[data-accent=pink]').click();await snap('pink-settings');
+assert.equal(await p.locator('html').getAttribute('data-accent'),'pink');
+assert.equal(await p.locator('#panel-settings #desktopUpdate').isVisible(),true);
+await p.locator('[data-tab=courses]').click();await p.locator('.sd-course-name').nth(1).click();
+assert.ok(await p.locator('.sd-tasks').evaluate(e=>e.getAnimations().length>0));await snap('course');
+assert.equal(await p.locator('.tabs .moving-surface').count(),1);
+await openTestArchive(p);
+await p.evaluate(async()=>{window.__arch=(await import('/library/home.js')).libraryDiagnostics;});
+await p.waitForFunction(()=>window.__arch.snapshot().scene?.ready,null,{timeout:60000});await snap('archive');
+const f=p.frames().find(f=>f.url().includes('/library/archive/'));assert.ok(f);
+assert.equal(await f.locator('html').getAttribute('data-accent'),'pink');
+const parentMode=await p.locator('html').getAttribute('data-mode');assert.equal(await f.locator('html').getAttribute('data-mode'),parentMode);
+await p.locator('#libraryHome button').filter({hasText:'切换日夜'}).click();
+await f.waitForFunction(m=>document.documentElement.dataset.mode!==m,parentMode);await p.waitForTimeout(1000);await snap('archive-switched');
+await p.locator('#libraryHome #enterWorkspace').click();
+await p.emulateMedia({reducedMotion:'reduce'});await p.locator('[data-tab=overview]').click();
+assert.equal(await p.locator('#panel-overview').evaluate(e=>e.getAnimations().length),0);
+await p.emulateMedia({reducedMotion:'no-preference'});
+assert.deepEqual(errors,[]);fs.writeFileSync(`${out}/proof.json`,JSON.stringify({archiveThemeSync:true,standaloneMode:true,sidebarClean:true,errors}));console.log(JSON.stringify({sidebarClean:true,standaloneMode:true,settingsGrouped:true,slidingNavigation:true,courseSwitch:true,archiveThemeSync:true,archiveModeSwitch:true,reducedMotion:true,errors}));
+}finally{await b.close();}

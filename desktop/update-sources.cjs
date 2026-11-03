@@ -62,10 +62,10 @@ async function prepareOfflineUpdate({ installer, manifest }, { dataDir, currentV
   if (!isNewerStableVersion(meta.version, currentVersion)) {
     throw new Error('请选择比当前版本更新的正式安装包。');
   }
-  const expectedName = `XuexitongAssistant-${meta.version}-Setup.exe`;
-  if (path.basename(installer) !== expectedName) throw new Error('安装包名称与更新校验文件不一致，请选择同一版本的文件。');
+  const expectedName = path.basename(installer);
+  if (![ `Kebo-${meta.version}-Setup.exe`, `XuexitongAssistant-${meta.version}-Setup.exe` ].includes(expectedName)) throw new Error('安装包名称与更新校验文件不一致，请选择同一版本的文件。');
   const entry = meta.files?.find(item => item.file === expectedName);
-  if (!entry || !/^[a-f0-9]{64}$/i.test(entry.sha256) || !Number.isSafeInteger(entry.bytes) || entry.bytes <= 0) throw new Error('更新校验文件未包含有效的课栈安装包信息。');
+  if (!entry || !/^[a-f0-9]{64}$/i.test(entry.sha256) || !Number.isSafeInteger(entry.bytes) || entry.bytes <= 0) throw new Error('更新校验文件未包含有效的课泊安装包信息。');
   const stat = fs.lstatSync(installer);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== entry.bytes) throw new Error('安装包大小校验失败，请重新下载。');
   const cacheRoot = path.join(dataDir, 'updates', 'offline');

@@ -1,4 +1,4 @@
-/* 课栈 / archive desk. Scoped to the new appearance; classic remains available. */
+/* Kebo / archive desk. Scoped to the new appearance; classic remains available. */
 :root{--bg:#f0f3f2;--bg2:#fff;--bg3:#e9eeec;--fg:#20372f;--fg2:#51665f;--fg3:#60746c;--line:#d4dfda;--acc:#286b54;--ok:#286b54;--warn:#82591f;--sidebar:200px;--radius:5px}
 html,body{background:var(--bg);scrollbar-color:#a9bcb2 var(--bg);letter-spacing:0}
 input:not([type=checkbox]),textarea,select{background:#fff;border-radius:5px}

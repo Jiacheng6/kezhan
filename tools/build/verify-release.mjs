@@ -6,9 +6,9 @@ import { gunzipSync } from 'node:zlib';
 import { ROOT } from '../../src/config.mjs';
 import { loadLearningTerms, containsLearningTerms } from '../test/privacy-learning.mjs';
 import { isPublicNumericAsset } from '../test/privacy-public-assets.mjs';
-const dist = path.join(ROOT, 'dist');
+const dist = process.env.KEBO_RELEASE_DIR ? path.resolve(process.env.KEBO_RELEASE_DIR) : path.join(ROOT, 'dist');
 const app = path.join(dist, 'win-unpacked', 'resources', 'app');
-for(const relative of ['src/ai/throttle.mjs','src/platforms/zhihuishu/quiz.mjs','desktop/main.cjs','src/platforms/zhihuishu/quiz-submit.mjs','src/task-recovery.mjs','src/platforms/zhihuishu/entry.mjs','src/ui/platforms.css','src/ui/platforms.js','src/ui/kezhan.css','src/ui/kezhan.js','src/ai/queue.mjs','src/platforms/catalog.mjs','src/platforms/runs.mjs','src/platforms/zhihuishu/scan.mjs','src/platforms/zhihuishu/runner.mjs','src/platforms/zhihuishu/read-page.mjs','src/platforms/zhihuishu/video.mjs','src/platforms/zhihuishu/quiz-task.mjs','src/platforms/zhihuishu/quiz-run.mjs']){
+for(const relative of ['src/ai/throttle.mjs','src/platforms/zhihuishu/quiz.mjs','desktop/main.cjs','src/platforms/zhihuishu/quiz-submit.mjs','src/task-recovery.mjs','src/platforms/zhihuishu/entry.mjs','src/ui/platforms.css','src/ui/platforms.js','src/ui/kebo.css','src/ui/kebo.js','src/ai/queue.mjs','src/platforms/catalog.mjs','src/platforms/runs.mjs','src/platforms/zhihuishu/scan.mjs','src/platforms/zhihuishu/runner.mjs','src/platforms/zhihuishu/read-page.mjs','src/platforms/zhihuishu/video.mjs','src/platforms/zhihuishu/quiz-task.mjs','src/platforms/zhihuishu/quiz-run.mjs']){
   assert.equal(fs.readFileSync(path.join(app,relative)).equals(fs.readFileSync(path.join(ROOT,relative))),true,'多平台更新模块缺失或版本不一致：'+relative);
 }
 for (const excluded of ['edge-profile', 'Partitions', 'browser-session.bin', 'api-config.bin', 'notifications.json', 'logs', 'data', 'local.json', 'state.json', 'recon-selection.json', '.git', 'tools', 'docs']) {
@@ -63,7 +63,7 @@ const icon = fs.readFileSync(path.join(app, 'desktop/assets/icon.ico'));
 assert.ok(icon.readUInt16LE(4) >= 6, 'Windows 图标必须包含小尺寸');
 const feed = fs.readFileSync(path.join(dist, 'latest.yml'), 'utf8');
 assert.match(feed, new RegExp(`^version: ${pkg.version.replaceAll('.', '\\.')}\\s*$`, 'm'));
-const installerName = `XuexitongAssistant-${pkg.version}-Setup.exe`;
+const installerName = `Kebo-${pkg.version}-Setup.exe`;
 assert.ok(feed.includes(`path: ${installerName}`), '在线更新应指向本次安装包');
 const expectedSha512 = hash(path.join(dist, installerName), 'sha512', 'base64');
 assert.ok(feed.includes(`sha512: ${expectedSha512}`), '在线更新 SHA-512 校验值不一致');
@@ -86,9 +86,10 @@ const walk = (directory) => fs.readdirSync(directory, { withFileTypes: true }).f
   assert.equal(entry.isSymbolicLink(), false, '发布目录不能通过符号链接引入本机数据');
   return entry.isDirectory() ? walk(full) : [full];
 });
-const learningTerms = loadLearningTerms(ROOT, [process.env.APPDATA && path.join(process.env.APPDATA, 'XuexitongAssistant')]);
+const profileRoots = ['Kebo','XuexitongAssistant'].map(name=>process.env.APPDATA && path.join(process.env.APPDATA,name)).filter(Boolean);
+const learningTerms = loadLearningTerms(ROOT, profileRoots);
 const personIds = new Set();
-for (const base of [ROOT, process.env.APPDATA && path.join(process.env.APPDATA, 'XuexitongAssistant')].filter(Boolean)) {
+for (const base of [ROOT, ...profileRoots]) {
   const file = path.join(base, 'local.json');
   if (!fs.existsSync(file)) continue;
   const id = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\ufeff/, '')).personId;
@@ -110,7 +111,7 @@ for (const full of walk(app)) {
   assert.equal(/\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})\b/.test(content), false, `发布包疑似含 GitHub 凭据：${relative}`);
   if (!isPublicNumericAsset(relative, content)) assert.equal(/\b1[3-9]\d{9}\b|\b\d{17}[\dXx]\b/.test(content), false, `发布包疑似含手机号或身份证号：${relative}`);
 }
-const files = fs.readdirSync(dist).filter((name) => name.startsWith(`XuexitongAssistant-${pkg.version}-`) && /\.(exe|zip)$/.test(name));
+const files = fs.readdirSync(dist).filter((name) => name.startsWith(`Kebo-${pkg.version}-`) && /\.(exe|zip)$/.test(name));
 assert.ok(files.some((name) => name.endsWith('-Setup.exe')), '缺少安装包');
 assert.ok(files.some((name) => name.endsWith('.zip')), '缺少免安装包');
 const manifest = files.map((name) => {

@@ -222,7 +222,7 @@ button.primary:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 7px 
 .ledger-row:hover:not(:disabled){padding-left:9px;padding-right:6px;background:#eeeee380}
 .ledger-arrow{transition:transform 220ms}.ledger-row:hover .ledger-arrow{transform:translate(3px,-2px)}
 .pill,.chip,.activity-state{transition:background 220ms,color 220ms}
-.progress-track>div,.runbar-fill{transition:width 650ms var(--ease-out)}
+.progress-track>div,.runbar-fill{transition:width 320ms var(--ease-out)}
 input:not([type=checkbox]),textarea,select{transition:border-color 180ms,box-shadow 180ms,background 180ms}
 input:focus-visible,textarea:focus-visible,select:focus-visible{box-shadow:0 0 0 4px #286b540c}
 .tprow{transition:background 180ms}.tprow:hover{background:#eeefe3}

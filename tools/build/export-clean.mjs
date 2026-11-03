@@ -338,18 +338,18 @@ for (const need of [
       const out2 = execFileSync(process.execPath, [scanner], {
         cwd: OUT,
         stdio: 'pipe',
-        env: { ...process.env, XXT_PERSON_ID: pid },
+        env: { ...process.env, KEBO_PERSON_ID: pid },
       });
       const text = String(out2);
       const line = text.split('\n').find((l) => l.includes('通过')) || '';
       /*
        * ⚠ 光看"通过"不算数：副本里的扫描器可能是**过旧版本**，
-       * 不认 XXT_PERSON_ID → 静默跳过精确匹配 → 照样报"通过"（实测假绿过一次，
+       * 不认 KEBO_PERSON_ID → 静默跳过精确匹配 → 照样报"通过"（实测假绿过一次，
        * 因为导出走 git 索引，我改了扫描器但没暂存）。
        * 所以必须断言"精确检查确实启用了"这一行存在。
        */
       const enabled = /personId 精确检查已启用/.test(text);
-      ok('副本隐私自检（含 personId 精确匹配）', enabled, enabled ? line.trim() : '副本里的扫描器不支持 XXT_PERSON_ID（副本过旧？先 git add 再导出）');
+      ok('副本隐私自检（含 personId 精确匹配）', enabled, enabled ? line.trim() : '副本里的扫描器不支持 KEBO_PERSON_ID（副本过旧？先 git add 再导出）');
     } catch (e) {
       const hits = String(e.stdout || '')
         .split('\n')

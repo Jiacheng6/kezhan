@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {chromium} from 'playwright-core';
 const data=fs.mkdtempSync(path.resolve('.desktop-test/web-turn-'));
-process.env.XXT_DATA_DIR=data;
+process.env.KEBO_DATA_DIR=data;
 const {findEdge}=await import('../../src/browser/launch.mjs');
 const {beginWebTurn,endWebTurn}=await import('../../src/ai/web-turn.mjs');
 const {webChatState,isCurrentWebAnswer}=await import('../../src/ai/web-chat.mjs');

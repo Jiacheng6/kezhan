@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {chromium} from 'playwright-core';
-fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/partial-retry-'));
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/partial-retry-'));
 const {findEdge}=await import('../../src/browser/launch.mjs');const {ensureDirs}=await import('../../src/config.mjs');ensureDirs();
 const {loadState,mutateState}=await import('../../src/state.mjs');const {runQuizTask}=await import('../../src/chaoxing/quizrun.mjs');const {parseAnswer,validateBeforeSubmit}=await import('../../src/ai/parse.mjs');
 mutateState(s=>{s.settings={submitMode:'auto',essayAutoFill:true,ai:{provider:'doubao'}};});

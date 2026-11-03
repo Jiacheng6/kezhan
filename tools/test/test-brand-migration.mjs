@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import vm from 'node:vm';
+import {createRequire} from 'node:module';
+const require=createRequire(import.meta.url),{BRAND,migrateProfile}=require('../../desktop/brand.cjs');
+const {normalizeEnvironment}=require('../../src/brand-env.cjs');
+fs.mkdirSync('.desktop-test',{recursive:true});const root=fs.mkdtempSync(path.resolve('.desktop-test/brand-migration-'));
+const legacy=path.join(root,'XuexitongAssistant');fs.mkdirSync(path.join(legacy,'Partitions','learning-web'),{recursive:true});
+for(const [name,value]of [['state.json','{"taskPoints":{"demo":{"status":"done"}}}'],['browser-session.bin','synthetic-session'],['api-config.bin','synthetic-key'],['Local State','synthetic-encryption-state'],['lockfile','skip'],['DevToolsActivePort','skip']])fs.writeFileSync(path.join(legacy,name),value);
+fs.writeFileSync(path.join(legacy,'Partitions','learning-web','Cookies'),'synthetic-cookie-db');
+const result=migrateProfile(root);assert.equal(result.migrated,true);assert.equal(path.basename(result.directory),'Kebo');
+for(const file of ['state.json','browser-session.bin','api-config.bin','Local State','Partitions/learning-web/Cookies'])assert.deepEqual(fs.readFileSync(path.join(result.directory,file)),fs.readFileSync(path.join(legacy,file)));
+assert.equal(fs.existsSync(path.join(result.directory,'lockfile')),false);assert.equal(fs.existsSync(path.join(result.directory,'DevToolsActivePort')),false);
+fs.writeFileSync(path.join(result.directory,'state.json'),'new-state');assert.equal(migrateProfile(root).migrated,false);assert.equal(fs.readFileSync(path.join(result.directory,'state.json'),'utf8'),'new-state');
+const failureRoot=fs.mkdtempSync(path.resolve('.desktop-test/brand-copy-failed-'));fs.mkdirSync(path.join(failureRoot,'XuexitongAssistant'));const original=fs.cpSync;
+try{fs.cpSync=()=>{throw Error('simulated locked file');};const failed=migrateProfile(failureRoot);assert.equal(path.basename(failed.directory),'XuexitongAssistant');assert.ok(failed.warning);assert.equal(fs.existsSync(path.join(failureRoot,'Kebo')),false);assert.deepEqual(fs.readdirSync(failureRoot),['XuexitongAssistant']);}finally{fs.cpSync=original;}
+const env={XXT_DATA_DIR:'legacy',XXT_DEBUG_PORT:'9222',KEBO_DATA_DIR:'new'};normalizeEnvironment(env);assert.equal(env.KEBO_DATA_DIR,'new');assert.equal(env.KEBO_DEBUG_PORT,'9222');
+const storage={'xxt-theme':'pink','xxt-library-startup':'show','kebo-theme':'blue',other:'keep'};
+Object.defineProperties(storage,{getItem:{value:key=>storage[key]??null},setItem:{value:(key,value)=>{storage[key]=value;}}});
+vm.runInNewContext(fs.readFileSync('src/ui/brand-storage.js','utf8'),{localStorage:storage});assert.equal(storage['kebo-theme'],'blue');assert.equal(storage['kebo-library-startup'],'show');assert.equal(storage.other,'keep');
+const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));assert.equal(pkg.build.appId,BRAND.id);assert.equal(pkg.build.productName,BRAND.title);assert.equal(pkg.build.win.executableName,BRAND.title);assert.equal(pkg.build.nsis.guid,'498a0d80-d4f9-5e0f-b76b-f2eb2460b8bc');
+assert.match(pkg.build.nsis.artifactName,/^Kebo-/);assert.equal(pkg.name,'kebo');
+console.log('✓ 品牌、旧版安装GUID、完整数据复制、原目录保留、已有新数据保护、失败回退、旧环境变量和外观偏好兼容');

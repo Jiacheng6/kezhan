@@ -40,6 +40,7 @@ import { readPointStatusFromPage } from './attach.mjs';
 import { skipDecision, describeSkip } from './skip.mjs';
 import { newTaskPage, releasePage, setPageBusy, markSavedReviewPage } from '../browser/pages.mjs';
 import { isReviewLocked } from './review-lock.mjs';
+import { setBrowserVisible, isBrowserVisible } from '../browser/window-control.mjs';
 import { AI_BLOCK_CODES, queueUnanswered } from './quiz-outcome.mjs';
 import { pageSubmissionState } from './submission-state.mjs';
 import {activateSubmitConfirmation} from './submit-control.mjs';
@@ -72,7 +73,12 @@ async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, sh
   const dir = archiveDir();
 
   // 截图（唯一可靠输入 —— 题干是自定义字体加密的）
-  const imagePath = await shootQuestion(workFrame, domIndex, dir, { shouldStop, onRecovery: (message) => log(`    ${message}`, 'warn') });
+  const fontNotes = [];
+  const imagePath = await shootQuestion(workFrame, domIndex, dir, {
+    shouldStop,
+    fontNotes,
+    onRecovery: (message) => log(`    ${message}`, 'warn'),
+  });
   log('        题目截图已就绪，准备发送给AI', 'info');
 
   // 节流：保护AI账号不被风控（踩过坑）
@@ -100,6 +106,7 @@ async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, sh
   return {
     question,
     imagePath,
+    fontWarning: fontNotes.length ? fontNotes.join('；') : null,
     aiAnswer: ai.ok ? ai.answer : '',
     aiError: ai.ok ? null : ai.error,
     aiErrorCode: ai.ok ? null : ai.errorCode || 'unknown',
@@ -145,10 +152,33 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
 
   if(restartTask){
     const previous=getKeptPage(task.key),saved=loadState().keptPages?.[task.key]?.info;
-    if(saved?.submissionPending||isReviewLocked(task.key))return {...result,phase:'awaiting-review',submissionPending:!!saved?.submissionPending};
+    /*
+     * 真机日志（2026-11-03 用户重跑）：
+     *   ✗ 失败：题目字体文件加载失败 → 当前任务暂停…重启一次（1/1）
+     *   → 1.6 秒后「批量执行结束：待审 1」   ← 重启被吞掉了，一步都没跑
+     * 原因是重开那一刻「待审锁」被别人占着，旧代码直接当 awaiting-review 返回。
+     * 现在：先等锁释放（最多 10 秒），真等不到才退；只有**已提交待确认**才直接返回。
+     */
+    if(saved?.submissionPending)return {...result,phase:'awaiting-review',submissionPending:true};
+    if(isReviewLocked(task.key)){
+      const deadline=Date.now()+10000;
+      while(isReviewLocked(task.key)&&Date.now()<deadline)await sleep(200);
+      if(isReviewLocked(task.key)){
+        log('    ! 待审仍在处理中，暂时无法重开这道作业', 'warn');
+        return {...result,phase:'awaiting-review',submissionPending:false};
+      }
+      log('    待审处理已结束，继续重开作业页', 'info');
+    }
     if(previous?.page&&!previous.page.isClosed()){releasePage(previous.page);await previous.page.close();}
+    log('    重新打开作业页（字体/页面类失败，换页通常即可恢复）', 'info');
     // Keep persisted work identity and answers for the normal checkpoint match.
   }
+  /*
+   * 真机取证（2026-11-03）：单选题截图是成功的（硬盘上有 PNG），
+   * 失败只从「多选题」那题开始 —— 说明是那份字体文件本身下载不下来，
+   * 不是"隐藏窗口导致全部字体不加载"。所以这里不再强制弹窗口，
+   * 只在字体真的失败时再显示网页重试一次（见下面 catch 里）。
+   */
   const page = await newTaskPage(ctx, 'quiz');
   page.on('dialog', (d) => {if(!submittingPages.has(page))void d.accept().catch(() => {});});
   let workFrame = null, questions = [],validatedQuestions=false;
@@ -264,6 +294,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
     }
 
     // —— 4) 逐题处理 ——
+    let captureFailures = 0;
 
     for (let i = 0; i < questions.length; i += 1) {
       if (shouldStop && shouldStop()) {
@@ -284,15 +315,86 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
 
       const previous=reusable.get(q.index);
       if(previous)log(`        复用第 ${q.index} 题已保存答案，仅核对并恢复填写，不重复问 AI`, 'info');
-      const solved = previous ? {...previous,question:q,aiError:null,aiErrorCode:null} : await solve({
-        taskKey:task.key,
-        workFrame,
-        domIndex: q.domIndex,
-        qianwenPage,
-        question: q,
-        prompt: q.qtype === 'essay' ? settings.essayPrompt : settings.quizPrompt,
-        shouldStop,
-      });
+      /*
+       * 用户反馈（2026-11-03）：做到一题时字体加载失败，整张卷子就此停住
+       * （「题目完成了 4 个，不继续了」）。逐题处理不该因为**一题**截不到而中断：
+       * 记下这题转待审，继续做后面的题；只有连续多题都截不到才真正放弃。
+       */
+      let solved;
+      try {
+        solved = previous ? {...previous,question:q,aiError:null,aiErrorCode:null} : await solve({
+          taskKey:task.key,
+          workFrame,
+          domIndex: q.domIndex,
+          qianwenPage,
+          question: q,
+          prompt: q.qtype === 'essay' ? settings.essayPrompt : settings.quizPrompt,
+          shouldStop,
+        });
+        captureFailures = 0;
+      } catch (err) {
+        if (err.code === 'STOPPED') throw err;
+        /*
+         * 关键发现（用户 2026-11-03）：「有时我手动做完剩下的题提交后就又正常了」
+         * —— 内置网页被隐藏时，浏览器可能根本不请求那套加密字体；
+         * 用户自己看着（窗口可见）时字体就加载成功了。
+         * 所以这里：字体类失败时，先把内置网页显示出来、等一会儿、再试一次。
+         */
+        const fontish = err.captureStage === '题目字体' || /字体|fonts?/i.test(String(err.message || ''));
+        if (fontish && process.env.KEBO_DESKTOP === '1' && !isBrowserVisible()) {
+          log('    题目字体没加载，先把内置网页显示出来再试一次（可见时浏览器才会真正请求字体）', 'warn');
+          await setBrowserVisible(true).catch(() => {});
+          await sleep(1500);
+          try {
+            solved = await solve({
+              taskKey: task.key,
+              workFrame,
+              domIndex: q.domIndex,
+              qianwenPage,
+              question: q,
+              prompt: q.qtype === 'essay' ? settings.essayPrompt : settings.quizPrompt,
+              shouldStop,
+            });
+            log('    显示网页后重新读取题目：成功', 'ok');
+            captureFailures = 0;
+          } catch (retryErr) {
+            if (retryErr.code === 'STOPPED') throw retryErr;
+            err = retryErr;
+          }
+        }
+        if (solved) { /* 上面重试成功，走正常流程 */ } else {
+        captureFailures += 1;
+        log(`        ✗ 第 ${i + 1} 题读取失败（连续 ${captureFailures} 题）：${err.message}`, 'warn');
+        if (captureFailures >= 3) {
+          err.message = `连续 ${captureFailures} 题读取失败：${err.message}`;
+          throw err;
+        }
+        // 这一题先记成待审，继续处理后面的题
+        result.items.push({
+          id: `${task.key}#q${q.index}`,
+          taskKey: task.key,
+          course: task.courseName || task.courseId,
+          courseId: task.courseId,
+          knowledgeId: task.knowledgeId,
+          secNo: task.secNo,
+          sectionName: task.sectionName,
+          questionIndex: q.index,
+          domIndex: q.domIndex,
+          qtype: q.qtype,
+          qtypeRaw: q.qtypeRaw,
+          options: (q.options || []).map((o) => ({ letter: o.letter, displayLetter: o.displayLetter, text: o.text })),
+          confidence: 'low',
+          confidenceLabel: '🔴 低',
+          letters: [],
+          status: 'pending-review',
+          requiresReview: true,
+          autoFilled: false,
+          captureError: err.message,
+          note: `题目读取失败，已跳过：${err.message}`,
+        });
+        continue;
+        }
+      }
 
       const tag = confidenceLabel(solved.parsed.confidence);
       if (!solved.aiError) {
@@ -333,7 +435,14 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
 
       // 是否允许自动填
       const isEssay = q.qtype === 'essay';
-      const mayFill = !solved.aiError && (isEssay ? settings.essayAutoFill && solved.parsed.canFill
+      /*
+       * 有字体警告的题：截图里的字可能是好的，也可能被 fallback 字体换掉了。
+       * 为了不把"可能错的答案"自动填进去，这类题一律不自动填，转待审
+       * （AI 答案和截图都会保留，你核对一下就行）。
+       */
+      const fontWarned = !!solved.fontWarning;
+      if (fontWarned) log('        ! 该题字体未完全加载，答案不自动填，转待审核对', 'warn');
+      const mayFill = !fontWarned && !solved.aiError && (isEssay ? settings.essayAutoFill && solved.parsed.canFill
         : solved.parsed.confidence === 'high' && solved.validation.safe);
       let filled = null;
       let autoFilled = false;

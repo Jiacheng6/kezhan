@@ -1,5 +1,5 @@
 import fs from 'node:fs';import path from 'node:path';import assert from 'node:assert/strict';import {chromium} from 'playwright-core';
-fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/zhs-scan-'));
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/zhs-scan-'));
 const {findEdge}=await import('../../src/browser/launch.mjs');const {scanZhihuishuCourses}=await import('../../src/platforms/zhihuishu/scan.mjs');const {readPlatformCatalog}=await import('../../src/platforms/catalog.mjs');
 const b=await chromium.launch({executablePath:findEdge(),headless:true});let consent=false;
 try{const c=await b.newContext();await c.route('https://**.zhihuishu.com/**',route=>{

@@ -18,6 +18,7 @@ export async function revealTestTools(page) {
   await dismissTestOnboarding(page);
   await enterTestWorkspace(page);
   const tools = page.locator('#workspaceUtilities');
+  if (await tools.evaluate(e => !!e.closest('#panel-settings')) && !await tools.isVisible()) await page.locator('[data-tab=settings]').click();
   if (!await tools.evaluate(e => e.open)) await tools.locator(':scope > summary').click();
 }
 export async function dismissTestOnboarding(page) {

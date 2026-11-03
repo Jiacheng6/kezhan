@@ -1,6 +1,6 @@
 // Real page/controller interaction against local fixtures only.
 import assert from 'node:assert/strict';import fs from 'node:fs';import path from 'node:path';import {chromium} from 'playwright-core';
-fs.mkdirSync('.desktop-test',{recursive:true});process.env.XXT_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/zhs-restart-'));
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/zhs-restart-'));
 const {findEdge}=await import('../../src/browser/launch.mjs');const {runZhihuishuVideo}=await import('../../src/platforms/zhihuishu/runner.mjs');const {PlatformRuns}=await import('../../src/platforms/runs.mjs');const {loadState}=await import('../../src/state.mjs');
 const b=await chromium.launch({executablePath:findEdge(),headless:true});
 try{
