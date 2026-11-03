@@ -60,7 +60,7 @@ export async function webChatState(page,provider) {
       ||(id==='deepseek'&&!!document.querySelector('.ds-button--primary.ds-button--circle svg rect'));
     return {loggedIn:!!editor&&!signedOut,signedOut,verification,limited,editor:!!editor,editorText:(editor?.value??editor?.innerText??'').trim(),count:answers.length,text:last?.innerText?.trim()||'',generating,
       answerKey:key(answerRoot),hasUserTurns:users.length>0,userKey:key(root(user)),userText:(user?.textContent||'').trim(),imageKey:key(root(imageUser)),replyUserKey:key(root(beforeAnswer)),
-      trackedMarker:turn?.marker||'',turnObserved:!!turn?.observed,turnConfirmed:!!turn?.answer&&last===turn.answer,turnInvalidated:!!turn?.invalidated};
+      trackedMarker:turn?.marker||'',turnObserved:!!turn?.observed,turnConfirmed:!!turn?.answer&&last===turn.answer,turnInvalidated:!!turn?.invalidated,turnInvalidatedReason:turn?.invalidatedReason||''};
   },{ui:WEB_UI[provider.id],id:provider.id});
 }
 function webBlock(state,provider) {
@@ -373,7 +373,7 @@ async function askWebImageInner({page,imagePath,prompt,shouldStop,freshChat=fals
       last=text;
       if(current&&text&&stable>=3&&!state.generating){clearWebDraft(ownedKey);return {ok:true,answer:text,provider:provider.id,waitedMs:Date.now()-started};}
       if(Date.now()-lastProgress>stuck){
-        log(`    ${provider.label}回答核对：页面回答 ${state.count} 条；本次提问回执${state.turnObserved?'已捕获':'未捕获'}；回答关联${state.turnConfirmed?'已确认':'未确认'}${state.turnInvalidated?'；检测到其他提问':''}`, 'warn');
+        log(`    ${provider.label}回答核对：页面回答 ${state.count} 条；本次提问回执${state.turnObserved?'已捕获':'未捕获'}；回答关联${state.turnConfirmed?'已确认':'未确认'}${state.turnInvalidated?`；关联失效原因：${state.turnInvalidatedReason||'unknown'}`:''}`, 'warn');
         return {ok:false,errorCode:'answer-not-confirmed',error:`${provider.label}本次回答未能确认，已保留本题；请打开软件内 AI 网页核对，不代表平台限流`,waitedMs:Date.now()-started};
       }
     }

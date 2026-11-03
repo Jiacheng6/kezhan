@@ -39,4 +39,18 @@ try {
  }
  console.log('✓ 两种真实字体从503恢复：来源精确匹配、字重保留、签名URL未改、未错配字体');
  console.log('✓ 恢复后连续三次取得真实PNG，未再次请求失败字体');
+ await page.route('https://quote-fixture.invalid/**',route=>route.request().url().endsWith('/page')?route.fulfill({contentType:'text/html',body:`<meta charset="utf-8"><style>
+ @font-face{font-family:CXChineseQuote;src:url('/quote.ttf');unicode-range:U+2018,U+2019,U+201C,U+201D}
+ @font-face{font-family:font-cxsecret;src:url('/secret.ttf')}
+ #question{font:22px CXChineseQuote,Arial}.secret{font-family:font-cxsecret}</style>
+ <div id="question"><div class="Zy_TItle">“Readable punctuation” <span class="secret">encoded text</span></div></div>`}):route.fulfill({status:503,body:'font failed'}));
+ await page.goto('https://quote-fixture.invalid/page');await page.waitForFunction(()=>[...document.fonts].filter(f=>f.status==='error').length===2);
+ let quotes=await page.locator('#question').evaluate(inspectQuestionFonts);
+ assert.equal(quotes.failed,true,'a failed question decoding font must remain blocked');assert.deepEqual(quotes.failedFonts,['font-cxsecret']);
+ await page.locator('.secret').evaluate(e=>e.remove());
+ quotes=await page.locator('#question').evaluate(inspectQuestionFonts);assert.equal(quotes.pending,0,'punctuation-only auxiliary font must not block readable text');
+ const notes=[];await shootQuestion(page.mainFrame(),0,output,{selector:'#question',fontTimeoutMs:1500,fontNotes:notes});assert.deepEqual(notes,[],'auxiliary font failure must not force an otherwise valid answer into review');
+ await page.evaluate(()=>{document.styleSheets[0].cssRules[0].style.setProperty('unicode-range','U+0-10FFFF');});
+ quotes=await page.locator('#question').evaluate(inspectQuestionFonts);assert.ok(quotes.pending>0,'the family name alone cannot exempt a font containing question characters');
+ console.log('✓ 引号辅助字体失败不再阻断回填，题干解码字体及非受限同名字体仍受保护');
 } finally {await browser.close();}

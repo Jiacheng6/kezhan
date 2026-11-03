@@ -7,7 +7,13 @@ export function doubaoRequestTurn(request, marker) {
     const url=new URL(request.url());
     if(url.protocol!=='https:'||!['www.doubao.com','doubao.com'].includes(url.hostname)||url.pathname!=='/chat/completion'||request.method()!=='POST')return null;
     const body=request.postDataJSON();
-    const message=body?.messages?.find(message=>message.content_block?.some(block=>typeof block.content?.text_block?.text==='string'&&block.content.text_block.text.includes(marker)));
+    // Doubao reuses /chat/completion for captcha continuation. The inspected
+    // request carries only block_type 10052, not another user question. Treat
+    // that control message as neither a send receipt nor a superseding turn.
+    const messages=body?.messages;
+    if(!Array.isArray(messages)||!messages.length)return null;
+    if(messages.every(message=>Array.isArray(message.content_block)&&message.content_block.length>0&&message.content_block.every(block=>block.block_type===10052)))return null;
+    const message=messages.find(message=>message.content_block?.some(block=>typeof block.content?.text_block?.text==='string'&&block.content.text_block.text.includes(marker)));
     return {localId:typeof message?.local_message_id==='string'?message.local_message_id:'',matches:!!message};
   }catch{return null;}
 }

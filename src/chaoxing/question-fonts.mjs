@@ -3,6 +3,18 @@
 export function inspectQuestionFonts(node, { recover = false, stallMs = 2000 } = {}) {
   const doc = node.ownerDocument, win = doc.defaultView;
   const normalize = value => String(value).replace(/["']/g, '').trim().toLowerCase();
+  // The platform's quote decoration has its own webfont. A failed quotation
+  // mark face must not veto readable question text using the separate secret
+  // font. Exempt only the known family AND an exact punctuation-only range;
+  // an unrestricted or renamed question font still requires normal recovery.
+  const quoteFamilies = new Map();
+  for (const face of doc.fonts) {
+    const name = normalize(face.family);
+    if (!/^cxchinesequote\d*$/.test(name)) continue;
+    const ranges = face.unicodeRange.split(',').map(value => value.trim());
+    const punctuationOnly = ranges.length > 0 && ranges.every(value => /^U\+(?:2018|2019|201C|201D)$/i.test(value));
+    quoteFamilies.set(name, (quoteFamilies.get(name) ?? true) && punctuationOnly);
+  }
   const requests = new Map();
   const roots = [...node.querySelectorAll('.Zy_TItle, .Zy_ulTop, .Zy_ulBottom')];
   for (const root of roots.length ? roots : [node]) {
@@ -12,8 +24,9 @@ export function inspectQuestionFonts(node, { recover = false, stallMs = 2000 } =
       if (!text || !parent || !parent.getClientRects().length) continue;
       const style = getComputedStyle(parent);
       if (style.visibility !== 'visible' || style.display === 'none') continue;
-      const font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-      const current = requests.get(font) || { text: '', families: style.fontFamily.split(',').map(normalize) };
+      const families = style.fontFamily.split(',').filter(value => !quoteFamilies.get(normalize(value)));
+      const font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${families.join(',') || 'sans-serif'}`;
+      const current = requests.get(font) || { text: '', families: families.map(normalize) };
       current.text += text; requests.set(font, current);
     }
   }

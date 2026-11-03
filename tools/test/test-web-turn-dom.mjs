@@ -40,5 +40,21 @@ try{
  await page.evaluate(()=>document.body.insertAdjacentHTML('beforeend','<section data-testid="union_message" data-message-id="folded-answer"><div data-testid="receive_message"><div data-testid="message_text_content">本题回答</div></div></section>'));
  releaseReply();await page.waitForFunction(()=>globalThis[Symbol.for('xxt.web-chat-turn')].read().receipt);
  assert.equal(await page.evaluate(()=>globalThis[Symbol.for('xxt.web-chat-turn')].read().answer?.innerText),'本题回答');await endWebTurn(page,marker);
- console.log('✓ 脱离文档的虚拟节点不冒充新提问，真正的后续提问仍会阻止旧回答回填');
+ await page.setContent('<div id="messages"></div>');
+ await page.route('https://www.doubao.com/chat/completion',r=>r.fulfill({status:200,body:''}));
+ await beginWebTurn(page,{id:'doubao'},prompt);
+ await page.evaluate(async marker=>{
+  document.querySelector('#messages').innerHTML='<section data-testid="union_message"><div data-testid="send_message">'+marker+'</div></section>';
+  const control={local_message_id:'captcha-control',content_block:[{block_type:10052}]};
+  await fetch('/chat/completion',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({messages:[control,{local_message_id:'current-neutral',content_block:[{block_type:10000,content:{text_block:{text:marker}}}]}]})});
+  // Same message envelope observed after a real manual captcha, no new text.
+  await fetch('/chat/completion',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({messages:[control]})});
+  document.querySelector('#messages').insertAdjacentHTML('beforeend','<section data-testid="union_message" data-message-id="neutral-reply"><div data-testid="receive_message"><div data-testid="message_text_content">红色</div></div></section>');
+ },marker);
+ await page.waitForFunction(()=>globalThis[Symbol.for('xxt.web-chat-turn')].read().answer?.textContent==='红色');
+ assert.equal(await page.evaluate(()=>globalThis[Symbol.for('xxt.web-chat-turn')].read().invalidated),false,'captcha continuation must not invalidate the original answer');
+ await page.evaluate(async()=>fetch('/chat/completion',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({messages:[{local_message_id:'truly-other',content_block:[{block_type:10000,content:{text_block:{text:'genuinely different question'}}}]}]})}));
+ await page.waitForFunction(()=>globalThis[Symbol.for('xxt.web-chat-turn')].read().invalidated);
+ assert.equal(await page.evaluate(()=>globalThis[Symbol.for('xxt.web-chat-turn')].read().invalidatedReason),'superseded-request');await endWebTurn(page,marker);
+ console.log('✓ 虚拟节点和验证续传不冒充新提问，真正的新问题仍会阻止旧回答回填');
 }finally{await browser.close();}
