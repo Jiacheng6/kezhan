@@ -21,7 +21,7 @@ try {
   await window.reload();
   await revealTestTools(window);
   await window.locator('#desktopToolbar').waitFor({ state: 'visible' });
-  assert.equal(await window.locator('h1').innerText(), '课泊');
+  assert.equal(await window.locator('h1').innerText(), '课栈');
   const run = window.locator('[data-action="startRun"]');
   assert.ok(await run.count() >= 1);
   for(let i=0;i<await run.count();i++)assert.equal(await run.nth(i).isDisabled(), true);
@@ -38,7 +38,7 @@ try {
   await window.locator('#closeHide').click();
   await new Promise((resolve) => setTimeout(resolve, 150));
   assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).isVisible()), false);
-  assert.equal(await window.locator('h1').innerText(), '课泊', '隐藏后页面和后台仍可用');
+  assert.equal(await window.locator('h1').innerText(), '课栈', '隐藏后页面和后台仍可用');
   await application.evaluate(({ BrowserWindow }) => {
     BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).show();
     BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0).close();

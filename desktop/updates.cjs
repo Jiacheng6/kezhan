@@ -251,7 +251,7 @@ function createUpdates({ app, dataDir, testMode, onStatus, prepareInstall, recov
     updater.forceDevUpdateConfig = true;
     updater.disableDifferentialDownload = true;
   }
-  const installed = ['课泊','学习通助手'].some(name=>fs.existsSync(path.join(path.dirname(app.getPath('exe')), `Uninstall ${name}.exe`)));
+  const installed = ['课栈','课泊','学习通助手'].some(name=>fs.existsSync(path.join(path.dirname(app.getPath('exe')), `Uninstall ${name}.exe`)));
   return new UpdateController(updater, { version: app.getVersion(), enabled: app.isPackaged || !!testFeed, installed,
     startupEnabled: !testMode || !!testFeed,
     sources: testSources || (testFeed ? null : SOURCES), sourcePreference: readPreference(dataDir), savePreference: value => writePreference(dataDir, value),

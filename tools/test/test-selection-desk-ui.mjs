@@ -164,7 +164,7 @@ try {
   await page.locator('#deskScan').click();assert.deepEqual(actions,['startRun','stopRun','startRecon']);
   fs.writeFileSync(path.join(output,'checks.json'),JSON.stringify({switchPreservesSelection:true,previewBeforeApply:true,undo:true,saveAndReload:true,missingTaskProtection:true,completedAndUnknownVisible:true,rangeValidation:true,runningGuard:true,persistenceFailure:true,legacyView:true,selectionNeverStarts:true,startStopMocked:true,saveFailureBlocksStart:true,loginHelp:true,responsive:true,pageErrors:errors,data},null,2));
   console.log('✓ 实际桌面：三栏选课、规则预览与应用、撤销、方案保存/改名/重载、变化任务保护、运行锁定、错误提示及窄屏验证通过；未执行任何课程任务。截图：'+output);
-  if(process.argv.includes('--hold')){holding=true;await page.reload();await enterTestWorkspace(page);await page.locator('[data-tab=courses]').click();await application.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);w.setTitle('课泊 · 三栏选课预览（隔离演示数据）');w.show();});await new Promise(resolve=>application.process().once('exit',resolve));}
+  if(process.argv.includes('--hold')){holding=true;await page.reload();await enterTestWorkspace(page);await page.locator('[data-tab=courses]').click();await application.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);w.setTitle('课栈 · 三栏选课预览（隔离演示数据）');w.show();});await new Promise(resolve=>application.process().once('exit',resolve));}
 } finally {
   if(!holding){const exited=new Promise(resolve=>application.process().once('exit',resolve));await requestTestExit(application).catch(()=>{});let timer;await Promise.race([exited,new Promise(resolve=>{timer=setTimeout(resolve,15000)})]);clearTimeout(timer);await application.close().catch(()=>{});}
 }

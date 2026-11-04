@@ -10,7 +10,7 @@ const {createApiService}=require('./ai-api.cjs');
 require('../src/brand-env.cjs');
 const {BRAND,migrateProfile}=require('./brand.cjs');
 
-const title = '课泊';
+const title = BRAND.title;
 const smokeTest = process.argv.includes('--smoke-test');
 const embeddedTest = process.argv.includes('--embedded-test');
 const testMode = smokeTest || process.argv.includes('--test-mode') || embeddedTest;
@@ -222,7 +222,7 @@ else {
   app.on('before-quit', (event) => { if (!quitting) { event.preventDefault(); requestClose(); } });
   app.on('window-all-closed', () => {});
   app.whenReady().then(async () => {
-    if(migration.warning)dialog.showErrorBox('课泊 · 数据迁移提示',migration.warning);
+    if(migration.warning)dialog.showErrorBox('课栈 · 数据迁移提示',migration.warning);
     Menu.setApplicationMenu(null);
     const icon = path.join(__dirname, 'assets', 'icon.png');
     mainWindow = new BrowserWindow({ title, width: 1240, height: 840, minWidth: 960, minHeight: 660,
@@ -295,7 +295,7 @@ else {
     notifications.publish();
     tray.on('double-click', showMain);
     tray.setContextMenu(Menu.buildFromTemplate([
-      { label: '打开课泊', click: showMain },
+      { label: '打开课栈', click: showMain },
       { label: '通知与待处理', click: () => { showMain(); mainWindow.webContents.send('desktop:notice-open', {action:'notices'}); } },
       { label: '打开内置网页', click: () => { showMain(); internalBrowser.setVisible(true); } },
       { label: '返回工作台（任务继续运行）', click: () => internalBrowser.setVisible(false) },
@@ -331,8 +331,8 @@ else {
     handle('desktop:update-notified', () => updates.acknowledgeNotification());
     handle('desktop:update-source', source => updates.setSource(source));
     handle('desktop:update-local', () => updates.importLocal(async () => {
-      const selected = await dialog.showOpenDialog(mainWindow, { title: '选择课泊新版安装包',
-        properties: ['openFile'], filters: [{ name: '课泊安装包', extensions: ['exe'] }] });
+      const selected = await dialog.showOpenDialog(mainWindow, { title: '选择课栈新版安装包',
+        properties: ['openFile'], filters: [{ name: '课栈安装包', extensions: ['exe'] }] });
       if (selected.canceled || !selected.filePaths[0]) return null;
       const installer = selected.filePaths[0];
       let manifest = path.join(path.dirname(installer), 'release-manifest.json');

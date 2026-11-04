@@ -13,7 +13,7 @@ const sha512 = crypto.createHash('sha512').update(body).digest('base64');
 let badHash = false;
 let feedVersion='9.9.9',checks=0,downloads=0;
 const notes='• 启动时检查新版本\n• 课程完成状态显示修复\n• 登录与学习进度保留';
-let feedNotes = '# 课泊 9.9.9\n\n## 本次更新\n\n' + notes + '\n• 更多细节说明\n\n## 下载与升级\n\n- Windows 10 / 11，64 位\n- 安装版：fixture-Setup.exe';
+let feedNotes = '# 课栈 9.9.9\n\n## 本次更新\n\n' + notes + '\n• 更多细节说明\n\n## 下载与升级\n\n- Windows 10 / 11，64 位\n- 安装版：fixture-Setup.exe';
 const server = http.createServer((request, response) => {
   if (request.url.startsWith('/latest.yml')) {
     checks++;

@@ -9,7 +9,7 @@ export function summarizeReleaseNotes(notes, maxItems = 3, maxLength = 68) {
   for (const rawLine of lines.slice(start < 0 ? 0 : start + 1)) {
     const line = rawLine.trim(); if (!line) continue;
     if (/^(?:#{1,6}\s*)?(?:下载|升级|安装|使用说明|注意事项|系统要求|download|install|upgrad)/i.test(line)) break;
-    if (/^(?:#{1,6}\s*)?(?:课泊\s*)?v?\d+\.\d+\.\d+/i.test(line)) { if (++versions > 1 || entries.length) break; continue; }
+    if (/^(?:#{1,6}\s*)?(?:(?:课栈|课泊)\s*)?v?\d+\.\d+\.\d+/i.test(line)) { if (++versions > 1 || entries.length) break; continue; }
     if (/^#{1,6}\s/.test(line) || /^(?:新增|改进|修复|优化|fixes|improvements)[:：]?$/i.test(line)) continue;
     const item = clean(line.replace(/^\s*(?:[-+*•]\s*|\d+[.)、]\s*)/, ''));
     if (!item || /^https?:\/\//i.test(item) || /^[-=|\s]+$/.test(item)) continue;

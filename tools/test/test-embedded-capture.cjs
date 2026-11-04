@@ -11,7 +11,7 @@ async function bounded(promise,ms=8000){let timer;try{return await Promise.race(
 let window,cover,manager,server;const results=[];
 app.whenReady().then(async()=>{try{
  server=http.createServer((_req,res)=>{res.setHeader('content-type','text/html');res.end('<style>body{margin:0}.TiMu{position:relative;width:600px;height:350px;background:#ecf3f7;margin:25px;font:24px sans-serif}.swatch{position:absolute;left:30px;top:100px;width:90px;height:90px;background:#c93926}</style>'+Array.from({length:10},(_,i)=>'<div class="TiMu">Question '+(i+1)+'<div class="swatch"></div></div>').join(''))});await new Promise(r=>server.listen(0,'127.0.0.1',r));
- window=new BrowserWindow({width:1224,height:840,show:true,title:'课泊 · 遮挡截图回归（无需登录）'});await window.loadURL('about:blank');
+ window=new BrowserWindow({width:1224,height:840,show:true,title:'课栈 · 遮挡截图回归（无需登录）'});await window.loadURL('about:blank');
  let port;for(let i=0;i<100;i++){try{port=+fs.readFileSync(path.join(data,'DevToolsActivePort'),'utf8').split('\n')[0];break}catch{await sleep(30)}}assert.ok(port);
  manager=new EmbeddedBrowser(window,{dataDir:data,debugPort:port});const created=await manager.create({url:'http://127.0.0.1:'+server.address().port,show:false});
  const c=webContents.fromDevToolsTargetId(created.targetId);for(let i=0;i<100&&(c.isLoading()||c.getURL()==='about:blank');i++)await sleep(40);await sleep(200);

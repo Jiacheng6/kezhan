@@ -60,7 +60,7 @@ const suite = [
   ['模块完整性 / 内容指纹', 'tools/test/check-modules.mjs'],
   ['失败分级 / 暂停策略', 'tools/test/test-pause-policy.mjs'],
   ['题目字体恢复', 'tools/test/test-font-recovery.mjs'],
-  ['课泊品牌与旧数据迁移', 'tools/test/test-brand-migration.mjs'],
+  ['课栈品牌与旧数据迁移', 'tools/test/test-brand-migration.mjs'],
   ['真实字体网络恢复 / 精确来源', 'tools/test/test-question-font-recovery.mjs'],
   ['字体阻塞 / 截图恢复与中止', 'tools/test/test-question-capture.mjs'],
   ['失败自愈 / 截图降级 / 视频元数据', 'tools/test/test-self-heal.mjs'],

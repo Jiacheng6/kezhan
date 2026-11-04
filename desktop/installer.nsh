@@ -4,8 +4,9 @@
   StrCpy $launchLink "$appExe"
   ; Only remove the retired launcher after the renamed executable exists.
   ${if} $INSTDIR != ""
-  ${andIf} ${FileExists} "$INSTDIR\课泊.exe"
+  ${andIf} ${FileExists} "$INSTDIR\课栈.exe"
     Delete "$INSTDIR\学习通助手.exe"
+    Delete "$INSTDIR\课泊.exe"
   ${endif}
   ${if} ${FileExists} "$newStartMenuLink"
     CreateShortCut "$newStartMenuLink" "$appExe" "" "$appExe" 0 "" "" "${APP_DESCRIPTION}"

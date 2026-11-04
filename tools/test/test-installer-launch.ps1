@@ -25,7 +25,8 @@ Section
   ReadEnvStr $R0 KEBO_INSTALLER_FIXTURE_DIR
   ReadEnvStr $R1 KEBO_INSTALLER_FIXTURE_LINKS
   SetOutPath "$R0"
-  StrCpy $appExe "$R0\程序 文件\课泊.exe"
+  StrCpy $INSTDIR "$R0\程序 文件"
+  StrCpy $appExe "$R0\程序 文件\课栈.exe"
   StrCpy $newStartMenuLink "$R0\开始菜单.lnk"
   StrCpy $newDesktopLink "$R0\桌面.lnk"
   StrCpy $launchLink "$newStartMenuLink"
@@ -52,13 +53,22 @@ try {
   foreach($mode in @('yes','no')) {
     $run=Join-Path $fixture $mode
     New-Item -ItemType Directory -Path $run | Out-Null
+    $program = Join-Path $run '程序 文件'
+    New-Item -ItemType Directory -Path $program | Out-Null
+    foreach($name in @('课栈.exe','课泊.exe','学习通助手.exe')) {
+      [IO.File]::WriteAllText((Join-Path $program $name),'synthetic launcher fixture')
+    }
     $env:KEBO_INSTALLER_FIXTURE_DIR=$run
     $env:KEBO_INSTALLER_FIXTURE_LINKS=$mode
     $process=Start-Process -FilePath $fixtureExe -ArgumentList '/S' -WindowStyle Hidden -Wait -PassThru
     if($process.ExitCode -ne 0) { throw 'NSIS fixture execution failed' }
-    $expected=Join-Path $run '程序 文件/课泊.exe'
+    $expected=Join-Path $run '程序 文件/课栈.exe'
     $actual=[IO.File]::ReadAllText((Join-Path $run 'launch.txt'),[Text.Encoding]::Unicode)
     if($actual -ne $expected) { throw 'Post-install launch must use the installed executable directly' }
+    if(-not (Test-Path -LiteralPath $expected)) { throw 'Renamed launcher must be preserved' }
+    foreach($retired in @('课泊.exe','学习通助手.exe')) {
+      if(Test-Path -LiteralPath (Join-Path $program $retired)) { throw 'Retired launcher was not removed after successful rename' }
+    }
     foreach($name in @('开始菜单.lnk','桌面.lnk')) {
       $link=Join-Path $run $name
       if($mode -eq 'yes') {

@@ -60,7 +60,7 @@ public class TrayProbe
 
         // 更可靠：直接看进程有没有窗口
         Console.WriteLine("\n=== 我们的托盘进程窗口 ===");
-        var procs = System.Diagnostics.Process.GetProcessesByName("课泊");
+        var procs = System.Diagnostics.Process.GetProcessesByName("课栈");
         foreach (var p in procs)
         {
             Console.WriteLine("  PID " + p.Id + "  主窗口标题='" + p.MainWindowTitle + "'  handle=0x" + p.MainWindowHandle.ToInt64().ToString("X"));

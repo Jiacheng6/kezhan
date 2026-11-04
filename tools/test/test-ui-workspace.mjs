@@ -53,7 +53,7 @@ try{
     if(action==='startRecon')status.reconRunning=true;
     await route.fulfill({json:{ok:true,result:{started:true}}});sendStatus();
   });
-  await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);win.setContentSize(1240,800);win.setTitle('课泊 · 本地界面预览（演示数据）');win.showInactive();});
+  await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);win.setContentSize(1240,800);win.setTitle('课栈 · 本地界面预览（演示数据）');win.showInactive();});
   await page.reload();await revealTestTools(page);await page.locator('[data-tab=overview]').click();
   await revealTestTools(page);await page.locator('[data-tab=overview]').click();
   await page.locator('#overviewTaskCount').filter({hasText:'18'}).waitFor();
@@ -185,7 +185,7 @@ try{
   console.log('UI 验证通过；截图目录：'+output);
   if(process.argv.includes('--hold')){
     keepOpen=true;
-    await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);win.setTitle('课泊 · 本地界面预览（演示数据）');win.show();});
+    await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);win.setTitle('课栈 · 本地界面预览（演示数据）');win.show();});
     console.log('演示窗口已打开，使用隔离数据。');
     await new Promise(resolve=>application.process().once('exit',resolve));
   }

@@ -74,7 +74,7 @@ for(const [alternate, failure] of [[info('9.9.8'),/版本或校验值不同/],[i
 }
 // Copy + checksum + loopback feed is the actual offline path, without executing an installer.
 const body=Buffer.alloc(256*1024,77),version='9.9.9';
-const installer=path.join(root,`Kebo-${version}-Setup.exe`),manifest=path.join(root,'release-manifest.json');
+const installer=path.join(root,`Kezhan-${version}-Setup.exe`),manifest=path.join(root,'release-manifest.json');
 const meta={version,files:[{file:path.basename(installer),bytes:body.length,sha256:crypto.createHash('sha256').update(body).digest('hex')}]};
 fs.writeFileSync(installer,body);fs.writeFileSync(manifest,JSON.stringify(meta));
 const local=await prepareOfflineUpdate({installer,manifest},{dataDir:root,currentVersion:'0.6.9'});

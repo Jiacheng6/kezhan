@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const BRAND = Object.freeze({ title: '课泊', id: 'com.kebo.app', dataName: 'Kebo', legacyDataName: 'XuexitongAssistant', legacyTitle: '学习通助手' });
+const BRAND = Object.freeze({ title: '课栈', id: 'com.kebo.app', dataName: 'Kebo', legacyDataName: 'XuexitongAssistant', legacyTitle: '学习通助手' });
 function migrateProfile(appData) {
   const directory = path.join(appData, BRAND.dataName), legacy = path.join(appData, BRAND.legacyDataName);
   if (fs.existsSync(directory)) return { directory, migrated: false };

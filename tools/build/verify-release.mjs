@@ -63,7 +63,7 @@ const icon = fs.readFileSync(path.join(app, 'desktop/assets/icon.ico'));
 assert.ok(icon.readUInt16LE(4) >= 6, 'Windows 图标必须包含小尺寸');
 const feed = fs.readFileSync(path.join(dist, 'latest.yml'), 'utf8');
 assert.match(feed, new RegExp(`^version: ${pkg.version.replaceAll('.', '\\.')}\\s*$`, 'm'));
-const installerName = `Kebo-${pkg.version}-Setup.exe`;
+const installerName = `Kezhan-${pkg.version}-Setup.exe`;
 assert.ok(feed.includes(`path: ${installerName}`), '在线更新应指向本次安装包');
 const expectedSha512 = hash(path.join(dist, installerName), 'sha512', 'base64');
 assert.ok(feed.includes(`sha512: ${expectedSha512}`), '在线更新 SHA-512 校验值不一致');
@@ -111,7 +111,7 @@ for (const full of walk(app)) {
   assert.equal(/\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})\b/.test(content), false, `发布包疑似含 GitHub 凭据：${relative}`);
   if (!isPublicNumericAsset(relative, content)) assert.equal(/\b1[3-9]\d{9}\b|\b\d{17}[\dXx]\b/.test(content), false, `发布包疑似含手机号或身份证号：${relative}`);
 }
-const files = fs.readdirSync(dist).filter((name) => name.startsWith(`Kebo-${pkg.version}-`) && /\.(exe|zip)$/.test(name));
+const files = fs.readdirSync(dist).filter((name) => name.startsWith(`Kezhan-${pkg.version}-`) && /\.(exe|zip)$/.test(name));
 assert.ok(files.some((name) => name.endsWith('-Setup.exe')), '缺少安装包');
 assert.ok(files.some((name) => name.endsWith('.zip')), '缺少免安装包');
 const manifest = files.map((name) => {

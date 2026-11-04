@@ -17,5 +17,5 @@ const storage={'xxt-theme':'pink','xxt-library-startup':'show','kebo-theme':'blu
 Object.defineProperties(storage,{getItem:{value:key=>storage[key]??null},setItem:{value:(key,value)=>{storage[key]=value;}}});
 vm.runInNewContext(fs.readFileSync('src/ui/brand-storage.js','utf8'),{localStorage:storage});assert.equal(storage['kebo-theme'],'blue');assert.equal(storage['kebo-library-startup'],'show');assert.equal(storage.other,'keep');
 const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));assert.equal(pkg.build.appId,BRAND.id);assert.equal(pkg.build.productName,BRAND.title);assert.equal(pkg.build.win.executableName,BRAND.title);assert.equal(pkg.build.nsis.guid,'498a0d80-d4f9-5e0f-b76b-f2eb2460b8bc');
-assert.match(pkg.build.nsis.artifactName,/^Kebo-/);assert.equal(pkg.name,'kebo');
+assert.match(pkg.build.nsis.artifactName,/^Kezhan-/);assert.equal(pkg.name,'kebo');
 console.log('✓ 品牌、旧版安装GUID、完整数据复制、原目录保留、已有新数据保护、失败回退、旧环境变量和外观偏好兼容');

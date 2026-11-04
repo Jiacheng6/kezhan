@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $version = (Get-Content -LiteralPath (Join-Path $projectRoot 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
 $releaseRoot = if($env:KEBO_RELEASE_DIR) { $env:KEBO_RELEASE_DIR } else { Join-Path $projectRoot 'dist' }
-$archive = Join-Path $releaseRoot "Kebo-$version-win-x64.zip"
+$archive = Join-Path $releaseRoot "Kezhan-$version-win-x64.zip"
 $receiverDir = Join-Path $projectRoot ('.desktop-test/接收方 ' + $version + ' ' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Path $receiverDir | Out-Null
 $cacheRoot = if($env:ELECTRON_BUILDER_CACHE) { $env:ELECTRON_BUILDER_CACHE } else { Join-Path $env:LOCALAPPDATA 'electron-builder/Cache' }
@@ -19,7 +19,7 @@ try {
   $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
   if (Get-Command node -ErrorAction SilentlyContinue) { throw '测试 PATH 中不应存在 Node.js' }
   $env:KEBO_TEST_DATA_DIR = $testData
-  $application = Start-Process -FilePath (Join-Path $receiverDir '课泊.exe') -ArgumentList '--smoke-test' -WindowStyle Hidden -Wait -PassThru
+  $application = Start-Process -FilePath (Join-Path $receiverDir '课栈.exe') -ArgumentList '--smoke-test' -WindowStyle Hidden -Wait -PassThru
   if ($application.ExitCode -ne 0) { throw "桌面进程退出码 $($application.ExitCode)" }
   $report = Get-Content -LiteralPath (Join-Path $testData 'smoke-result.json') -Raw -Encoding UTF8 | ConvertFrom-Json
   if (-not $report.packaged -or -not $report.status.ready -or -not $report.status.settings.essayAutoFill) { throw '打包程序未就绪或缺少简答设置' }
