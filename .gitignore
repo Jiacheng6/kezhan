@@ -179,6 +179,7 @@ tools/test/*
 !tools/test/test-web-turn.mjs
 !tools/test/test-doubao-receipt.mjs
 api-config.bin*
+answer-bank.bin*
 !tools/test/test-ai-api.mjs
 !tools/test/test-ai-resume.mjs
 !tools/test/test-web-resume.mjs

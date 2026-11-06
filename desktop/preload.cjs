@@ -1,6 +1,19 @@
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('desktopApp', Object.freeze({
   apiStatus:()=>ipcRenderer.invoke('desktop:api-status'),
+  bankStatus:()=>ipcRenderer.invoke('desktop:bank-status'),
+  bankSave:patch=>ipcRenderer.invoke('desktop:bank-save',patch),
+  bankQuota:refresh=>ipcRenderer.invoke('desktop:bank-quota',!!refresh),
+  openBankPortal:(importToken,fresh=false)=>ipcRenderer.invoke('desktop:bank-portal',!!importToken,!!fresh),
+  openBankEdge:(account=false)=>ipcRenderer.invoke('desktop:bank-edge',!!account),
+  onBankImport:callback=>{
+    const listener=(_,state)=>callback(state); ipcRenderer.on('desktop:bank-import',listener);
+    return ()=>ipcRenderer.removeListener('desktop:bank-import',listener);
+  },
+  onBankQuota:callback=>{
+    const listener=(_,quota)=>callback(quota); ipcRenderer.on('desktop:bank-quota',listener);
+    return ()=>ipcRenderer.removeListener('desktop:bank-quota',listener);
+  },
   apiSave:patch=>ipcRenderer.invoke('desktop:api-save',patch),
   apiTest:()=>ipcRenderer.invoke('desktop:api-test'),
   notifications: () => ipcRenderer.invoke('desktop:notifications'),

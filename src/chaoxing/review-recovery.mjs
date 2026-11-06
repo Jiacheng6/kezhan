@@ -2,20 +2,21 @@
 // dynamic credentials. Never navigate directly to a stale doHomeWorkNew URL.
 import { buildChecklist } from './checklist.mjs';
 import { cardsUrl } from './section.mjs';
-import { extractQuestions, waitWorkFrame, findWorkFrame, getWorkMeta, selectOptions, readSelection } from './quiz.mjs';
+import { extractQuestions, waitWorkFrame, findWorkFrame, getWorkMeta, selectOptions, readSelection, fillQuizBlanks, QUIZ_BLOCK_SELECTOR } from './quiz.mjs';
 import { fillEssayAnswer, readEssayAnswer } from './essay.mjs';
-import { getKeptPage, registerKeptPage, dropKeptPage, submitKeptWork, workIdentity } from './quizrun.mjs';
+import { getKeptPage, registerKeptPage, dropKeptPage, submitKeptWork, findStandaloneWork } from './quizrun.mjs';
 import { loadState, listReviewItems, markReviewItem, clearReviewByTask, setTaskStatus, mutateState } from '../state.mjs';
 import { listKeptPages } from './quizrun.mjs';
 import { normalizeEssayText } from '../ai/parse.mjs';
 import { newTaskPage, releasePage, setPageBusy, markSavedReviewPage } from '../browser/pages.mjs';
 import { withReviewLock } from './review-lock.mjs';
-import { submissionState, pageSubmissionState } from './submission-state.mjs';
+import { submissionState, pageSubmissionState, frameWorkIdentity, WORK_SUBMIT_SELECTOR } from './submission-state.mjs';
 import {recoverReviewIdentity} from './review-identity.mjs';
 export { withReviewLock } from './review-lock.mjs';
 
 const text=value=>String(value||'').replace(/\s+/g,' ').trim();
 const optionSignature=options=>JSON.stringify((options||[]).map(o=>[String(o.letter),text(o.text)]).sort((a,b)=>a[0].localeCompare(b[0])));
+const optionContents = options => JSON.stringify((options || []).map(option => text(option.text)).sort());
 // Legacy essay records used answerEditor0/1 (a render index) as a question ID.
 // Those indices change with ordering and cannot be used as platform identity.
 const questionId=item=>{const id=String(item.questionId||item.archive?.questionId||'');return /^\d{1,4}$/.test(id)&&item.qtype==='essay'?'':id;};
@@ -25,7 +26,7 @@ async function waitReviewFrame(page,waitMs){
   while(Date.now()<deadline){
     for(const frame of page.frames()){
       if(!/mooc-ans\/(?:api\/)?work\/|\/work\/selectWorkQuestion/.test(frame.url()))continue;
-      const hasQuestions=await frame.evaluate(()=>document.querySelectorAll('.TiMu,.newTiMu').length>0).catch(()=>false);
+      const hasQuestions=await frame.evaluate(selector=>document.querySelectorAll(selector).length>0,QUIZ_BLOCK_SELECTOR).catch(()=>false);
       if(hasQuestions||(await submissionState(frame).catch(()=>({}))).submitted)return frame;
     }
     await page.waitForTimeout(300);
@@ -38,12 +39,22 @@ export function matchReviewQuestions(items, questions) {
   return items.map(item=>{
     const id=questionId(item),stem=text(item.archive?.stemTextRaw);
     const candidates=questions.filter(q=>q.qtype===item.qtype && (id ? String(q.questionId)===id :
-      !!stem&&text(q.stemTextRaw)===stem&&optionSignature(item.options)===optionSignature(q.options)));
+      !!stem&&text(q.stemTextRaw)===stem&&optionContents(item.options)===optionContents(q.options)));
     if(candidates.length!==1||used.has(candidates[0].domIndex))throw new Error(`第 ${item.questionIndex} 题无法唯一对应，题目可能已变化；已保留草稿，请人工核对`);
     const question=candidates[0];
-    if(optionSignature(item.options)!==optionSignature(question.options))throw new Error(`第 ${item.questionIndex} 题的选项已变化，未恢复或提交`);
+    if (stem && text(question.stemTextRaw) && stem !== text(question.stemTextRaw)) throw new Error(`第 ${item.questionIndex} 题的题干已变化，未恢复或提交`);
+    let letters = item.letters || [];
+    if(optionSignature(item.options)!==optionSignature(question.options)) {
+      if (optionContents(item.options) !== optionContents(question.options)) throw new Error(`第 ${item.questionIndex} 题的选项已变化，未恢复或提交`);
+      letters = letters.map(letter => {
+        const label = text(item.options.find(option => option.letter === letter)?.text);
+        const matches = question.options.filter(option => text(option.text) === label);
+        if (!label || matches.length !== 1 || item.options.filter(option => text(option.text) === label).length !== 1) throw new Error(`第 ${item.questionIndex} 题的选项无法唯一对应`);
+        return matches[0].letter;
+      });
+    }
     used.add(question.domIndex);
-    return {item,question};
+    return {item,question,letters};
   });
 }
 
@@ -55,15 +66,12 @@ async function readAnswer(frame, question) {
   }
   if(question.qtype==='essay'){
     const answer=await readEssayAnswer(frame,question.domIndex);
-    return {ready:!!answer.ok&&!!text(answer.visibleText)&&text(answer.visibleText)===text(answer.storedText),value:normalizeEssayText(answer.visibleText)};
+    const draftVerified = !!answer.ok && !!text(answer.visibleText) && text(answer.visibleText) === text(answer.storedText);
+    return {ready:draftVerified && answer.formVerified, draftVerified, value:normalizeEssayText(answer.visibleText)};
   }
   if(question.qtype==='fill'){
-    const ready=await frame.evaluate(index=>{
-      const q=document.querySelectorAll('.TiMu, .newTiMu')[index];
-      const inputs=[...(q?.querySelectorAll('textarea,input[type="text"],[contenteditable="true"]')||[])];
-      return inputs.length>0&&inputs.every(input=>String(input.value??input.textContent??'').trim());
-    },question.domIndex);
-    return {ready:!!ready,value:null};
+    const answer = await fillQuizBlanks(frame, question.domIndex);
+    return {ready:answer.ok,value:answer.values || []};
   }
   return {ready:false,value:null};
 }
@@ -76,30 +84,30 @@ export async function restoreReviewAnswers(frame, items, {expectedCount, restore
   const plan=[];
   // Validate the whole mapping and existing drafts before changing any answer.
   for(const pair of matches){
-    const {item,question}=pair;
+    const {item,question,letters}=pair;
     const approved=item.autoFilled===true||item.filled?.verified===true||item.editedByHuman===true||item.savedAnswer===true;
-    const value=question.qtype==='essay'?normalizeEssayText(item.textAnswer):item.letters;
+    const value=question.qtype==='essay'?normalizeEssayText(item.textAnswer):question.qtype==='fill'?item.blanks:letters;
     if(!restoreAnswers||!approved||!value?.length)continue;
-    if(!['essay','single','multiple','judge'].includes(question.qtype))continue;
-    if(question.qtype!=='essay'&&(!Array.isArray(value)||value.some(letter=>!question.options.some(option=>option.letter===letter))))throw new Error(`第 ${question.index} 题的已存答案不在当前选项中`);
+    if(!['essay','fill','single','multiple','judge'].includes(question.qtype))continue;
+    if(!['essay','fill'].includes(question.qtype)&&(!Array.isArray(value)||value.some(letter=>!question.options.some(option=>option.letter===letter))))throw new Error(`第 ${question.index} 题的已存答案不在当前选项中`);
     const current=await readAnswer(frame,question);
-    const equal=question.qtype==='essay'?text(current.value)===text(value):JSON.stringify([...current.value].sort())===JSON.stringify([...value].sort());
+    const equal=question.qtype==='essay'?text(current.value)===text(value):question.qtype==='fill'?JSON.stringify(current.value)===JSON.stringify(value):JSON.stringify([...current.value].sort())===JSON.stringify([...value].sort());
     if(current.ready&&!equal&&!item.editedByHuman)throw new Error(`第 ${question.index} 题已有不同答案，未覆盖；请在待审答案中核对修改后重试`);
     plan.push({...pair,value,equal});
   }
   let restored=0;
   for(const {item,question,value,equal}of plan){
     if(!equal){
-      const result=question.qtype==='essay'?await fillEssayAnswer(frame,question.domIndex,value,{overwrite:!!item.editedByHuman}):await selectOptions(frame,question.domIndex,value);
+      const result=question.qtype==='essay'?await fillEssayAnswer(frame,question.domIndex,value,{overwrite:!!item.editedByHuman}):question.qtype==='fill'?await fillQuizBlanks(frame,question.domIndex,value):await selectOptions(frame,question.domIndex,value);
       if(!result.ok)throw new Error(`第 ${question.index} 题恢复失败：${result.error||'点选失败'}`);
       restored++;
     }
     const back=await readAnswer(frame,question);
-    const verified=question.qtype==='essay'?text(back.value)===text(value):JSON.stringify([...back.value].sort())===JSON.stringify([...value].sort());
-    if(!back.ready||!verified)throw new Error(`第 ${question.index} 题恢复后回读不一致，未提交`);
+    const verified=question.qtype==='essay'?text(back.value)===text(value):question.qtype==='fill'?JSON.stringify(back.value)===JSON.stringify(value):JSON.stringify([...back.value].sort())===JSON.stringify([...value].sort());
+    if(!(question.qtype==='essay'?back.draftVerified:back.ready)||!verified)throw new Error(`第 ${question.index} 题恢复后回读不一致，未提交`);
     markReviewItem(item.id,{status:'filled',filled:{verified:true,restored:true},fillError:null,lastVerifiedAt:new Date().toISOString()});
   }
-  for(const {item,question}of matches)markReviewItem(item.id,{domIndex:question.domIndex,questionId:question.questionId||questionId(item)});
+  for(const {item,question,letters}of matches)markReviewItem(item.id,{domIndex:question.domIndex,questionId:question.questionId||questionId(item),letters,options:question.options});
   const missing=[];
   for(const question of questions)if(!(await readAnswer(frame,question)).ready)missing.push(question.index);
   return {restored,ready:missing.length===0,missing,total:questions.length};
@@ -127,9 +135,9 @@ export async function syncSubmittedReviews({keys}={}) {
       const entry=getKeptPage(record.key);if(!entry)return;
       if(entry.info?.type==='discussion'){if(await (await import('./discussion.mjs')).syncDiscussionReview(record.key,entry))synced++;return;}
       const expected=entry.info?.workIdentity||{};
-      const result=await pageSubmissionState(entry.page,findWorkFrame(entry.page));
+      const result=await pageSubmissionState(entry.page,findWorkFrame(entry.page),{expected:expected.workanswerid ? expected : null});
       if(!result.submitted)return;
-      const actual=workIdentity(result.frame.url());
+      const actual=await frameWorkIdentity(result.frame);
       if(!expected.workid||actual.workid!==expected.workid)return;
       if(Object.entries(expected).some(([field,value])=>actual[field]&&actual[field]!==value))return;
       finishManualReview(record.key);synced++;
@@ -158,6 +166,13 @@ async function reopenReviewWorkCore(ctx,key,{personId,restoreAnswers=true,waitMs
     if(hit){registerKeptPage(key,hit,info,{busy:true});entry=getKeptPage(key);}
   }
   if(!entry){
+    if (info.task?.standalone) {
+      const page = await findStandaloneWork(ctx, { expected: info.workIdentity, personId, results: true });
+      if (!page) throw new Error('请从课程作业列表打开原独立作业或结果页，然后点击打开并核对');
+      registerKeptPage(key, page, info, {busy:true});
+      entry = getKeptPage(key);
+      reopened = true;
+    } else {
     const known=buildChecklist()?.courses.flatMap(course=>course.tasks||[]).find(task=>task.key===key);
     const task={...known,...info.task};
     for(const field of ['courseId','clazzId','knowledgeId'])task[field]??=items[0][field];
@@ -180,13 +195,14 @@ async function reopenReviewWorkCore(ctx,key,{personId,restoreAnswers=true,waitMs
       registerKeptPage(key,page,{...info,task:{...task,cardNum},personId:String(personId)},{busy:true});
       entry=getKeptPage(key);reopened=true;
     }catch(error){await page.close().catch(()=>{});releasePage(page);throw error;}
+    }
   }
-  const detected=await pageSubmissionState(entry.page,findWorkFrame(entry.page));
-  const detectedIdentity=detected.frame?workIdentity(detected.frame.url()):{};
+  const detected=await pageSubmissionState(entry.page,findWorkFrame(entry.page),{expected:info.workIdentity?.workanswerid ? info.workIdentity : null});
+  const detectedIdentity=detected.frame?await frameWorkIdentity(detected.frame):{};
   if(detected.submitted&&info.workIdentity?.workid&&detectedIdentity.workid===info.workIdentity.workid&&!Object.entries(info.workIdentity).some(([field,value])=>detectedIdentity[field]&&detectedIdentity[field]!==value)){finishManualReview(key);return {page:entry.page,alreadySubmitted:true,reopened,ready:true,restored:0};}
   let frame=await waitReviewFrame(entry.page,waitMs)||findWorkFrame(entry.page);
   if(!frame)throw new Error('作业页面未加载，请检查登录或验证提示');
-  let actual=workIdentity(frame.url());
+  let actual=await frameWorkIdentity(frame);
   if(Object.entries(info.workIdentity||{}).some(([field,value])=>value&&actual[field]!==value))throw new Error('作业或作答次数已变化，未恢复或提交，请人工核对');
   if((await readSubmissionState(frame)).submitted){
     if(!info.workIdentity?.workid){
@@ -199,36 +215,38 @@ async function reopenReviewWorkCore(ctx,key,{personId,restoreAnswers=true,waitMs
   }
   let pendingRecovered=false;
   if(info.submissionPending){
+    const verificationOnly = info.submissionVerificationOnly;
     const hasConfirmation=async()=>{
       const counts=await Promise.all(entry.page.frames().map(f=>f.locator('#popok, #popOk').filter({visible:true}).count().catch(()=>0)));
       return counts.some(Boolean);
     };
-    if(await hasConfirmation()){
+    if(!verificationOnly && await hasConfirmation()){
       const result=await restoreReviewAnswers(frame,items,{restoreAnswers:false,expectedCount:info.totalQuestions});
       return {...result,page:entry.page,reopened,alreadySubmitted:false,pendingConfirmation:true};
     }
     // A submission retry must never reset an uncertain request. Only the user's
     // separate open/restore or edit action may reconcile a fresh server page.
     if(!reconcilePending)throw new Error('上次提交结果尚未确认，请先点击“打开并核对”恢复平台状态，再决定是否提交；待审记录已保留');
-    if(!reopened){
+    if(!reopened && !(verificationOnly && info.task?.standalone)){
       await entry.page.reload({waitUntil:'domcontentloaded',timeout:60000});
       frame=await waitReviewFrame(entry.page,waitMs)||findWorkFrame(entry.page);
       if(!frame)throw new Error('未能重新核对平台状态，待审答案已保留，请检查登录或验证提示');
-      actual=workIdentity(frame.url());
+      actual=await frameWorkIdentity(frame);
     }
     if(!info.workIdentity?.workid||!info.workIdentity?.workanswerid||Object.entries(info.workIdentity).some(([field,value])=>value&&actual[field]!==value))throw new Error('无法核对原作业与作答次数，未恢复或提交；待审答案已保留');
     const refreshed=await pageSubmissionState(entry.page,frame);
     if(refreshed.submitted){
-      const identity=workIdentity(refreshed.frame.url());
+      const identity=await frameWorkIdentity(refreshed.frame);
       if(Object.entries(info.workIdentity).some(([field,value])=>value&&identity[field]!==value))throw new Error('平台结果与原作业不一致，待审答案已保留');
       finishManualReview(key);
       return {page:entry.page,alreadySubmitted:true,reopened,ready:true,restored:0};
     }
+    if (verificationOnly) throw new Error('上次提交仍待平台确认，请核对原作业结果；待审答案已保留');
     if(await hasConfirmation())throw new Error('平台仍有提交确认，请先核对确认框；待审答案已保留');
-    const editable=await frame.evaluate(()=>{
+    const editable=await frame.evaluate(selector=>{
       if(!/\/work\/(?:doHomeWorkNew|selectWorkQuestion)(?:[/?]|$)/i.test(location.pathname))return false;
-      return [...document.querySelectorAll('.btnSubmit')].some(e=>e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})&&!e.matches(':disabled')&&e.getAttribute('aria-disabled')!=='true');
-    });
+      return [...document.querySelectorAll(selector)].some(e=>e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})&&!e.matches(':disabled')&&e.getAttribute('aria-disabled')!=='true');
+    },WORK_SUBMIT_SELECTOR);
     if(!editable)throw new Error('平台尚未显示可编辑的原作业，未恢复或提交；请人工核对，待审答案已保留');
     pendingRecovered=true;
   }
@@ -243,7 +261,7 @@ export async function submitReviewWork(ctx,key,options) {
     if((await import('./discussion.mjs')).isDiscussionReview(key))return (await import('./discussion.mjs')).submitDiscussionReview(ctx,key,options);
     const prepared=await reopenReviewWork(ctx,key,{...options,reconcilePending:false});
     if(prepared.alreadySubmitted){await prepared.page.close().catch(()=>{});releasePage(prepared.page);dropKeptPage(key);return {ok:true,alreadySubmitted:true};}
-    if(!prepared.ready)return {ok:false,error:`第 ${prepared.missing.join('、')} 题尚未填写完整，已保留答案，请补全后提交`};
+    if(!prepared.ready)return {ok:false,error:`第 ${prepared.missing.join('、')} 题尚未填写完整或未同步到提交表单，已保留答案，请核对后提交`};
     setPageBusy(prepared.page,true);
     try{return await submitKeptWork(key);}finally{if(!prepared.page.isClosed())setPageBusy(prepared.page,false);}
   });

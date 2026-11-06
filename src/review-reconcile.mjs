@@ -1,12 +1,12 @@
 // Read-only platform reconciliation. Never fills answers or activates submission.
 import {loadState,listReviewItems} from './state.mjs';
 import {newTaskPage,releasePage,isPageBusy} from './browser/pages.mjs';
-import {getKeptPage,workIdentity} from './chaoxing/quizrun.mjs';
+import {findStandaloneWork,getKeptPage} from './chaoxing/quizrun.mjs';
 import {finishManualReview} from './chaoxing/review-recovery.mjs';
 import {withReviewLock,isReviewLocked} from './chaoxing/review-lock.mjs';
 import {cardsUrl} from './chaoxing/section.mjs';
 import {findWorkFrame,extractQuestions} from './chaoxing/quiz.mjs';
-import {pageSubmissionState} from './chaoxing/submission-state.mjs';
+import {frameWorkIdentity,pageSubmissionState} from './chaoxing/submission-state.mjs';
 import {readZhihuishuGrade} from './platforms/zhihuishu/quiz-submit.mjs';
 import {recordZhihuishuSubmitted} from './platforms/zhihuishu/quiz-task.mjs';
 import {throwIfStopped,waitForRead} from './control.mjs';
@@ -46,6 +46,13 @@ export async function reconcileOneReview(context,key,{personId,shouldStop,waitMs
   if(zhs){url=zhihuishuResultUrl(record?.paperKey);if(!url)return {key,state:'unconfirmed',reason:'缺少原试卷身份，草稿保留'};}
   else{
    if(info.personId&&String(info.personId)!==String(personId))return {key,state:'unconfirmed',reason:'登录账号与草稿不一致'};
+   if(info.task?.standalone){
+    const page=await findStandaloneWork(context,{expected:info.workIdentity,personId,results:true});
+    if(!page)return {key,state:'unconfirmed',reason:'请从课程作业列表打开原作业的结果页'};
+    const result=await waitForRead(()=>pageSubmissionState(page,findWorkFrame(page),{expected:info.workIdentity}),{shouldStop,timeoutMs:2000}).catch(()=>null);
+    if(!result?.submitted)return {key,state:'unconfirmed',reason:'原作业尚无可核对的提交结果'};
+    finishManualReview(key,'已重新核对平台提交结果',result);return {key,state:'submitted',score:result.score};
+   }
    const t=info.task||{},item=items[0],task={...t,courseId:t.courseId||item.courseId,clazzId:t.clazzId||item.clazzId,knowledgeId:t.knowledgeId||item.knowledgeId};
    let cardNum=task.cardNum;
    try{const old=new URL(kept?.url);if(!old.hostname.endsWith('chaoxing.com'))return {key,state:'unconfirmed',reason:'原页面域名不匹配'};cardNum??=Number(old.searchParams.get('num'));}catch{}
@@ -64,7 +71,7 @@ export async function reconcileOneReview(context,key,{personId,shouldStop,waitMs
      if(grade){recordZhihuishuSubmitted(key,grade);return {key,state:'submitted',score:grade.score};}
     }else{
      const result=await waitForRead(()=>pageSubmissionState(page,findWorkFrame(page)),{shouldStop,timeoutMs:2000,message:'学习通结果页未响应，草稿保留'});
-     if(result.submitted){const actual=workIdentity(result.frame.url());
+     if(result.submitted){const actual=await frameWorkIdentity(result.frame);
       if(info.workIdentity?.workid&&info.workIdentity?.workanswerid){if(Object.entries(info.workIdentity).some(([k,v])=>v&&actual[k]!==v))return {key,state:'unconfirmed',reason:'平台作业或作答身份改变，草稿保留'};}
       else if(!matchesLegacySubmittedQuestions(items,await waitForRead(()=>extractQuestions(result.frame),{shouldStop,timeoutMs:2000})))return {key,state:'unconfirmed',reason:'旧记录身份缺失且平台题目无法完整对应，草稿保留'};
       finishManualReview(key,'已重新核对平台提交结果',result);return {key,state:'submitted',score:result.score};

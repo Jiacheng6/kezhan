@@ -36,12 +36,12 @@ try {
   await closeWindow();await page.locator('#desktopClosePanel[open]').waitFor();await page.locator('#closeCancelIcon').click();
   await page.locator('#desktopClosePanel').waitFor({state:'hidden'});
   await page.goto(url);await enterTestWorkspace(page);
-  await revealTestTools(page);await page.locator('#toggleClassicUi').click();await closeWindow();await page.locator('#desktopClosePanel[open]').waitFor();
+  await revealTestTools(page,'appearance');await page.locator('#toggleClassicUi').click();await closeWindow();await page.locator('#desktopClosePanel[open]').waitFor();
   const colors=await page.locator('#desktopClosePanel').evaluate(el=>({dialog:getComputedStyle(el).backgroundColor,page:getComputedStyle(document.documentElement).getPropertyValue('--bg2').trim()}));
   assert.ok(colors.dialog!=='rgba(0, 0, 0, 0)');
   await page.screenshot({path:path.join(out,'close-classic.png'),animations:'disabled'});
   await page.locator('#closeCancel').click();
-  await revealTestTools(page);await page.locator('#toggleClassicUi').click();
+  await revealTestTools(page,'appearance');await page.locator('#toggleClassicUi').click();
   const ended=new Promise(resolve=>application.process().once('exit',resolve));
   await closeWindow();await page.locator('#closeExit').click();await ended;exited=true;
   assert.match(fs.readFileSync(path.join(data,'logs/desktop.log'),'utf8'),/后台退出 0/);

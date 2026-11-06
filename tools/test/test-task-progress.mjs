@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { taskProgressModel, platformTaskStatus, totalProgressModel,runSummaryLabel } from '../../src/ui/task-progress.js';
+import { activeTaskPlatforms, mainTaskStatus, taskProgressModel, platformTaskStatus, totalProgressModel,runSummaryLabel } from '../../src/ui/task-progress.js';
 import { currentTaskPage, pageKind, sortedPages } from '../../src/ui/web-pages.js';
 const video = { running: true, progress: { total: 8, done: 2, current: '演示课程 · 视频', taskType: 'video', percent: .642, currentTime: 385, duration: 600, playbackRate: 2 } };
 let model = taskProgressModel(video);
@@ -11,12 +11,19 @@ assert.equal(taskProgressModel({ running: true, progress: { percent: '0.5' } }).
 assert.equal(taskProgressModel({ reconRunning: true, progress: { percent: .9 } }).fraction, null);
 assert.equal(taskProgressModel({ ...video, running: false }).percent, '64.2');
 assert.equal(taskProgressModel({ ...video, running: false }).label, '已停止');
+assert.equal(taskProgressModel(video).particleRate, 1.65);
+assert.equal(taskProgressModel({ ...video, progress: { ...video.progress, paused: true } }).moving, false);
+assert.equal(taskProgressModel({ ...video, progress: { ...video.progress, stopping: true } }).moving, false);
 assert.equal(taskProgressModel({ ...video, progress: { ...video.progress, phase: 'verifying', percent: .9 } }).label, '核对平台状态');
 assert.equal(taskProgressModel({ ...video, progress: { ...video.progress, phase: 'verifying', percent: .9 } }).percent, '90.0');
 for (const [phase, expected] of [['asking', '25.0'], ['done', '50.0']]) {
   const quiz = taskProgressModel({ running: true, progress: { taskType: 'work', questionIndex: 1, questionTotal: 4, phase } });
   assert.equal(quiz.percent, expected);assert.match(quiz.detail, /题/);
 }
+const bankLookup = taskProgressModel({ running: true, progress: { taskType: 'work', questionIndex: 0, questionTotal: 4, phase: 'bank-lookup', answerSource: 'bank' } });
+assert.equal(bankLookup.fraction, 0);
+assert.equal(bankLookup.label, '正在查询题库');
+assert.equal(bankLookup.particleRate, taskProgressModel(video).particleRate);
 assert.equal(taskProgressModel({}).visible, false);
 const dual = { running:true, progress:{current:'aggregate must not leak',percent:.99}, platforms:{
   chaoxing:{running:true,total:4,done:1,current:'学习通视频',progress:{taskType:'video',percent:.642,currentTime:385,duration:600}},
@@ -25,6 +32,10 @@ const dual = { running:true, progress:{current:'aggregate must not leak',percent
 assert.equal(taskProgressModel(platformTaskStatus(dual,'chaoxing')).percent,'64.2');
 assert.equal(taskProgressModel(platformTaskStatus(dual,'zhihuishu')).percent,'25.0');
 assert.equal(taskProgressModel(platformTaskStatus(dual,'zhihuishu')).label,'正在读取 AI 回答');
+assert.deepEqual(activeTaskPlatforms(dual),['chaoxing','zhihuishu']);
+assert.equal(taskProgressModel(mainTaskStatus(dual)).visible,false,'并发时只显示各平台任务，避免重复总览');
+assert.equal(taskProgressModel(mainTaskStatus({platforms:{zhihuishu:dual.platforms.zhihuishu}})).title,'智慧树测验');
+assert.equal(totalProgressModel({platforms:{},...video}).fraction,.25,'旧版运行状态仍计入总进度');
 assert.deepEqual(totalProgressModel(dual),{total:7,done:2,review:1,running:true,fraction:2/7});
 assert.equal(totalProgressModel({}).fraction,0);
 const finishedRun={running:false,phase:'completed',done:1,total:1,current:'已完成视频',progress:{taskType:'video',percent:254/312,currentTime:254,duration:312}};

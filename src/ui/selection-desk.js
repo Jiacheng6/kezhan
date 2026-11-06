@@ -40,7 +40,7 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
         <div class="sd-total"><strong id="deskTotal">0</strong><span>个任务 <small id="deskTotalCourses"></small></span></div>
         <p id="deskPendingCounts" class="sd-micro"></p>
         <details class="sd-selected-details"><summary>查看已选范围</summary><p id="deskTypeCounts" class="sd-micro"></p><div id="deskSelected" class="sd-selected-list"></div></details>
-        <div id="deskProgress"></div><div id="deskRunActions" class="sd-run-actions"></div>
+        <div id="deskRunActions" class="sd-run-actions"></div>
         <div id="deskConnection" class="sd-connection" hidden><p id="deskConnectionMessage"></p><button id="deskConnect" class="text-button">连接与登录 →</button></div>
         <div class="sd-save"><span id="deskDirty" role="status">与已保存选择一致</span><div><button id="deskSave" class="text-button">保存选择</button><button id="deskUndo" class="text-button" disabled>撤销修改</button></div></div>
         <p id="deskFeedback" class="sd-feedback" role="status" aria-live="polite"></p>
@@ -58,8 +58,7 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
   // Move the original buttons with their existing listeners; there remains one
   // start/stop path with the same save-before-start and backend guards.
   $('deskRunActions').append(...document.querySelectorAll('#panel-courses > .page-heading [data-action]'));
-  $('deskProgress').append(document.getElementById('runBar'));
-  const runActions = $('deskRunActions'), runProgress = $('deskProgress');
+  const runActions = $('deskRunActions');
   $('deskConnect').onclick = () => navigate('overview');
   $('deskScan').onclick = async () => {
     if (!guard()) return;
@@ -292,8 +291,8 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
   const legacySession = node('div'); legacySession.id = 'legacySession'; document.getElementById('deskReturn').after(legacySession);
   function setView(view, focus = false) {
     const treeView = view === 'tree';
-    if (treeView) legacySession.append(runProgress, runActions);
-    else $('deskConnection').before(runProgress, runActions);
+    if (treeView) legacySession.append(runActions);
+    else $('deskConnection').before(runActions);
     root.hidden = treeView; legacy.hidden = !treeView;
     document.getElementById('viewColumns')?.setAttribute('aria-pressed', String(!treeView));
     document.getElementById('viewTree')?.setAttribute('aria-pressed', String(treeView));

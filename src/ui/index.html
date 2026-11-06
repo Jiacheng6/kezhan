@@ -38,7 +38,8 @@
       <p id="desktopBrowserState" class="sidebar-hint">收起网页后，任务继续运行</p>
       <button id="desktopUpdate" class="utility-button" title="检查软件更新"><span aria-hidden="true">↗</span> 检查更新</button>
       <button id="desktopDataFolder" class="utility-button" title="打开数据与日志"><span aria-hidden="true">↳</span> 数据与日志</button>
-      <details class="desktop-more"><summary>更多操作 <span>···</span></summary><div><button id="desktopRestart">重启服务</button><button id="desktopClose">关闭软件…</button></div></details>
+      <button id="desktopRestart" class="utility-button">重启服务</button>
+      <button id="desktopClose" class="utility-button">关闭软件…</button>
     </div>
     </div></details>
     <div class="local-note"><span class="status-dot"></span><span>进度与账号数据保存在本机</span></div>
@@ -50,38 +51,43 @@
     <div class="header-right"><button id="viewWebPages" class="web-pages-entry" hidden aria-haspopup="dialog" title="查看软件内已打开的网页"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M7 6.5h.1m3 0h.1"/></svg><span>查看网页</span><small id="webPageCount" aria-hidden="true">0</small></button><span id="phaseLine" class="sub">正在连接后台服务…</span><button id="modeToggle" class="mode-toggle" aria-label="切换到黑夜" aria-pressed="false" title="切换日夜模式"><span class="mode-sun" aria-hidden="true">☀</span><span class="mode-moon" aria-hidden="true">☾</span></button><details class="connection-menu"><summary>连接状态 <span aria-hidden="true">⌄</span></summary><div class="topright"><span class="pill" id="pillEdge">浏览器未连接</span><span class="pill" id="pillLogin">登录未知</span><span class="pill" id="pillRecon">提交模式未知</span><span class="pill" id="pillQuiz">答题通道未知</span></div></details></div>
   </header>
   <div class="platform-strip" aria-label="学习平台"><span class="platform-label">课程来源</span><div id="platformFilters" role="group" aria-label="筛选课程平台"></div><div class="platform-web-actions"><div class="platform-group" data-platform="zhihuishu"><span class="group-label">智慧树</span><button id="openZhihuishu">网页 ↗</button><button id="readZhihuishu">扫描课程</button></div><div class="platform-group" data-platform="ucampus"><span class="group-label">U校园</span><button id="openUcampus">网页 ↗</button><button id="readUcampus">扫描课程</button></div></div><span id="platformMessage" role="status"></span></div>
-  <section id="platformSessions" class="platform-sessions" aria-label="各平台独立运行状态"></section>
   <div id="bootError" class="banner error hidden" role="alert"></div>
   <main>
     <section class="panel active" id="panel-overview" aria-label="学习概览">
-      <div class="page-heading"><div><p class="eyebrow">YOUR LEARNING DESK</p><h2>接着学<span class="heading-period">.</span></h2></div><button class="text-button" data-navigate="courses">打开三列选课台 ↗</button></div>
+      <div class="page-heading learning-heading"><div><h2>学习工作台<span class="heading-period">.</span></h2><p>查看本次学习进度，以及需要你处理的任务。</p></div><button class="text-button" data-navigate="courses">去选课 ↗</button></div>
+      <div id="overviewProgressSlot" class="learning-progress-slot"><section id="platformSessions" class="platform-sessions" aria-label="本批进度与各平台运行状态"></section></div>
       <div class="overview-grid">
         <div class="overview-primary">
           <article class="task-sheet">
-            <div class="sheet-top"><span class="eyebrow">本次学习</span><span class="activity-state" id="overviewActivity">尚未开始</span></div>
+            <div class="sheet-top"><span class="learning-label">当前学习</span><span class="activity-state" id="overviewActivity">尚未开始</span></div>
             <h3 id="overviewHeadline">准备开始学习</h3><p id="overviewSubtitle" class="hero-description">确认课程和任务范围，然后开始。</p><p id="overviewSelectedNames" class="hero-course-names"></p>
-            <div class="hero-actions"><button id="overviewStart" data-action="startRun" class="primary" disabled>开始学习 <span aria-hidden="true">↗</span></button><button class="text-button" data-navigate="courses">选择课程 <span aria-hidden="true">→</span></button><button data-action="stopRun" class="stop-button" disabled>停止全部任务</button></div>
+            <div class="hero-actions"><button id="overviewStart" data-action="startRun" class="primary" disabled>开始学习 <span aria-hidden="true">↗</span></button><button data-action="stopRun" class="stop-button" disabled>停止全部任务</button></div>
             <div id="overviewTaskProgress" hidden></div>
-            <div class="session-progress hidden" id="overviewSessionProgress"><div class="progress-caption"><span id="overviewProgressTitle">本次任务进度</span><span><b id="kDone">0</b><span class="progress-separator">/</span><span id="kTotal">0</span></span></div><div class="progress-track"><div id="overviewProgressFill"></div></div><p id="kCurrent">尚未开始执行</p></div>
             <details class="session-details hidden" id="overviewSessionDetails"><summary>运行详情 <span>⌄</span></summary><dl class="session-meta"><dt>当前状态</dt><dd id="kRunning">未运行</dd><dt>执行范围</dt><dd id="kScope">尚未选择</dd></dl></details>
           </article>
           <div class="overview-metrics"><div><span>清单内任务</span><b id="overviewTaskCount">—</b></div><div><span>已完成</span><b id="overviewDoneCount">—</b></div><button data-navigate="review"><span>待审答案 <span aria-hidden="true">↗</span></span><b id="overviewReviewCount">0</b></button></div>
-          <section class="course-ledger"><div class="section-title"><h3>我的课程 <small>COURSE INDEX</small></h3><button class="text-button" data-navigate="courses">选课与任务 <span aria-hidden="true">→</span></button></div><div id="overviewCourses"><p class="placeholder">正在读取课程清单…</p></div></section>
+          <section class="course-ledger"><div class="section-title"><h3>我的课程</h3><button class="text-button" data-navigate="courses">查看全部 <span aria-hidden="true">→</span></button></div><div id="overviewCourses"><p class="placeholder">正在读取课程清单…</p></div></section>
         </div>
         <aside class="overview-rail">
           <section class="readiness"><details id="readinessDetails" open><summary class="section-title"><h3 id="readinessTitle">开始前，确认一下</h3><span class="rail-index" id="readinessIndex">01—03</span></summary>
             <ol class="ready-steps"><li id="readyBrowser"><span class="step-no">01</span><div><b>内置网页</b><span id="kEdgeState">等待连接</span></div><span class="step-mark" aria-hidden="true"></span></li><li id="readyLogin"><span class="step-no">02</span><div><b>学习通账号</b><span id="kLoginState">等待登录</span></div><span class="step-mark" aria-hidden="true"></span></li><li id="readyQianwen"><span class="step-no">03</span><div><b>千问答题通道</b><span id="overviewQianwen">等待登录</span></div><span class="step-mark" aria-hidden="true"></span></li></ol>
             <div class="ready-actions"><button data-action="refreshLogin">检测登录状态</button><button data-action="focusEdge" class="text-button">打开学习通登录 ↗</button></div><p class="hint">首次使用请在软件内登录，账号无需手动配置。</p>
           </details></section>
-          <section class="playback-note"><span class="eyebrow">播放偏好</span><h3>按课程支持的速度播放</h3><p id="overviewPlayback">正常播放 · 播到片尾后核对</p><button class="text-button" data-navigate="settings">设置倍速与完成检查 →</button></section><section class="review-note"><span class="eyebrow">待你确认</span><h3>检查答案，再提交。</h3><p>简答草稿与需要核对的答案会保存在待审列表。</p><button data-navigate="review" class="text-button">前往待审答案 <span aria-hidden="true">→</span></button></section>
-          <div class="quiet-note"><span aria-hidden="true">↙</span><p>需要让出屏幕？<br />收起内置网页，任务仍会继续。</p></div>
+          <section class="playback-note"><h3>播放偏好</h3><p id="overviewPlayback">正常播放 · 播到片尾后核对</p><button class="text-button" data-settings-link="learning">调整播放设置 →</button></section>
         </aside>
       </div>
     </section>
     <section class="panel" id="panel-courses" aria-label="课程清单">
-      <div class="page-heading"><div><p class="eyebrow">COURSES / 选课与学习</p><h2>课程清单<span class="heading-period">.</span></h2></div><div class="actions"><button data-action="startRun" class="primary">开始学习 ↗</button><button data-action="stopRun" class="stop-button">停止全部任务</button></div></div>
+      <div class="page-heading learning-heading"><div><h2>选课与学习<span class="heading-period">.</span></h2><p>选好课程和任务，再从已选范围开始学习。</p></div><div class="actions"><button data-action="startRun" class="primary">开始学习 ↗</button><button data-action="stopRun" class="stop-button">停止全部任务</button></div></div>
+      <div id="coursesProgressSlot" class="learning-progress-slot"></div>
+      <section id="runBar" class="runbar hidden" aria-label="当前学习任务"><div id="runTaskProgress" hidden></div><p id="runSub" class="runbar-sub"></p></section>
+      <section class="bank-work-strip" id="bankWorkStrip" aria-label="学习通独立作业">
+        <div class="bank-work-copy"><div><strong>学习通独立作业</strong><span id="bankWorkMode" class="bank-state">读取策略中</span></div><p>先在学习通的「作业」列表打开一份未提交的作业，再回到这里开始。</p></div>
+        <div class="bank-work-actions"><button id="openBankSettings" type="button" class="text-button">答题设置</button><button type="button" data-action="startStandaloneWork" disabled>开始处理当前作业</button></div>
+        <div class="bank-work-setup" id="bankWorkSetup" hidden><p>题库尚未开通。微信扫码后，课栈会自动保存令牌。</p><button type="button" id="bankWorkGuide">扫码开通题库 ↗</button><button type="button" id="bankWorkMute" class="text-button">不再提醒</button></div>
+        <p id="bankWorkFeedback" class="bank-work-feedback" role="status" hidden></p>
+      </section>
       <div class="course-toolbar"><div class="course-view-switch" role="group" aria-label="选课视图"><button id="viewColumns" aria-pressed="true">三列选课</button><button id="viewTree" aria-pressed="false">树状列表</button></div><details class="course-info"><summary>课程与完成情况 ⌄</summary><div><span class="pill" id="treeSource">未加载</span><p id="treeSummary">正在读取课程清单…</p></div></details><details class="inline-menu"><summary>更新课程 ⌄</summary><div><button data-action="startRecon">重新扫描课程</button><button data-action="loadChecklist">读取已有清单</button></div></details></div>
-      <div id="runBar" class="runbar hidden"><div id="runTaskProgress" hidden></div><div class="runbar-main"><span class="runlabel" id="runLabel">执行中…</span><span class="runprog" id="runProg"></span></div><div class="runbar-track"><div class="runbar-fill" id="runFill"></div></div><div class="runbar-sub" id="runSub"></div></div>
       <section id="selectionDesk" aria-label="三栏选课台"></section>
       <div id="legacyCourseTree" hidden><button id="deskReturn" class="text-button">← 返回三栏选课台</button>
       <div class="treeTools" id="treeTools">
@@ -106,16 +112,69 @@
       <div class="card nopad"><div class="logbar"><h3>实时记录</h3><div class="logtools"><label class="chk"><input type="checkbox" id="autoScroll" checked /> 自动滚动</label><input type="text" id="logFilter" aria-label="过滤运行记录" placeholder="筛选关键词…" /><button id="clearLogs" class="ghost">清屏</button></div></div><div id="logView" class="logview" aria-live="off"></div></div>
     </section>
     <section class="panel" id="panel-settings" aria-label="偏好设置">
-      <div class="page-heading"><div><p class="eyebrow">让助手按你的习惯工作</p><h2>偏好设置<span class="heading-period">.</span></h2></div><div class="actions"><span class="pill" id="settingsDirty">未修改</span><button id="saveSettings" class="primary">保存设置</button></div></div>
-      <div class="settings-intro"><p>改动保存后，从下一个任务开始生效。切换 AI 通道前请先停止任务。</p><div class="actions"><button data-action="openAI">打开所选 AI 网页 ↗</button><button data-action="checkQianwen">检测 AI 登录</button><button id="resetSettings" class="text-button">恢复默认</button><button id="reloadSettings" class="text-button">重新读取</button></div></div>
-      <p><button id="reopenOnboarding">重新打开使用向导</button></p>
-      <section class="settings-section appearance-section"><div class="settings-section-heading"><h3>界面与显示</h3><p>选择强调色，日夜模式可在右上角独立切换。</p></div><div id="themeMenu" class="theme-settings"><span>主题配色</span><div class="theme-accents"><button type="button" class="theme-accent" data-accent="green" aria-label="森林"><i></i><span>森林</span></button><button type="button" class="theme-accent" data-accent="pink" aria-label="蔷薇"><i></i><span>蔷薇</span></button><button type="button" class="theme-accent" data-accent="yellow" aria-label="琥珀"><i></i><span>琥珀</span></button><button type="button" class="theme-accent" data-accent="blue" aria-label="海蓝"><i></i><span>海蓝</span></button><button type="button" class="theme-accent" data-accent="mono" aria-label="素白"><i></i><span>素白</span></button></div></div></section><div id="settingsForm" class="settingsform"></div>
-      <details class="settings-details"><summary>高级设置 <span>提问词、等待与重试参数</span></summary><div id="settingsAdvanced" class="settingsform"></div></details>
+      <div class="page-heading settings-heading"><div><h2>偏好设置<span class="heading-period">.</span></h2><p>管理课栈如何答题、播放和显示。</p></div>
+        <div class="settings-save"><div><span class="pill" id="settingsDirty">未修改</span><p id="settingsSaveFeedback" role="status"></p></div><button id="saveSettings" class="primary" disabled>保存设置</button></div>
+      </div>
+      <div class="settings-layout">
+        <div class="settings-categories" role="tablist" aria-label="设置分类" aria-orientation="vertical">
+          <button type="button" id="settingTabAnswer" role="tab" data-settings-category="answer" aria-selected="true" aria-controls="settingAnswer">答题与题库</button>
+          <button type="button" id="settingTabAI" role="tab" data-settings-category="ai" aria-selected="false" aria-controls="settingAI" tabindex="-1">AI 通道</button>
+          <button type="button" id="settingTabLearning" role="tab" data-settings-category="learning" aria-selected="false" aria-controls="settingLearning" tabindex="-1">播放与学习</button>
+          <button type="button" id="settingTabAppearance" role="tab" data-settings-category="appearance" aria-selected="false" aria-controls="settingAppearance" tabindex="-1">外观与显示</button>
+          <button type="button" id="settingTabSystem" role="tab" data-settings-category="system" aria-selected="false" aria-controls="settingSystem" tabindex="-1">软件与数据</button>
+          <button type="button" id="settingTabAdvanced" role="tab" data-settings-category="advanced" aria-selected="false" aria-controls="settingAdvanced" tabindex="-1">高级</button>
+        </div>
+        <div class="settings-pages">
+      <section class="settings-page" id="settingAnswer" role="tabpanel" aria-labelledby="settingTabAnswer">
+        <header class="settings-page-heading"><h3 id="bankSettingsTitle" tabindex="-1">答题与题库</h3><p>管理学习通题库和作业的提交方式。</p></header>
+        <section class="settings-section bank-settings" id="bankSettings" aria-label="题库账户">
+        <header class="bank-settings-header"><div><h4>AXE 题库账户</h4><p>微信扫码开通，剩余额度随查题更新。</p></div><span class="bank-state" id="bankConfigState">读取配置中</span></header>
+        <div class="bank-account" id="bankAccount" hidden>
+          <p id="bankQuotaStatus" role="status">尚未配置令牌</p>
+          <div class="bank-work-actions"><button type="button" id="bankGuideOpen">开通题库</button><button type="button" id="bankQuotaRefresh" hidden>刷新额度</button><button type="button" id="bankTopUp" hidden>去官网充值 ↗</button></div>
+        </div>
+        <details class="bank-credential" id="bankCredential" hidden>
+          <summary>管理令牌 <span>本机加密存储</span></summary>
+          <div class="bank-credential-fields"><label>服务地址<input id="bankOrigin" type="url" value="https://tk.wanjuantiku.com" readonly></label><label>题库令牌<input id="bankToken" type="password" placeholder="填写 32 位令牌" autocomplete="new-password"></label></div>
+          <p class="bank-credential-note">查询时会向题库发送题干、题型和必要选项。</p>
+          <div class="bank-settings-actions"><p id="bankMessage" role="status"></p><button type="button" id="bankClear" class="text-button" hidden>清除令牌</button><button type="button" id="bankSave">保存令牌</button></div>
+        </details>
+        </section>
+        <section class="settings-section" aria-label="答题策略"><header class="settings-section-heading"><h4>答题策略</h4></header><div id="bankStrategyRows"></div></section>
+        <section class="settings-section" aria-label="草稿与独立作业"><header class="settings-section-heading"><h4>草稿与独立作业</h4></header><div id="settingsDrafts"></div></section>
+      </section>
+      <section class="settings-page" id="settingAI" role="tabpanel" aria-labelledby="settingTabAI" hidden>
+        <header class="settings-page-heading"><h3>AI 通道</h3><p>选择答题模型，管理网页登录或 API 连接。</p></header>
+        <section class="settings-section" aria-label="AI 答题通道"><div id="settingsAI"></div><div class="settings-inline-actions"><button type="button" id="settingsOpenAI" data-action="openAI">打开所选 AI 网页 ↗</button><button type="button" data-action="checkQianwen">检测 AI 连接</button></div><div id="settingsApiSlot"></div></section>
+      </section>
+      <section class="settings-page" id="settingLearning" role="tabpanel" aria-labelledby="settingTabLearning" hidden>
+        <header class="settings-page-heading"><h3>播放与学习</h3><p>设置倍速、声音与任务完成后的核对方式。</p></header>
+        <section class="settings-section" aria-label="学习设置"><div id="settingsForm"></div></section>
+      </section>
+      <section class="settings-page" id="settingAppearance" role="tabpanel" aria-labelledby="settingTabAppearance" hidden>
+        <header class="settings-page-heading"><h3>外观与显示</h3><p>工作台和课程档案共用主题配色。</p></header>
+        <section class="settings-section" aria-label="进度条样式"><div id="settingsProgressStyle"></div>
+          <div class="tp-track tp-preview" aria-hidden="true" data-active="true" data-particles="fill"><div class="tp-fill" style="transform:scaleX(.64)"></div></div>
+        </section>
+        <section class="settings-section appearance-section"><div class="settings-section-heading"><h4>主题配色</h4><p>选择后即时生效，日夜模式在右上角单独切换。</p></div><div id="themeMenu" class="theme-settings"><div class="theme-accents"><button type="button" class="theme-accent" data-accent="green" aria-label="森林"><i></i><span>森林</span></button><button type="button" class="theme-accent" data-accent="pink" aria-label="蔷薇"><i></i><span>蔷薇</span></button><button type="button" class="theme-accent" data-accent="yellow" aria-label="琥珀"><i></i><span>琥珀</span></button><button type="button" class="theme-accent" data-accent="blue" aria-label="海蓝"><i></i><span>海蓝</span></button><button type="button" class="theme-accent" data-accent="mono" aria-label="素白"><i></i><span>素白</span></button></div></div><div id="settingsAppearanceTools" class="settings-inline-actions"></div></section>
+      </section>
+      <section class="settings-page" id="settingSystem" role="tabpanel" aria-labelledby="settingTabSystem" hidden>
+        <header class="settings-page-heading"><h3>软件与数据</h3><p>检查更新、查看本机文件，或重新打开使用向导。</p></header>
+        <section class="settings-section" id="settingsUtilities"><header class="settings-section-heading"><h4>软件管理</h4></header></section>
+        <section class="settings-section"><header class="settings-section-heading"><h4>使用向导</h4><p>重新走一遍学习通登录和 AI 通道配置。</p></header><button type="button" id="reopenOnboarding">打开使用向导</button></section>
+      </section>
+      <section class="settings-page" id="settingAdvanced" role="tabpanel" aria-labelledby="settingTabAdvanced" hidden>
+        <header class="settings-page-heading"><h3>高级</h3><p>调整等待、重试与提问词，或查看连接诊断。</p></header>
+        <details class="settings-details"><summary>任务参数 <span>等待、重试和提问词</span></summary><div id="settingsAdvanced"></div></details>
       <details class="settings-details"><summary>运行信息与维护 <span>连接、数据位置与故障排查</span></summary>
         <div class="maintenance-grid"><section><h3>浏览器连接</h3><dl class="kv"><dt>内核版本</dt><dd id="kEdgeVersion">—</dd><dt>调试端口</dt><dd id="kDebugPort">—</dd><dt>浏览器数据</dt><dd id="kProfile" class="mono small">—</dd><dt>登录说明</dt><dd id="kLoginReason">—</dd><dt>账号标识</dt><dd id="kPersonId">—</dd><dt>当前页面</dt><dd id="kLoginTitle">—</dd></dl><div class="actions"><button data-action="openChaoxing">打开学习通</button><button data-action="cleanupPages">清理临时页面</button></div></section>
         <section><h3>运行环境</h3><dl class="kv"><dt>工作目录</dt><dd class="mono small" id="kRoot">—</dd><dt>运行版本</dt><dd id="kNode">—</dd><dt>进程</dt><dd id="kPid">—</dd><dt>日志位置</dt><dd class="mono small" id="kLogDir">logs/</dd></dl><h3>连接检查</h3><ul class="checklist"><li id="ck-edge">专用浏览器 <span class="st">检查中</span></li><li id="ck-cdp">浏览器连接 <span class="st">检查中</span></li><li id="ck-console">后台服务 <span class="st">检查中</span></li><li id="ck-login">学习通登录 <span class="st">检查中</span></li></ul></section></div>
         <h3 class="sechead2">固定运行规则</h3><dl class="kv" id="settingsReadonly"></dl>
       </details>
+        <section class="settings-section"><header class="settings-section-heading"><h4>配置管理</h4><p>恢复默认会重置偏好设置，课程与进度仍会保留。</p></header><div class="settings-inline-actions"><button type="button" id="reloadSettings">重新读取</button><button type="button" id="resetSettings">恢复默认</button></div></section>
+      </section>
+        </div>
+      </div>
     </section>
   </main>
 </div>
@@ -132,6 +191,6 @@
 <script src="/close-dialog.js"></script><script type="module" src="/app.js"></script><script type="module" src="/onboarding.js"></script><script type="module" src="/embedded-browser.js"></script><script type="module" src="/desktop.js"></script><script type="module" src="/notifications.js"></script><script type="module" src="/workspace-design.js"></script><script type="module" src="/library/home.js"></script>
 <link rel="stylesheet" href="/ai-controls.css">
 <link rel="stylesheet" href="/theme.css" />
-<link rel="stylesheet" href="/workbench.css" /><script type="module" src="/ai-controls.js"></script><script type="module" src="/theme.js"></script><script type="module" src="/kebo.js"></script><script type="module" src="/interaction-polish.js"></script>
+<link rel="stylesheet" href="/workbench.css" /><link rel="stylesheet" href="/settings-layout.css" /><link rel="stylesheet" href="/learning-layout.css" /><script type="module" src="/ai-controls.js"></script><script type="module" src="/theme.js"></script><script type="module" src="/kebo.js"></script><script type="module" src="/interaction-polish.js"></script>
 </body>
 </html>

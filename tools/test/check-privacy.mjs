@@ -44,6 +44,7 @@ const MUST_IGNORE = [
   ['edge-profile/', '登录 Cookie 与浏览器配置'],
   ['browser-session.bin', '内置网页登录的加密快照'],
   ['api-config.bin', '本机加密 API 配置'],
+  ['answer-bank.bin', '本机加密题库配置'],
   ['Partitions/', '内置网页配置与网站存储'],
   ['logs/', '运行日志与答题留档'],
   ['data/', '侦察报告与调试快照（含令牌）'],

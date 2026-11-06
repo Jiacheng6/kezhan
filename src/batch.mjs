@@ -94,6 +94,7 @@ export class BatchRunner {
   requestStop() {
     if (this.running) {
       this.stopRequested = true;
+      this.push();
       log('收到停止请求，将在当前任务点结束后停止…', 'warn');
     }
     return { stopping: true };
@@ -123,6 +124,7 @@ export class BatchRunner {
   async start({ ctx, tasks, command, onUpdate, qianwenPage = null }) {
     if (this.running) return { started: false, reason: 'already-running' };
     const settings = loadSettings();
+    const interrupted = this.stats.current;
 
     this.running = true;
     this.stopRequested = false;
@@ -142,6 +144,7 @@ export class BatchRunner {
     this.stats.consecutiveTransient = 0;
     this.stats.recentFailures = [];
     this.stats.skipReasons = {};
+    this.stats.current = null;
 
     // 只处理该处理的类型
     const runnable = tasks.filter((t) => t.willHandle && HANDLED_TYPES.has(t.type));
@@ -183,6 +186,7 @@ export class BatchRunner {
         }
 
         this.stats.current = {
+          ...(interrupted?.key === task.key ? { ...interrupted, resuming: true } : {}),
           key: task.key,
           name: task.name,
           secNo: task.secNo,
@@ -215,6 +219,7 @@ export class BatchRunner {
           const onProg = (p) => {
             this.stats.current = {
               ...this.stats.current,
+              resuming: false,
               progress: p.progress,
               currentTime: p.currentTime,
               duration: p.duration,
@@ -224,6 +229,7 @@ export class BatchRunner {
               playbackPhase: p.playbackPhase,
               questionIndex: p.index,
               questionTotal: p.total,
+              answerSource: p.answerSource,
               phase: p.phase,
             };
             this.push();
@@ -453,7 +459,7 @@ export class BatchRunner {
       throw error;
     } finally {
       this.running = false;
-      this.stats.current = null;
+      if (!this.stopRequested && !this.stats.paused) this.stats.current = null;
       this.stats.endedAt = Date.now();
       saveState();
       this.push();

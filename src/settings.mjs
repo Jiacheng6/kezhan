@@ -18,6 +18,11 @@ import { DEFAULT_SETTINGS } from './config.mjs';
  *   advanced: 是否折叠到"高级"里
  */
 export const SETTING_SPEC = [
+  { path: 'progressStyle', label: '进度条样式', kind: 'select', options: [['particles', '粒子流'], ['classic', '经典刻度']], help: '即时预览，保存后下次继续使用。' },
+  { path: 'answerBank.source', label: '学习通答题来源', kind: 'select', options: [['bank', 'AXE 题库优先'], ['ai', '只用现有 AI']], help: '适用于章节测验和独立作业。配置题库后可在截图前查询。' },
+  { path: 'answerBank.fallback', label: '题库未命中时', kind: 'select', options: [['ai', '用现有 AI 补答'], ['review', '留到待审'], ['random', '未命中不超过 20% 时随机补填']], help: '随机仅处理明确未命中的选择题和判断题。随机答案会明确标记。' },
+  { path: 'answerBank.aboveLimit', label: '随机补填条件不满足时', kind: 'select', options: [['ai', '用现有 AI 补答'], ['review', '留到待审']], help: '包括未命中超过 20%、题库故障或总题数无法独立核对。' },
+  { path: 'answerBank.remind', label: '未开通时提醒', kind: 'bool', help: '仅在准备处理学习通作业且选了题库优先时提醒。也可随时手动打开向导。' },
   { path: 'ai.provider', label: 'AI 答题通道', kind: 'select', options: [['qianwen', '千问网页版'], ['doubao', '豆包网页版'], ['deepseek', 'DeepSeek 网页版'],['api','OpenAI 兼容 API']], help: '网页版使用自己的账号；API 地址、密钥和模型在此页配置。切换通道前请先停止任务。' },
   {
     path: 'submitMode',
@@ -25,9 +30,9 @@ export const SETTING_SPEC = [
     kind: 'select',
     options: [
       ['manual', '人工确认（答案进待审队列，你点提交）'],
-      ['auto', '自动提交（仅当全部题目都是高可靠答案）'],
+      ['auto', '自动提交（逐题回读且覆盖完整）'],
     ],
-    help: '简答题始终人工确认提交；低可靠/多候选答案也不会自动提交。',
+    help: '简答与低可靠答案需要人工确认。学习通随机补填只有在主动选择该模式且满足 20% 条件时，才可随作业自动提交。',
   },
   { path: 'essayAutoFill', label: '简答题自动填写草稿', kind: 'bool', help: '填写后回读验证，进入待审队列；不会自动交卷。已有答案不覆盖。' },
   { path: 'discussionDrafts', label: '生成讨论草稿', kind: 'bool', help: '优先复制出现最多的相同或近似回答；没有可用重复回答时请所选 AI 简短作答。只生成待审草稿，讨论须逐条确认发布。保存后已有讨论即可勾选；旧清单尚无讨论时需重新扫描。' },

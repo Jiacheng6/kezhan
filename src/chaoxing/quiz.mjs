@@ -27,6 +27,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { waitForRead, throwIfStopped, interruptibleSleep } from '../control.mjs';
 import { embedded, captureEmbeddedPage } from '../browser/embedded.mjs';
+import { WORK_SUBMIT_SELECTOR } from './submission-state.mjs';
+
+export const QUIZ_BLOCK_SELECTOR = '.TiMu, .newTiMu, .questionLi:not(:has(.TiMu,.newTiMu)):not(.TiMu .questionLi,.newTiMu .questionLi)';
+const OPTION_SELECTOR = 'li[qid], li[role="radio"], li[role="checkbox"], li:has(> input[type="radio"], > input[type="checkbox"])';
 
 /** 题型归一化（判定逻辑内联在 extractQuestions 里，这里只留映射表供参考） */
 const QTYPE_PATTERNS = [
@@ -61,7 +65,7 @@ export async function waitWorkFrame(page, timeoutMs = 30000) {
   while (Date.now() - t0 < timeoutMs) {
     for (const f of page.frames()) {
       if (!/mooc-ans\/work\/|doHomeWorkNew/.test(f.url())) continue;
-      const n = await f.evaluate(() => document.querySelectorAll('.TiMu, .newTiMu').length).catch(() => 0);
+      const n = await f.evaluate(selector => document.querySelectorAll(selector).length, QUIZ_BLOCK_SELECTOR).catch(() => 0);
       if (n > 0) return f;
     }
     await page.waitForTimeout(500);
@@ -78,15 +82,16 @@ export async function waitWorkFrame(page, timeoutMs = 30000) {
  *     hasAnswered }
  */
 export async function extractQuestions(workFrame) {
-  return workFrame.evaluate(() => {
+  return workFrame.evaluate(({blocks,optionSelector}) => {
     const t = (el) => (el?.textContent || '').trim().replace(/\s+/g, ' ');
 
-    return Array.from(document.querySelectorAll('.TiMu, .newTiMu')).map((q, i) => {
-      const heading=t(q.querySelector('.Zy_TItle .fontLabel, .Zy_TItle'));
+    return Array.from(document.querySelectorAll(blocks)).map((q, i) => {
+      const heading=t(q.querySelector('.Zy_TItle .fontLabel, .Zy_TItle, .fontLabel'));
       const typeRaw = t(q.querySelector('.newZy_TItle'))||heading.match(/【[^】]+】/)?.[0]||t(q.querySelector('[class*="TItle"] span'));
       const stemRaw = t(q.querySelector('.Zy_TItle .fontLabel p, .Zy_TItle p'))||heading;
+      const bankStem = heading.replace(/^【(?:多选|单选|判断|填空|简答)题】\s*/u, '');
 
-      const options = Array.from(q.querySelectorAll('li[qid], li[role="radio"], li[role="checkbox"]')).map((li) => {
+      const options = Array.from(q.querySelectorAll(optionSelector)).map((li) => {
         /*
          * 选项字母在 li 内部的 span 上，不在 li 上。
          * 实测 DOM：
@@ -107,11 +112,12 @@ export async function extractQuestions(workFrame) {
         const displayLetter=/^[A-Z]$/.test(visibleLetter)?visibleLetter:(aria.match(/^\s*([A-Z])(?:\s|[.、])/i)?.[1]?.toUpperCase()||null);
         // aria-label 形如 "A 有原创性、有价值的内容选择"（尾部可能带"选择"/"选项"）
         const ariaText = aria.replace(/^\s*[A-Z]\s*/, '').replace(/选择$|选项$/, '').trim();
-        const innerText = t(li.querySelector('.after p, .after'));
+        const innerText = t(li.querySelector('.after p, .after')) || (!ariaText ? t(li).replace(/^[A-Z][.、\s]+/u, '') : '');
         return {
           letter,
           displayLetter,
           text: ariaText || innerText,
+          bankText: innerText || ariaText,
           textFromAria: !!ariaText,
           role: li.getAttribute('role') || '',
           onclick: li.getAttribute('onclick') || '',
@@ -131,6 +137,18 @@ export async function extractQuestions(workFrame) {
 
       const editor=q.querySelector('[name^="answerEditor"], [id^="answerEditor"]');
       const editorId=(editor?.getAttribute('name')||editor?.id||'').replace(/^answerEditor[_-]?/,'');
+      const questionText = q.querySelector('.Zy_TItle, .fontLabel');
+      const textNodes = [questionText, ...q.querySelectorAll(optionSelector)].filter(Boolean);
+      const customFonts = new Set([...document.fonts].map(face => face.family.replace(/["']/g, '').trim().toLowerCase())
+        .filter(family => !/^cxchinesequote\d*$/.test(family)));
+      const bankTextSafe = !!questionText && !/[\ue000-\uf8ff\ufffd]/u.test(bankStem) && options.every(option => !/[\ue000-\uf8ff\ufffd]/u.test(option.bankText)) && textNodes.every(node =>
+        !node.querySelector('img,svg,math,canvas,video,audio') && [node, ...node.querySelectorAll('*')].every(element =>
+          !getComputedStyle(element).fontFamily.toLowerCase().split(',').some(family => {
+            const name = family.replace(/["']/g, '').trim();
+            return customFonts.has(name) || /secret|obfuscat/i.test(name);
+          })));
+      const bankBlankCount = [...q.querySelectorAll('input[type="text"][name],textarea[name]')].filter(el =>
+        el.form && !el.disabled && !el.readOnly && el.getClientRects().length && getComputedStyle(el).visibility === 'visible').length;
       return {
         index: i + 1,
         questionId: q.querySelector('[qid]')?.getAttribute('qid') || editorId || q.getAttribute('data') || '',
@@ -144,34 +162,89 @@ export async function extractQuestions(workFrame) {
             [/简答|论述|分析/, 'essay'],
           ];
           for (const [re, v] of map) if (re.test(typeRaw)) return v;
-          return 'unknown';
+          return ({0:'single',1:'multiple',2:'fill',3:'judge'})[q.querySelector('input[name*="answertype"]')?.value] || 'unknown';
         })(),
         stemTextRaw: stemRaw, // 注意：字体加密，仅供排查
+        bankStem,
+        bankTextSafe,
+        bankBlankCount,
         optionCount: options.length,
         options,
         inputs,
         domIndex: i,
       };
     });
-  });
+  },{blocks:QUIZ_BLOCK_SELECTOR,optionSelector:OPTION_SELECTOR});
+}
+
+// The answer card and platform totals are independent of the .TiMu extractor.
+export async function readIndependentQuizCount(frame) {
+  return frame.evaluate(() => {
+    const counts = [];
+    for (const field of document.querySelectorAll('input[type="hidden"][name="questionCount"],input[type="hidden"][name="questionTotal"]')) {
+      if (/^[1-9]\d{0,3}$/.test(field.value)) counts.push(Number(field.value));
+    }
+    for (const header of document.querySelectorAll('.workTitle,.questionTotal,header [data-question-total]')) {
+      if (!header.getClientRects().length || header.closest('.TiMu,.newTiMu,.questionLi')) continue;
+      const total = header.getAttribute('data-question-total') || header.innerText.match(/共\s*([1-9]\d{0,3})\s*题/)?.[1];
+      if (/^[1-9]\d{0,3}$/.test(total || '')) counts.push(Number(total));
+    }
+    for (const card of document.querySelectorAll('#answerCard,.answerCard,#answerSheet,.answerSheet,[data-answer-card]')) {
+      if (!card.getClientRects().length) continue;
+      const labels = [...card.querySelectorAll('a,button,[data-question-number]')].map(el => (el.getAttribute('data-question-number') || el.textContent).trim()).filter(s => /^[1-9]\d{0,3}$/.test(s));
+      const numbers = labels.map(Number).sort((a, b) => a - b);
+      if (numbers.length && numbers.every((number, index) => number === index + 1)) counts.push(numbers.length);
+    }
+    return counts.length && counts.every(count => count === counts[0]) ? counts[0] : null;
+  }).catch(() => null);
+}
+
+export async function fillQuizBlanks(frame, domIndex, values = null) {
+  return frame.evaluate(({ index, expected, blocks }) => {
+    const question = document.querySelectorAll(blocks)[index];
+    const fields = [...(question?.querySelectorAll('input[type="text"][name],textarea[name]') || [])].filter(el =>
+      el.form && !el.disabled && !el.readOnly && el.getClientRects().length && getComputedStyle(el).visibility === 'visible');
+    if (!fields.length || new Set(fields.map(el => el.name)).size !== fields.length || fields.some(el => el.form !== fields[0].form)) return { ok: false };
+    const read = () => {
+      const form = new FormData(fields[0].form);
+      return fields.map(el => {
+        const stored = form.getAll(el.name);
+        return stored.length === 1 && stored[0] === el.value ? el.value.trim() : '';
+      });
+    };
+    if (expected) {
+      if (!Array.isArray(expected) || fields.length !== expected.length || expected.some(value => typeof value !== 'string' || !value.trim()) ||
+          fields.some((el, i) => el.value.trim() && el.value.trim() !== expected[i])) return { ok: false };
+      fields.forEach((el, i) => {
+        if (el.value === expected[i]) return;
+        el.value = expected[i];
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    }
+    const values = read();
+    return { ok: values.every(Boolean) && (!expected || values.every((value, i) => value === expected[i])), values };
+  }, { index: domIndex, expected: values, blocks:QUIZ_BLOCK_SELECTOR });
 }
 
 /** 题目总数与提交/保存按钮信息 */
 export async function getWorkMeta(workFrame) {
-  return workFrame.evaluate(() => {
+  return workFrame.evaluate(({blocks,submitSelector}) => {
     const t = (el) => (el?.textContent || '').trim().replace(/\s+/g, ' ');
     const find = (sel) => {
-      const el = document.querySelector(sel);
-      return el ? { text: t(el), visible: el.offsetParent !== null, cls: String(el.className) } : null;
+      const matches = [...document.querySelectorAll(sel)];
+      const el = matches.find(node => node.getClientRects().length && !node.matches(':disabled') && node.getAttribute('aria-disabled') !== 'true') || matches[0];
+      return el ? { text: t(el), visible: !!el.getClientRects().length && !el.matches(':disabled') && el.getAttribute('aria-disabled') !== 'true', cls: String(el.className) } : null;
     };
     return {
       url: location.href,
-      questionTotal: document.querySelectorAll('.TiMu, .newTiMu').length,
+      navigationMs: Math.round(performance.getEntriesByType('navigation')[0]?.domContentLoadedEventEnd || 0),
+      questionTotal: document.querySelectorAll(blocks).length,
       saveBtn: find('.btnSave'),
-      submitBtn: find('.btnSubmit'),
+      submitBtn: find(submitSelector),
       title: t(document.querySelector('.workTitle, h1, .tit, [class*="title"]')).slice(0, 80),
     };
-  });
+  },{blocks:QUIZ_BLOCK_SELECTOR,submitSelector:WORK_SUBMIT_SELECTOR});
 }
 
 /**
@@ -217,7 +290,7 @@ export function fontReadyVerdict({
  * 截取单道题的图片（精确裁剪）。
  * @returns {Promise<string>} 图片文件路径
  */
-export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, readTimeoutMs = 8000, fontTimeoutMs = 30000, onRecovery, selector = '.TiMu, .newTiMu', nativeCapture = embedded ? captureEmbeddedPage : null, allowCDPFallback = true, fontNotes = null } = {}) {
+export async function shootQuestion(workFrame, domIndex, outDir, { shouldStop, readTimeoutMs = 8000, fontTimeoutMs = 30000, onRecovery, selector = QUIZ_BLOCK_SELECTOR, nativeCapture = embedded ? captureEmbeddedPage : null, allowCDPFallback = true, fontNotes = null } = {}) {
   throwIfStopped(shouldStop);
   fs.mkdirSync(outDir, { recursive: true });
   const read = async (stage, operation) => {
@@ -414,14 +487,14 @@ export async function selectOptions(workFrame, domIndex, letters, { clearFirst =
    */
   const wanted = [...new Set(letters.map((s) => String(s).trim()).filter(Boolean))];
   return workFrame.evaluate(
-    ({ idx, want, clear, helpers }) => {
+    ({ idx, want, clear, helpers, blocks, optionSelector }) => {
       // eslint-disable-next-line no-eval
       eval(helpers);
 
-      const q = document.querySelectorAll('.TiMu, .newTiMu')[idx];
+      const q = document.querySelectorAll(blocks)[idx];
       if (!q) return { ok: false, error: '题目元素不存在' };
 
-      const items = Array.from(q.querySelectorAll('li[qid],li[role="radio"],li[role="checkbox"]'));
+      const items = Array.from(q.querySelectorAll(optionSelector));
 
       if (clear) {
         for (const li of items) if (__isSelected(li)) __clickOption(li);
@@ -443,7 +516,7 @@ export async function selectOptions(workFrame, domIndex, letters, { clearFirst =
         verified: items.filter(__isSelected).map(__letterOf),
       };
     },
-    { idx: domIndex, want: wanted, clear: clearFirst, helpers: HELPERS_SRC },
+    { idx: domIndex, want: wanted, clear: clearFirst, helpers: HELPERS_SRC, blocks:QUIZ_BLOCK_SELECTOR,optionSelector:OPTION_SELECTOR },
   );
 }
 
@@ -452,17 +525,17 @@ export async function selectOptions(workFrame, domIndex, letters, { clearFirst =
  */
 export async function readSelection(workFrame, domIndex) {
   return workFrame.evaluate(
-    ({ idx, helpers }) => {
+    ({ idx, helpers, blocks, optionSelector }) => {
       // eslint-disable-next-line no-eval
       eval(helpers);
-      const q = document.querySelectorAll('.TiMu, .newTiMu')[idx];
+      const q = document.querySelectorAll(blocks)[idx];
       if (!q) return null;
-      const items = Array.from(q.querySelectorAll('li[qid],li[role="radio"],li[role="checkbox"]'));
+      const items = Array.from(q.querySelectorAll(optionSelector));
       return {
         selected: items.filter(__isSelected).map(__letterOf).filter(Boolean),
         all: items.map(__letterOf).filter(Boolean),
       };
     },
-    { idx: domIndex, helpers: HELPERS_SRC },
+    { idx: domIndex, helpers: HELPERS_SRC, blocks:QUIZ_BLOCK_SELECTOR,optionSelector:OPTION_SELECTOR },
   );
 }

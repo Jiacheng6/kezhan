@@ -1,0 +1,110 @@
+.learning-heading p { margin: 5px 0 0; color: var(--fg2); font-size: 13px; }
+.learning-progress-slot { margin-bottom: 18px; }
+.learning-progress-slot .platform-sessions {
+  display: grid;
+  grid-template-columns: minmax(215px, 1.35fr) repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 9px;
+  margin: 0;
+}
+.learning-progress-slot .platform-total { grid-column: auto; padding: 13px 15px; }
+.platform-total .platform-total-caption,
+.platform-total-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 6px 12px; }
+.platform-total .platform-total-caption { margin-bottom: 7px; }
+.platform-total-caption strong { font-size: 13px; font-weight: 650; }
+.platform-total-caption [data-total-percent] {
+  color: var(--acc);
+  font: 550 24px/1 system-ui,sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.6px;
+}
+.platform-total .tp-track { height: 8px; }
+.platform-total .tp-fill::after, .platform-track .tp-fill::after { opacity: .65; }
+.platform-total-foot { margin-top: 7px; color: var(--fg2); font-size: 11px; flex-wrap: wrap; }
+.platform-total-foot small { color: var(--fg2); font-size: 11px; }
+.platform-total-foot small:empty { display: none; }
+.learning-progress-slot .platform-session { padding: 13px 14px; --platform-meter: var(--platform-chaoxing); }
+.learning-progress-slot .platform-session[data-platform="zhihuishu"] { --platform-meter: var(--platform-zhihuishu); }
+.learning-progress-slot .platform-session[data-platform="ucampus"] { --platform-meter: #ba6464; }
+html[data-mode="dark"] .learning-progress-slot .platform-session {
+  --platform-ink: color-mix(in srgb, var(--platform-meter) 61%, var(--fg));
+}
+.platform-title { display: inline-flex; align-items: center; gap: 6px; }
+.platform-title::before { content: ""; width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: var(--platform-chaoxing,var(--acc)); }
+[data-platform="zhihuishu"] .platform-title::before { background: var(--platform-zhihuishu,var(--acc)); }
+[data-platform="ucampus"] .platform-title::before { background: #ba6464; }
+.platform-session > .platform-track { grid-column: 1 / -1; height: 4px; }
+.platform-session > .platform-track[hidden] { display: none; }
+.learning-progress-slot .platform-session .tp-track { --meter-fill: var(--platform-ink, var(--platform-meter)); }
+.learning-progress-slot .platform-session .tp-fill,
+.learning-progress-slot .platform-session .tp-sweep { background: var(--platform-ink, var(--platform-meter)); }
+.learning-progress-slot .platform-session .tp-percent,
+.learning-progress-slot .platform-session .tp-percent strong { color: var(--platform-ink, var(--platform-meter)); }
+.learning-progress-slot .platform-task-progress .tp-caption { font-size: 11px; }
+.learning-progress-slot .platform-task-progress .tp-track { height: 6px; }
+.learning-progress-slot .platform-sessions:has(.platform-task-progress:not([hidden])) {
+  grid-template-columns: repeat(3,minmax(0,1fr));
+}
+.learning-progress-slot .platform-sessions:has(.platform-task-progress:not([hidden])) .platform-total { grid-column: 1 / -1; }
+.learning-progress-slot .platform-sessions:has(.platform-task-progress:not([hidden])) .platform-session:has(.platform-task-progress[hidden]) { align-self: start; }
+
+#panel-overview .task-sheet { padding: 20px 22px; background: var(--bg2); }
+.task-sheet .learning-label { color: var(--fg2); font-size: 12px; font-weight: 600; }
+.task-sheet #overviewHeadline { font: 650 23px/1.35 system-ui,sans-serif; letter-spacing: -.45px; }
+#overviewTaskProgress {
+  margin-top: 17px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+}
+#panel-overview .overview-metrics { padding-block: 13px; }
+#panel-overview .overview-metrics > * { min-width: 0; }
+#panel-overview .overview-metrics > button { border-radius: 8px; }
+#panel-overview .overview-metrics > button:hover:not(:disabled) { background: var(--bg3); }
+#panel-overview .readiness .section-title { font-size: 14px; }
+#panel-overview .hint, #panel-courses .hint { color: color-mix(in srgb, var(--fg2) 78%, var(--fg)); }
+#panel-overview .playback-note { padding: 14px 18px; }
+#panel-overview .playback-note h3 { margin: 0 0 6px; }
+
+#panel-courses > #runBar {
+  margin: 0 0 14px;
+  padding: 13px 16px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--bg2);
+}
+#runBar #runSub { margin: 8px 0 0; font-size: 12px; }
+#runBar #runSub:empty { display: none; }
+#panel-courses .bank-work-strip { margin-bottom: 13px; padding: 11px 14px; }
+#panel-courses .course-toolbar { margin-bottom: 12px; }
+#panel-courses .sd-layout .sd-column-title b { color: var(--fg); }
+#panel-courses .sd-layout .sd-total strong { font-size: 34px; }
+#panel-courses .sd-layout .sd-run-actions { padding-top: 8px; }
+#panel-courses .sd-layout .sd-save { border-top-color: var(--line); }
+@media (max-width: 1150px) {
+  .learning-progress-slot .platform-sessions { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .learning-progress-slot .platform-total { grid-column: 1 / -1; }
+}
+@media (max-width: 700px) {
+  .learning-progress-slot .platform-sessions,
+  .learning-progress-slot .platform-sessions:has(.platform-task-progress:not([hidden])) {
+    grid-template-columns: minmax(0,1fr);
+    gap: 6px;
+  }
+  .learning-progress-slot .platform-session { padding: 8px 11px; }
+  #panel-overview .task-sheet { padding: 16px; }
+  #panel-overview .overview-metrics > * { padding-inline: 10px; }
+  #panel-overview .overview-metrics > :first-child { padding-left: 10px; }
+}
+@media (max-width: 600px) {
+  body { --sidebar: 58px; }
+  .topbar { gap: 6px; padding-inline: 10px; }
+  .topbar .header-right { gap: 5px; }
+  .topbar .breadcrumb { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .topbar #phaseLine { display: none !important; }
+  .topbar .web-pages-entry { padding-inline: 7px; }
+  .topbar .web-pages-entry > span, .topbar .web-pages-entry > small { display: none; }
+  .topbar .mode-toggle { width: 30px; height: 30px; flex-shrink: 0; }
+  .topbar .connection-menu > summary { font-size: 11px; white-space: nowrap; }
+}

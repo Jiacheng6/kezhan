@@ -18,6 +18,7 @@ import path from 'node:path';
 import { PATHS, loadSettings } from '../config.mjs';
 import { log } from '../logbus.mjs';
 import { askImage, checkLogin } from '../ai/ai.mjs';
+import { ensureProviderPage, selectedProvider } from '../ai/providers.mjs';
 import {
   waitWorkFrame,
   extractQuestions,
@@ -25,6 +26,8 @@ import {
   shootQuestion,
   selectOptions,
   readSelection,
+  readIndependentQuizCount,
+  fillQuizBlanks,
 } from './quiz.mjs';
 import { parseAnswer, validateBeforeSubmit, buildArchive, confidenceLabel, normalizeEssayText, MAX_ESSAY_LENGTH } from '../ai/parse.mjs';
 import { addHandbook, loadState, saveState, mutateState, listReviewItems, updateReviewAnswer } from '../state.mjs';
@@ -41,16 +44,28 @@ import { skipDecision, describeSkip } from './skip.mjs';
 import { newTaskPage, releasePage, setPageBusy, markSavedReviewPage } from '../browser/pages.mjs';
 import { isReviewLocked } from './review-lock.mjs';
 import { setBrowserVisible, isBrowserVisible } from '../browser/window-control.mjs';
-import { AI_BLOCK_CODES, queueUnanswered } from './quiz-outcome.mjs';
-import { pageSubmissionState } from './submission-state.mjs';
+import { AI_BLOCK_CODES, pendingQuizItem, queueUnanswered } from './quiz-outcome.mjs';
+import { bankConfigured, prepareBankAnswers, randomBankAnswer, randomEligible } from './answer-bank.mjs';
+import { pageSubmissionState, frameWorkIdentity, workIdentity, WORK_SUBMIT_SELECTOR } from './submission-state.mjs';
 import {activateSubmitConfirmation} from './submit-control.mjs';
 
-export { cardsUrl };
+export { cardsUrl, workIdentity };
 const submittingPages=new WeakSet();
 
-export function canAutoSubmitItems(items, expectedCount = items.length) {
+export function canAutoSubmitItems(items, expectedCount = items.length, allowRandom = false) {
   return items.length > 0 && items.length === expectedCount && items.every((it) =>
-    it.qtype !== 'essay' && !it.requiresReview && it.confidence === 'high' && it.autoFilled);
+    it.qtype !== 'essay' && !it.requiresReview && it.autoFilled &&
+    (it.answerSource === 'random' ? allowRandom && it.bankOutcome === 'miss' : it.confidence === 'high'));
+}
+
+function resolvedBankAnswer(question, answer) {
+  const random = answer.kind === 'random';
+  return {
+    question, answerSource: random ? 'random' : 'bank', bankOutcome: random ? 'miss' : 'hit',
+    blanks: answer.blanks, aiAnswer: '', aiError: null,
+    parsed: { letters: answer.letters || [], confidence: random ? 'none' : 'high', reason: random ? '随机补填' : '题库命中' },
+    validation: { safe: true },
+  };
 }
 
 /** 一次答题的留档目录 */
@@ -129,7 +144,8 @@ async function solveOne({ workFrame, domIndex, qianwenPage, question, prompt, sh
  * @param {Function} [opts.shouldStop]
  * @returns {Promise<object>} 结果摘要
  */
-export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress, shouldStop, reviewRetry=false,restartTask=false }, {solve=solveOne}={}) {
+export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress, shouldStop, reviewRetry=false,restartTask=false },
+  {solve=solveOne, configured=bankConfigured, lookup=prepareBankAnswers, checkAi=checkLogin}={}) {
   const settings = loadSettings();
   const started = Date.now();
 
@@ -170,9 +186,12 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
       }
       log('    待审处理已结束，继续重开作业页', 'info');
     }
-    if(previous?.page&&!previous.page.isClosed()){releasePage(previous.page);await previous.page.close();}
+    if(!task.standalone&&previous?.page&&!previous.page.isClosed()){releasePage(previous.page);await previous.page.close();}
     log('    重新打开作业页（字体/页面类失败，换页通常即可恢复）', 'info');
     // Keep persisted work identity and answers for the normal checkpoint match.
+  }
+  if (loadState().keptPages?.[task.key]?.info?.submissionPending) {
+    return { ...result, ok:true, phase:'awaiting-review', submissionPending:true };
   }
   /*
    * 真机取证（2026-11-03）：单选题截图是成功的（硬盘上有 PNG），
@@ -180,16 +199,20 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
    * 不是"隐藏窗口导致全部字体不加载"。所以这里不再强制弹窗口，
    * 只在字体真的失败时再显示网页重试一次（见下面 catch 里）。
    */
-  const page = await newTaskPage(ctx, 'quiz');
-  page.on('dialog', (d) => {if(!submittingPages.has(page))void d.accept().catch(() => {});});
+  const page = task.standalone ? await findStandaloneWork(ctx, { expected: task.workIdentity, personId }) : await newTaskPage(ctx, 'quiz');
+  if (!page) return { ...result, error: '请从课程作业列表打开原作业，再继续作答' };
+  const dismissQuizDialog = d => {if(!submittingPages.has(page))void d.accept().catch(() => {});};
+  if (!task.standalone) page.on('dialog', dismissQuizDialog);
+  setPageBusy(page, true);
   let workFrame = null, questions = [],validatedQuestions=false;
   const keepForReview = ({busy=false}={}) => {
     result.keepPageOpen = true; result.workPage = page;
     result.workFrameUrl = workFrame.url();
     registerKeptPage(task.key, page, {
-      task: {courseId:task.courseId,clazzId:task.clazzId,knowledgeId:task.knowledgeId,name:task.name,type:task.type,jobid:task.jobid,cardNum:result.cardNum},
-      workIdentity: workIdentity(workFrame.url()), personId: String(personId),
+      task: {courseId:task.courseId,clazzId:task.clazzId,knowledgeId:task.knowledgeId,name:task.name,type:task.type,jobid:task.jobid,cardNum:result.cardNum,standalone:task.standalone,workIdentity:task.workIdentity},
+      workIdentity: result.workIdentity, personId: String(personId),
       submissionPending: !!result.submissionPending,
+      submissionVerificationOnly: !!result.submissionPending,
       course: task.courseName || task.courseId, secNo: task.secNo, name: task.name,
       totalQuestions: result.totalQuestions, answered: result.answered, queued: result.queued,
       items: result.items.map(i => ({questionIndex:i.questionIndex,qtype:i.qtype,letters:i.letters,textAnswer:i.textAnswer,requiresReview:i.requiresReview,confidence:i.confidence,autoFilled:i.autoFilled})),
@@ -214,6 +237,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
     }
 
     // —— 1) 打开作业所在小节（多卡片：作业常常在第 2 张卡片上）——
+    if (!task.standalone) {
     result.phase = 'open-section';
     log(`    打开小节：${task.secNo} ${task.sectionName}`, 'info');
     const card = await openSectionCard(page, task, personId, { maxCards: loadSettings().maxCardProbe ?? 6 });
@@ -253,12 +277,18 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
       return result;
     }
 
+    }
     // —— 2) 等作业 frame 渲染出题目 ——
     result.phase = 'wait-work-frame';
     workFrame = await waitWorkFrame(page, 35000);
     if (!workFrame) throw new Error('作业 frame 未出现或题目未渲染');
 
     const meta = await getWorkMeta(workFrame);
+    result.workIdentity = await frameWorkIdentity(workFrame);
+    if (task.standalone && (!sameWorkAttempt(task.workIdentity, result.workIdentity) || !meta.submitBtn ||
+        (await pageSubmissionState(page, workFrame, { expected: result.workIdentity })).submitted)) {
+      throw new Error('无法确认当前独立作业可编辑，或平台已显示提交结果');
+    }
     result.totalQuestions = meta.questionTotal;
     log(`    作业「${meta.title || task.name}」共 ${meta.questionTotal} 题`, 'info');
 
@@ -272,12 +302,17 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
     const reusable=new Map();
     if(cached.length){
       const identity=loadState().keptPages?.[task.key]?.info?.workIdentity;
-      const actual=workIdentity(workFrame.url());
+      const actual=result.workIdentity;
       if(!identity?.workid||Object.entries(identity).some(([key,value])=>actual[key]!==value))throw Error('作业或作答次数改变，已保留旧答案，请先人工核对');
       const {matchReviewQuestions}=await import('./review-recovery.mjs');
-      for(const {item,question}of matchReviewQuestions(cached.filter(item=>(item.aiAnswer&&!item.aiError)||item.editedByHuman),questions)){
+      for(const {item,question,letters}of matchReviewQuestions(cached.filter(item=>(item.aiAnswer&&!item.aiError)||item.editedByHuman||['bank','random'].includes(item.answerSource)&&(item.autoFilled||item.savedAnswer)),questions)){
+        if (item.answerSource === 'bank' || item.answerSource === 'random') {
+          reusable.set(question.index, {...item,...resolvedBankAnswer(question,{kind:item.answerSource === 'random' ? 'random' : 'hit',letters,blanks:item.blanks})});
+          continue;
+        }
         const parsed=parseAnswer(item.aiAnswer||'',question);
-        if(item.editedByHuman){parsed.letters=item.letters||[];parsed.textAnswer=item.textAnswer||'';parsed.confidence='high';parsed.canFill=true;}
+        if(item.editedByHuman){parsed.letters=letters;parsed.textAnswer=item.textAnswer||'';parsed.confidence='high';parsed.canFill=true;}
+        else if (letters.length && parsed.letters?.length) parsed.letters = letters;
         const validation=validateBeforeSubmit(parsed,question);
         if((!item.aiError||item.editedByHuman)&&(question.qtype==='essay'?parsed.canFill:validation.safe&&parsed.confidence==='high'))reusable.set(question.index,{...item,parsed,validation});
       }
@@ -285,19 +320,43 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
     for(const [index,previous]of reusable)result.items.push({...previous,questionIndex:index,autoFilled:false,filled:null,savedAnswer:true,status:'pending-review'});
     validatedQuestions=true;
     checkpoint();
-    // —— 3) AI登录检查 ——
-    const login = await checkLogin(qianwenPage);
-    if (!login.loggedIn) {
-      result.phase = 'blocked-verification'; result.aiErrorCode = 'not-logged-in';
-      result.error = result.needsHuman = 'AI 未登录或页面尚未就绪，请在软件内完成登录后重新开始';
-      queueUnanswered(result, task, questions, result.error); keepForReview();
-      return result;
-    }
+    const independentCount = await readIndependentQuizCount(workFrame);
+    const bank = settings.answerBank || {};
+    const preferBank = bank.source !== 'ai';
+    const useBank = preferBank && await configured();
+    const bankAnswers = useBank ? await lookup(questions, reusable, { shouldStop,
+      onProgress: () => onProgress?.({ index: 0, total: questions.length, phase: 'bank-lookup', answerSource: 'bank' }),
+    }) : new Map();
+    const bankOutcomes = questions.map(q => reusable.get(q.index)?.bankOutcome ?? (reusable.has(q.index) ? 'restored' : bankAnswers.get(q.index)?.kind));
+    const allowRandom = useBank && bank.fallback === 'random' && randomEligible(bankOutcomes, independentCount);
+    const fallback = bank.fallback === 'random' ? bank.aboveLimit : bank.fallback;
+    if (useBank) log(`    题库查询完成：命中 ${bankOutcomes.filter(kind=>kind==='hit').length} 题，明确未命中 ${bankOutcomes.filter(kind=>kind==='miss').length} 题`, 'info');
+    let aiReady = false;
+    let aiRequests = 0;
+    const ask = async opts => {
+      if (!aiReady) {
+        const provider = selectedProvider(settings);
+        if (checkAi === checkLogin && provider.id !== 'api' && (!qianwenPage || qianwenPage.isClosed())) {
+          qianwenPage = await ensureProviderPage(ctx, provider).catch(() => null);
+        }
+        const login = await checkAi(qianwenPage);
+        if (!login.loggedIn) return { parsed: {}, validation: {}, aiErrorCode: 'not-logged-in', aiError: 'AI 未登录，请在软件内完成登录后继续' };
+        aiReady = true;
+      }
+      aiRequests++;
+      return solve({...opts,qianwenPage});
+    };
 
     // —— 4) 逐题处理 ——
     let captureFailures = 0;
+    const canResolveLocally = q => {
+      const previous = reusable.get(q.index);
+      const answer = bankAnswers.get(q.index);
+      return Boolean(previous && (previous.answerSource !== 'random' || allowRandom) || answer?.kind === 'hit' || allowRandom && answer?.kind === 'miss');
+    };
+    const ordered = useBank ? [...questions].sort((a,b) => Number(canResolveLocally(b)) - Number(canResolveLocally(a))) : questions;
 
-    for (let i = 0; i < questions.length; i += 1) {
+    for (let i = 0; i < ordered.length; i += 1) {
       if (shouldStop && shouldStop()) {
         /*
          * 用户主动停止 ≠ 失败。
@@ -309,12 +368,23 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
         result.stopped = true;
         break;
       }
-      const q = questions[i];
-      log(`    [${i + 1}/${questions.length}] ${q.qtypeRaw} ${q.optionCount} 选项 —— 读取题目截图…`, 'info');
+      const q = ordered[i];
+      log(`    [${q.index}/${questions.length}] ${q.qtypeRaw} ${q.optionCount} 选项`, 'info');
 
-      if (onProgress) onProgress({ index: i, total: questions.length, phase: 'asking' });
-
-      const previous=reusable.get(q.index);
+      let previous=reusable.get(q.index);
+      const bankAnswer = bankAnswers.get(q.index);
+      if (previous?.answerSource === 'random' && !allowRandom) previous = null;
+      const chosen = bankAnswer?.kind === 'hit' ? bankAnswer : allowRandom && bankAnswer?.kind === 'miss' ? randomBankAnswer(q) : null;
+      if (!previous && !chosen && preferBank && (allowRandom || fallback === 'review')) {
+        const item = pendingQuizItem(task, q, '题库未取得可回填答案，按设置转待审', {bankOutcome:bankAnswer?.kind});
+        const existing = result.items.findIndex(value => value.questionIndex === q.index);
+        if (existing >= 0) result.items[existing] = item; else result.items.push(item);
+        result.queued++;
+        checkpoint();
+        continue;
+      }
+      const answerSource = previous?.answerSource ?? (chosen?.kind === 'hit' ? 'bank' : undefined);
+      onProgress?.({ index: i, total: questions.length, phase: 'asking', answerSource });
       if(previous)log(`        复用第 ${q.index} 题已保存答案，仅核对并恢复填写，不重复问 AI`, 'info');
       /*
        * 用户反馈（2026-11-03）：做到一题时字体加载失败，整张卷子就此停住
@@ -323,7 +393,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
        */
       let solved;
       try {
-        solved = previous ? {...previous,question:q,aiError:null,aiErrorCode:null} : await solve({
+        solved = previous ? {...previous,question:q,aiError:null,aiErrorCode:null} : chosen ? resolvedBankAnswer(q, chosen) : await ask({
           taskKey:task.key,
           resendMissingConversation:!restartTask,
           workFrame,
@@ -348,7 +418,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
           await setBrowserVisible(true).catch(() => {});
           await sleep(1500);
           try {
-            solved = await solve({
+            solved = await ask({
               taskKey: task.key,
               resendMissingConversation:!restartTask,
               workFrame,
@@ -399,10 +469,10 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
         }
       }
 
-      const tag = confidenceLabel(solved.parsed.confidence);
+      const tag = solved.answerSource === 'random' ? '随机补填' : confidenceLabel(solved.parsed.confidence);
       if (!solved.aiError) {
       log(
-        `        AI：${q.qtype === 'essay' ? `简答正文 ${solved.parsed.textAnswer?.length || 0} 字符` : solved.parsed.letters.join('') || '(无)'}  ${tag}  ${solved.parsed.reason}`,
+        `        ${solved.answerSource === 'bank' ? '题库' : solved.answerSource === 'random' ? '随机' : 'AI'}：${solved.blanks ? `${solved.blanks.length} 空` : q.qtype === 'essay' ? `简答正文 ${solved.parsed.textAnswer?.length || 0} 字符` : solved.parsed.letters.join('') || '(无)'}  ${tag}  ${solved.parsed.reason}`,
         solved.parsed.confidence === 'high' ? 'ok' : 'warn',
       );
       }
@@ -446,31 +516,38 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
       const fontWarned = !!solved.fontWarning;
       if (fontWarned) log('        ! 该题字体未完全加载，答案不自动填，转待审核对', 'warn');
       const mayFill = !fontWarned && !solved.aiError && (isEssay ? settings.essayAutoFill && solved.parsed.canFill
-        : solved.parsed.confidence === 'high' && solved.validation.safe);
+        : (solved.parsed.confidence === 'high' || solved.answerSource === 'random' && allowRandom) && solved.validation.safe);
       let filled = null;
       let autoFilled = false;
       let fillError = null;
       throwIfStopped(shouldStop);
       if (mayFill) {
         try {
+          if (result.workIdentity.workanswerid && !sameWorkAttempt(result.workIdentity, await frameWorkIdentity(workFrame))) throw new Error('作答身份已变化');
           if (isEssay) {
             filled = await fillEssayAnswer(workFrame, q.domIndex, solved.parsed.textAnswer, { shouldStop });
             autoFilled = filled.ok && filled.verified;
             fillError = filled.error || null;
+          } else if (q.qtype === 'fill' && solved.blanks) {
+            filled = await fillQuizBlanks(workFrame, q.domIndex, solved.blanks);
+            autoFilled = filled.ok;
+            if (!autoFilled) fillError = '填空的表单值未通过核对';
           } else {
-            const r = await selectOptions(workFrame, q.domIndex, solved.parsed.letters);
-            await page.waitForTimeout(400);
+            const current = await readSelection(workFrame, q.domIndex);
+            const alreadyFilled = current?.selected.length === solved.parsed.letters.length && solved.parsed.letters.every(letter => current.selected.includes(letter));
+            const r = alreadyFilled ? {ok:true} : current?.selected.length ? {ok:false} : await selectOptions(workFrame, q.domIndex, solved.parsed.letters);
+            if (!solved.answerSource && !alreadyFilled) await page.waitForTimeout(400);
             const back = await readSelection(workFrame, q.domIndex);
             filled = { requested: solved.parsed.letters, result: r, readBack: back.selected };
             autoFilled = r.ok && back.selected.length === solved.parsed.letters.length &&
               solved.parsed.letters.every((letter) => back.selected.includes(letter));
-            if (!autoFilled) fillError = '点选与回读答案不一致';
+            if (!autoFilled) fillError = current?.selected.length ? '页面已有不同答案，留待核对' : '点选与回读答案不一致';
           }
         } catch (err) {
           if (err.code === 'STOPPED') throw err;
           fillError = err.message;
         }
-        log(autoFilled ? (isEssay ? `        ✓ 已填入简答草稿 ${filled.chars} 字符，待人工核对` : `        ✓ 已填入 ${solved.parsed.letters.join('')}`)
+        log(autoFilled ? (isEssay ? `        ✓ 已填入简答草稿 ${filled.chars} 字符，待人工核对` : solved.blanks ? `        ✓ 已填入并核对 ${solved.blanks.length} 空` : `        ✓ 已填入 ${solved.parsed.letters.join('')}`)
           : `        ! 填写未完成：${fillError}`, autoFilled ? 'ok' : 'warn');
       } else {
         log(`        ⊘ 不自动填（${isEssay && !settings.essayAutoFill ? '简答自动填写已关闭' : solved.parsed.reason}）`, 'warn');
@@ -506,6 +583,9 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
         aiError: solved.aiError,
         aiWaitedMs: solved.aiWaitedMs,
         aiErrorCode: solved.aiErrorCode,
+        answerSource: solved.answerSource,
+        bankOutcome: solved.bankOutcome || bankAnswer?.kind,
+        blanks: solved.blanks,
         confidence: solved.parsed.confidence,
         confidenceLabel: tag,
         letters: solved.parsed.letters,
@@ -527,8 +607,8 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
       if (isEssay || !autoFilled) result.queued += 1;
       checkpoint();
 
-      if (onProgress) onProgress({ index: i, total: questions.length, phase: 'done', item });
-      await sleep(600);
+      if (onProgress) onProgress({ index: i, total: questions.length, phase: 'done', answerSource: item.answerSource, item });
+      if (!solved.answerSource) await sleep(600);
     }
 
     if (result.stopped) {queueUnanswered(result,task,questions,'任务已停止，可继续未完成题目');keepForReview();return result;}
@@ -541,22 +621,35 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
 
     // —— 5) 提交决策 ——
     const subm = result.submitMode;
-    const allHigh = result.queued === 0 && canAutoSubmitItems(result.items, questions.length);
+    const allHigh = result.queued === 0 && independentCount === questions.length &&
+      canAutoSubmitItems(result.items, questions.length, allowRandom);
+    const verified = allHigh && await verifyQuizBeforeSubmit(workFrame, result.items, result.workIdentity);
+    result.answerTiming = {
+      elapsedMs: Date.now() - started + (task.standalone ? meta.navigationMs : 0), bank: result.items.filter(item => item.autoFilled && item.answerSource === 'bank').length,
+      random: result.items.filter(item => item.autoFilled && item.answerSource === 'random').length, aiRequests,
+      filled: result.answered, total: independentCount ?? meta.questionTotal, coverageVerified: verified,
+    };
+    log(`    本次打开到回填核对 ${(result.answerTiming.elapsedMs / 1000).toFixed(2)} 秒，已填 ${result.answered}/${result.answerTiming.total}，题库 ${result.answerTiming.bank}，随机 ${result.answerTiming.random}，AI 请求 ${aiRequests}`, 'info');
 
-    if (subm === 'auto' && allHigh && meta.submitBtn) {
-      log('    全部题目均为高可靠 → 自动提交', 'info');
-      const submission = await submitWork(workFrame);
+    if (subm === 'auto' && verified && meta.submitBtn?.visible) {
+      log('    题数与表单回读均已核对，开始提交', 'info');
+      const submission = await submitWork(workFrame, { expected: result.workIdentity, beforeSubmit: () => {
+        result.submissionPending = true;
+        checkpoint();
+        if (!loadState().keptPages?.[task.key]?.info?.submissionPending) throw new Error('未能保存提交检查点');
+      }});
       if(submission.ok){
         result.submitted = true;
         result.score = submission.score;
         result.phase = 'submitted';
-        await page.close().catch(() => {});
-        releasePage(page);
+        dropKeptPage(task.key);
+        if (!task.standalone) { await page.close().catch(() => {}); releasePage(page); }
       }else{
         result.submissionPending=!!submission.pendingConfirmation;
         log(`    未确认提交成功，转入待审：${submission.error}`, 'warn');
       }
     }
+    if (subm === 'auto' && !verified) log('    提交前未能独立核对整份作业，已转待审', 'warn');
     if(!result.submitted){
       /*
        * 需要人工确认：**保持作业页打开**，让人能核对答案后点提交。
@@ -591,13 +684,20 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
     log(`    ✗ 失败：${err.message}`, 'error');
     return result;
   } finally {
+    page.off('dialog', dismissQuizDialog);
     result.elapsedSec = Math.round((Date.now() - started) / 1000);
     if(workFrame&&validatedQuestions){result.answered=result.items.filter(i=>i.autoFilled).length;result.queued=result.items.filter(i=>i.requiresReview||!i.autoFilled).length;recordQuizResult(result);if(!page.isClosed())setPageBusy(page,false);}
+    if (result.submissionPending && !shouldStop?.()) {
+      const { reconcileOneReview } = await import('../review-reconcile.mjs');
+      const verified = await reconcileOneReview(ctx, task.key, {personId, shouldStop, waitMs:3500}).catch(() => null);
+      if (verified?.state === 'submitted') Object.assign(result, {ok:true, submitted:true, submissionPending:false, phase:'submitted', score:verified.score});
+    }
     // 为人工确认而保留的页面不能在这里关掉
-    if (!result.keepPageOpen) {
+    if (!result.keepPageOpen && !task.standalone) {
       await page.close().catch(() => {});
       releasePage(page);
     }
+    if (!page.isClosed()) setPageBusy(page, false);
   }
 }
 
@@ -630,7 +730,7 @@ export function registerKeptPage(key, page, info = {}, {busy=false}={}) {
     while (keptWorkPages.size > MAX_KEPT_PAGES && sorted.length) {
       const [oldKey, old] = sorted.shift();
       try {
-        if (!old.page.isClosed()) old.page.close().catch(() => {});
+        if (!old.info?.task?.standalone && !old.page.isClosed()) old.page.close().catch(() => {});
         log(`    （保留页面已达上限，关掉较早的：${oldKey}）`, 'warn');
       } catch {
         /* 关不掉就算了 */
@@ -651,11 +751,46 @@ export function registerKeptPage(key, page, info = {}, {busy=false}={}) {
   }
 }
 
-export function workIdentity(url) {
-  try{
-    const params=[...new URL(url).searchParams];
-    return Object.fromEntries(params.filter(([key])=>/^(?:workid|workanswerid)$/i.test(key)).map(([key,value])=>[key.toLowerCase(),value]));
-  }catch{return {};}
+export function sameWorkAttempt(expected, actual) {
+  return Boolean(expected?.workid && expected?.workanswerid && expected.workid === actual?.workid && expected.workanswerid === actual?.workanswerid);
+}
+
+export async function findStandaloneWork(ctx, { expected, personId, results = false } = {}) {
+  const candidates = [];
+  for (const page of ctx?.pages() || []) {
+    if (page.isClosed()) continue;
+    try {
+      const url = new URL(page.url());
+      if (url.protocol !== 'https:' || !['mooc1.chaoxing.com','mooc1-api.chaoxing.com','mooc1-2.chaoxing.com'].includes(url.hostname)) continue;
+      if (!/^\/mooc-ans\/(?:api\/)?work\/(?:doHomeWorkNew|selectWorkQuestion)$/i.test(url.pathname) &&
+          !(results && /^\/mooc-ans\/(?:api\/)?work\/(?:viewWork|workView|workAnswer)$/i.test(url.pathname))) continue;
+      if (personId && url.searchParams.has('cpi') && url.searchParams.get('cpi') !== String(personId)) continue;
+      const identity = await frameWorkIdentity(page.mainFrame());
+      if (sameWorkAttempt(expected || identity, identity)) candidates.push(page);
+    } catch { /* Detached or closed page. */ }
+  }
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+async function verifyQuizBeforeSubmit(frame, items, expected) {
+  if (!sameWorkAttempt(expected, await frameWorkIdentity(frame))) return false;
+  const questions = await extractQuestions(frame);
+  if (await readIndependentQuizCount(frame) !== questions.length || items.length !== questions.length ||
+      questions.some(question => !question.questionId) || new Set(questions.map(question => question.questionId)).size !== questions.length) return false;
+  const { matchReviewQuestions } = await import('./review-recovery.mjs');
+  try {
+    const matches = matchReviewQuestions(items, questions);
+    for (const { item, question, letters } of matches) {
+      if (question.qtype === 'fill') {
+        const back = await fillQuizBlanks(frame, question.domIndex);
+        if (!back.ok || JSON.stringify(back.values) !== JSON.stringify(item.blanks)) return false;
+      } else {
+        const back = await readSelection(frame, question.domIndex);
+        if (!letters?.length || back?.selected.length !== letters.length || letters.some(letter => !back.selected.includes(letter))) return false;
+      }
+    }
+    return sameWorkAttempt(expected, await frameWorkIdentity(frame));
+  } catch { return false; }
 }
 
 export function getKeptPage(key) {
@@ -767,14 +902,29 @@ export async function submitKeptWork(key) {
   const { findWorkFrame } = await import('./quiz.mjs');
   const wf = findWorkFrame(page);
   if (!wf) return { ok: false, error: '找不到作业 frame' };
-  const r = await submitWork(wf,{confirmationOnly:!!e.info?.submissionPending});
+  const wasPending = !!e.info?.submissionPending;
+  const r = await submitWork(wf, {
+    confirmationOnly: wasPending, verificationOnly: !!e.info?.submissionVerificationOnly,
+    expected: e.info?.workIdentity?.workanswerid ? e.info.workIdentity : null,
+    beforeSubmit: () => {
+      e.info = {...e.info, submissionPending:true, submissionVerificationOnly:true};
+      if (!mutateState(state => {
+        if (!state.keptPages?.[key]) throw new Error('缺少待审作业检查点');
+        state.keptPages[key].info = e.info;
+        return true;
+      })) throw new Error('未能保存提交检查点');
+    },
+  });
   if(r.pendingConfirmation){
     e.info={...e.info,submissionPending:true};
     mutateState(state=>{if(state.keptPages?.[key])state.keptPages[key].info=e.info;});
   }
+  if (!r.ok && !r.pendingConfirmation && !wasPending && e.info?.submissionPending) {
+    e.info = {...e.info,submissionPending:false,submissionVerificationOnly:false};
+    mutateState(state=>{if(state.keptPages?.[key])state.keptPages[key].info=e.info;});
+  }
   if (r.ok) {
-    await page.close().catch(() => {});
-      releasePage(page);
+    if (!e.info?.task?.standalone) { await page.close().catch(() => {}); releasePage(page); }
     dropKeptPage(key);
   }
   return r;
@@ -796,44 +946,48 @@ export async function submitKeptWork(key) {
  *   2) 确认框按钮**必须用真实指针事件**。JS 原生 el.click() 点不动 #popok
  *      （疑似绑的是 jQuery 事件），使用真实鼠标或按钮原生 Enter 激活。
  */
-export async function submitWork(workFrame,{confirmationOnly=false}={}) {
+export async function submitWork(workFrame,{confirmationOnly=false,verificationOnly=false,expected=null,beforeSubmit=()=>{}}={}) {
   const page=workFrame.page();let clicked=false,confirmed=false,nativeError='';
+  if (submittingPages.has(page)) return {ok:false,pendingConfirmation:true,error:'作业正在核对提交结果'};
   submittingPages.add(page);
   const frames=()=>[workFrame,...page.frames()].filter((f,i,a)=>f&&a.indexOf(f)===i);
   const findControl=async(selector,confirm=false)=>{
-    for(const frame of frames()){
+    for(const frame of confirm ? frames() : [workFrame]){
       const control=frame.locator(selector).filter({visible:true});
       const count=await control.count().catch(()=>0);
       for(let i=0;i<count;i++){
         const item=control.nth(i);
-        if(confirm&&!await item.evaluate(e=>/提交|交卷/.test((e.closest('.popDiv,.layui-layer,[role="dialog"]')||e.parentElement)?.innerText||'')).catch(()=>false))continue;
+        if(confirm&&!await item.evaluate(e=>/提交|交卷/.test((e.closest('.popDiv,.layui-layer,[role="dialog"],#confirmSubWin')||e.parentElement)?.innerText||'')).catch(()=>false))continue;
         return item;
       }
     }
     return null;
   };
   const onDialog=dialog=>{
-    if(dialog.type()==='confirm'&&/提交|交卷/.test(dialog.message())){confirmed=true;void dialog.accept().catch(()=>{});}
+    if((clicked||confirmed)&&dialog.type()==='confirm'&&/提交|交卷/.test(dialog.message())){confirmed=true;void dialog.accept().catch(()=>{});}
     else{nativeError=dialog.message().slice(0,160);void dialog.dismiss().catch(()=>{});}
   };
   page.on('dialog',onDialog);
   try{
-    if((await pageSubmissionState(page,workFrame)).submitted)return {ok:true,alreadySubmitted:true};
-    let confirmation=await findControl('#popok, #popOk',true);
+    if((await pageSubmissionState(page,workFrame,{expected})).submitted)return {ok:true,alreadySubmitted:true};
+    if (verificationOnly) return {ok:false,pendingConfirmation:true,error:'上次提交仍待平台确认，已保留待审记录'};
+    if (expected && !sameWorkAttempt(expected,await frameWorkIdentity(workFrame))) return {ok:false,error:'原作答身份已变化'};
+    const confirmationSelector = '#popok, #popOk, #confirmSubWin a[onclick^="submitCheckTimes("]';
+    let confirmation=await findControl(confirmationSelector,true);
     if(!confirmation){
       if(confirmationOnly)return {ok:false,pendingConfirmation:true,error:'上次提交结果尚未确认，当前没有待确认弹窗，暂不重复提交'};
-      const submit=await findControl('.btnSubmit');
+      const submit=await findControl(WORK_SUBMIT_SELECTOR);
       if(!submit)return {ok:false,error:'未找到可用的提交按钮，请核对作业页面'};
-      clicked=true;await submit.click({timeout:10000});
+      beforeSubmit();clicked=true;await submit.click({timeout:10000});
     }
     const deadline=Date.now()+30000;
     while(Date.now()<deadline){
-      const result=await pageSubmissionState(page,workFrame);
+      const result=await pageSubmissionState(page,workFrame,{expected});
       if(result.submitted)return {ok:true,status:'success',score:result.score};
       if(nativeError)return {ok:false,pendingConfirmation:!/未答|必填|不能为空|请完成|未完成/.test(nativeError),error:nativeError};
       if(!confirmed){
-        confirmation=confirmation||await findControl('#popok, #popOk',true);
-        if(confirmation){confirmed=true;await activateSubmitConfirmation(confirmation,page);confirmation=null;}
+        confirmation=confirmation||await findControl(confirmationSelector,true);
+        if(confirmation){if(!clicked)beforeSubmit();confirmed=true;await activateSubmitConfirmation(confirmation,page);confirmation=null;}
       }
       await page.waitForTimeout(300);
     }
@@ -864,6 +1018,7 @@ export function recordQuizResult(result,{checkpoint=false}={}) {
       error: result.error,
       aiErrorCode: result.aiErrorCode || null,
       needsHuman: result.needsHuman || null,
+      ...(result.answerTiming ? {answerTiming:result.answerTiming} : {}),
     };
 
     /*

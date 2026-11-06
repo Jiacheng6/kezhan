@@ -32,9 +32,6 @@ html[data-mode=dark] .mode-moon { transform:none; opacity:1; }
 .settings-section #libraryTools { margin-top:16px; margin-right:10px; }
 .settings-intro { padding:18px 20px; border:1px solid var(--line); border-radius:12px; background:var(--bg2); }
 .settingsform { background:var(--bg2); border:1px solid var(--line); border-radius:12px; padding-inline:22px; }
-::view-transition-old(root),::view-transition-new(root) { animation:none!important; mix-blend-mode:normal; }
-::view-transition-new(root) { z-index:2; }
-::view-transition-old(root) { z-index:1; }
 @media(max-width:800px) { .theme-settings { flex-direction:column; align-items:flex-start; } .theme-settings .theme-accents { flex-wrap:wrap; } }
 :root { --sidebar:208px; --gutter:28px; --r-card:12px; --r-ctl:7px; }
 html,body,.workspace,main { background:var(--bg); color:var(--fg); }
@@ -155,10 +152,6 @@ dialog::backdrop { background:#10182766; backdrop-filter:none; }
 :focus-visible,.task-sheet :focus-visible { outline:2px solid var(--acc); outline-offset:3px; }
 /* motion.js is the sole owner of panel transitions. */
 .sidebar,.topbar,.platform-strip,.platform-session,.platform-total,.card,.task-sheet,.treecourse,.treehead,.review-note,.reviewgroup,.settings-details,.ledger-row,.tprow,.pill,.chip,.platform-badge,html,body { transition:none; }
-::view-transition-old(root) { animation:theme-out 160ms ease-out both; }
-::view-transition-new(root) { animation:theme-in 180ms ease-out both; }
-@keyframes theme-out { to { opacity:0; } }
-@keyframes theme-in { from { opacity:0; } }
 .panel.active { animation:none; }
 button { transition:transform 140ms var(--ease-out),background-color 140ms ease,border-color 140ms ease; }
 button:active:not(:disabled) { transform:scale(.98); }
@@ -168,15 +161,6 @@ html[data-input=keyboard] button:active { transform:none; }
 html[data-input=keyboard] *,html[data-input=keyboard] *::before,html[data-input=keyboard] *::after { animation-duration:0s!important; transition-duration:0s!important; }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:0s!important; transition-duration:0s!important; scroll-behavior:auto!important; } }
 @media(min-width:1600px) { :root { --gutter:36px; } .sd-layout { grid-template-columns:235px minmax(0,1fr) 270px; } }
-/* When working in a section, keep live status as a compact persistent strip. */
-@media(min-width:1021px) {
-  body:not([data-panel=overview]) .platform-sessions { grid-template-columns:minmax(200px,1fr) repeat(3,minmax(0,1fr)); }
-  body:not([data-panel=overview]) .platform-total { grid-column:auto; padding:14px; }
-  body:not([data-panel=overview]) .platform-total-caption { gap:8px; font-size:11px; }
-  body:not([data-panel=overview]) .platform-total-caption span { font-size:11px; }
-  body:not([data-panel=overview]) .platform-total > small { display:none; }
-  body:not([data-panel=overview]) .platform-task-progress { display:none!important; }
-}
 @media(max-width:1180px) { :root { --sidebar:180px; --gutter:20px; } .overview-grid { grid-template-columns:minmax(0,1fr) 240px; } .sd-layout { grid-template-columns:170px minmax(220px,1fr) 205px; } .sd-layout .sd-tasks { padding-inline:14px; } }
 @media(max-width:1020px) { .overview-grid { grid-template-columns:1fr; } .overview-rail { grid-template-columns:repeat(2,minmax(0,1fr)); } .readiness { grid-column:1/-1; } .platform-sessions { grid-template-columns:1fr; } .sd-layout { grid-template-columns:180px minmax(0,1fr); height:auto; } .sd-layout .sd-selection { grid-column:1/-1; } }
 @media(max-width:800px) { :root { --sidebar:76px; --gutter:14px; } .sidebar { padding-inline:8px; } .sidebar .brand .logo,.brand-en,.sidebar .brand-note { display:none!important; } .sidebar .brand h1 { font-size:18px; letter-spacing:0; } .sidebar .tab { padding-inline:8px; } .overview-rail { grid-template-columns:1fr; } .sd-layout { grid-template-columns:1fr; } .platform-label { display:none; } .platform-manager-content { width:min(340px,calc(100vw - 110px)); } .page-heading { align-items:flex-start; gap:12px; flex-wrap:wrap; } .header-right { gap:8px; } .breadcrumb > span { display:none; } }

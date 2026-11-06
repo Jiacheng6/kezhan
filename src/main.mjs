@@ -17,7 +17,9 @@ import { buildChecklist, loadSelection, invalidateReconCache } from './chaoxing/
 import { batchRunner, buildRunTasks } from './batch.mjs';
 import { assertRunScope } from './ui/run-scope.js';
 import { loadState, resetState, statePath, setTaskStatus, listReviewItems, markReviewItem, healStaleRunning, reconcile, mutateState, repairCompletedReviewRecords } from './state.mjs';
-import { listKeptPages, registerKeptPage, editKeptEssayReviewAnswer } from './chaoxing/quizrun.mjs';
+import { listKeptPages, registerKeptPage, editKeptEssayReviewAnswer, findStandaloneWork } from './chaoxing/quizrun.mjs';
+import { frameWorkIdentity } from './chaoxing/submission-state.mjs';
+import { getWorkMeta } from './chaoxing/quiz.mjs';
 import { reopenReviewWork, submitPendingReviews, withReviewLock, syncSubmittedReviews } from './chaoxing/review-recovery.mjs';
 import {reconcileReviewResults,reconcileOneReview} from './review-reconcile.mjs';
 import {reviewOperationBlock} from './review-policy.mjs';
@@ -1198,6 +1200,26 @@ function buildHooks() {
       return { orderEntries, excluded, disabledCourses };
     },
 
+    startStandaloneWork: async () => {
+      if (recon.running || batchRunner.running || startingPlatforms.has('chaoxing')) throw Error('请先停止当前学习通任务');
+      if (!runtime.context || !getStatus().ready || !PERSON_ID) throw Error('请先登录学习通并检测登录状态');
+      startingPlatforms.add('chaoxing');
+      try {
+        const page = await findStandaloneWork(ctx(), { personId: PERSON_ID });
+        if (!page) throw Error('请在学习通课程的「作业」列表打开一份未提交的独立作业，仅保留一份独立作业打开');
+        const identity = await frameWorkIdentity(page.mainFrame());
+        if (!identity.workid || !identity.workanswerid) throw Error('无法核对当前作业与作答身份');
+        const meta = await getWorkMeta(page.mainFrame());
+        if (!meta.questionTotal || !meta.submitBtn?.visible) throw Error('作业尚未加载或当前页面不可作答');
+        const key = `chaoxing:standalone:${identity.workid}:${identity.workanswerid}`;
+        const task = { key, type:'work', name:meta.title || '独立作业', standalone:true, workIdentity:identity, willHandle:true };
+        void batchRunner.start({ctx:ctx(),tasks:[task],command:{personId:PERSON_ID},qianwenPage:runtime.qianwenPage,
+          onUpdate:({running,stopRequested,stats})=>patchStatus({running,runStats:stats,progress:{done:stats.done,total:1,current:stats.current?.name||task.name,taskType:'work',questionIndex:stats.current?.questionIndex??null,questionTotal:stats.current?.questionTotal??null,answerSource:stats.current?.answerSource,stopping:stopRequested,phase:stats.current?.phase??null}})
+        }).catch(error=>log(`独立作业失败：${error.message}`,'error')).finally(()=>patchStatus({running:false,reviewCount:listReviewItems().length}));
+        return {started:true,count:1};
+      } finally { startingPlatforms.delete('chaoxing'); }
+    },
+
     // —— 执行（P2 / P3） ——
     startRun: async (req) => {
       if (recon.running) throw new Error('正在读取课程清单，请等待完成或先停止');
@@ -1268,7 +1290,7 @@ function buildHooks() {
 
       log('=== 开始执行刷课 ===', 'info');
       // 开跑前刷新一次千问登录态：没登录的话答题会全线失败，界面要看得见
-      await refreshQianwenStatus({create:true}).catch(() => {});
+      if (runnable.some(task => task.type !== 'work') || loadSettings().answerBank?.source === 'ai') await refreshQianwenStatus({create:true}).catch(() => {});
       if (enabledCourses.length === 12) {
         log(`⚠ 本次会刷全部 ${enabledCourses.length} 门课（共 ${runnable.length} 个任务点）`, 'warn');
         log('   如果你只想刷某几门课：到「课程树」取消勾选不要的课程 → 点「保存选择」→ 再开始', 'warn');
@@ -1307,6 +1329,8 @@ function buildHooks() {
                   duration: st.current?.duration ?? null,
                   questionIndex: st.current?.questionIndex ?? null,
                   questionTotal: st.current?.questionTotal ?? null,
+                  answerSource: st.current?.answerSource,
+                  stopping: snap.stopRequested,
                   taskType: st.current?.type ?? null,
                   phase: st.current?.phase ?? null,
                 },
@@ -1412,18 +1436,19 @@ function buildHooks() {
       if(!runtime.context||!getStatus().ready)throw Error('内置网页尚未就绪');
       const items=listReviewItems().filter(i=>i.taskKey===taskKey);
       if(!items.length||items.some(i=>i.qtype==='discussion'))throw Error('此记录不是可继续的测验草稿');
-      const task=buildChecklist()?.courses.flatMap(c=>c.tasks||[]).find(t=>t.key===taskKey);
+      const standalone=loadState().keptPages?.[taskKey]?.info?.task;
+      const task=standalone?.standalone ? {...standalone,key:taskKey} : buildChecklist()?.courses.flatMap(c=>c.tasks||[]).find(t=>t.key===taskKey);
       if(!task||task.type!=='work')throw Error('课程清单中找不到这份作业，请先读取清单；已有答案保留');
       if(loadState().taskPoints?.[taskKey]?.status==='done')throw Error('平台已确认完成，未重复作答');
       retryingReviews.add(taskKey);
       try{
         if(platformOf(task)==='zhihuishu')return startZhihuishuTasks([{...task,reviewRetry:true}]);
         if(!PERSON_ID)throw Error('请先登录学习通并重新检测登录');
-        await refreshQianwenStatus({create:true});
+        if (loadSettings().answerBank?.source === 'ai') await refreshQianwenStatus({create:true});
         // A retry is restricted to one stored task and always stops for review.
         // It never changes the user's course selection or submits an assignment.
         void batchRunner.start({ctx:ctx(),tasks:[{...task,willHandle:true,reviewRetry:true}],command:{personId:PERSON_ID},qianwenPage:runtime.qianwenPage,
-          onUpdate:({running,stats})=>patchStatus({running,runStats:stats,progress:{done:stats.done,total:1,current:stats.current?.name||task.name,taskType:'work',questionIndex:stats.current?.questionIndex??null,questionTotal:stats.current?.questionTotal??null,phase:stats.current?.phase??null}})
+          onUpdate:({running,stopRequested,stats})=>patchStatus({running,runStats:stats,progress:{done:stats.done,total:1,current:stats.current?.name||task.name,taskType:'work',questionIndex:stats.current?.questionIndex??null,questionTotal:stats.current?.questionTotal??null,answerSource:stats.current?.answerSource,stopping:stopRequested,phase:stats.current?.phase??null}})
         }).catch(error=>{log(`继续作业失败：${error.message}`,'error');notifyUser('batch-error',{key:taskKey+':retry',detail:error.message});}).finally(()=>patchStatus({running:false,reviewCount:listReviewItems().length}));
         return {started:true,count:1};
       }finally{retryingReviews.delete(taskKey);}

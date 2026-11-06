@@ -11,7 +11,7 @@ const app = path.join(dist, 'win-unpacked', 'resources', 'app');
 for(const relative of ['src/ai/throttle.mjs','src/platforms/zhihuishu/quiz.mjs','desktop/main.cjs','src/platforms/zhihuishu/quiz-submit.mjs','src/task-recovery.mjs','src/platforms/zhihuishu/entry.mjs','src/ui/platforms.css','src/ui/platforms.js','src/ui/kebo.css','src/ui/kebo.js','src/ai/queue.mjs','src/platforms/catalog.mjs','src/platforms/runs.mjs','src/platforms/zhihuishu/scan.mjs','src/platforms/zhihuishu/runner.mjs','src/platforms/zhihuishu/read-page.mjs','src/platforms/zhihuishu/video.mjs','src/platforms/zhihuishu/quiz-task.mjs','src/platforms/zhihuishu/quiz-run.mjs']){
   assert.equal(fs.readFileSync(path.join(app,relative)).equals(fs.readFileSync(path.join(ROOT,relative))),true,'多平台更新模块缺失或版本不一致：'+relative);
 }
-for (const excluded of ['edge-profile', 'Partitions', 'browser-session.bin', 'api-config.bin', 'notifications.json', 'logs', 'data', 'local.json', 'state.json', 'recon-selection.json', '.git', 'tools', 'docs']) {
+for (const excluded of ['edge-profile', 'Partitions', 'browser-session.bin', 'api-config.bin', 'answer-bank.bin', 'notifications.json', 'logs', 'data', 'local.json', 'state.json', 'recon-selection.json', '.git', 'tools', 'docs']) {
   assert.equal(fs.existsSync(path.join(app, excluded)), false, `发布包不能包含 ${excluded}`);
 }
 assert.ok(fs.existsSync(path.join(app, 'desktop', 'native', 'BrowserWindowControl.exe')));

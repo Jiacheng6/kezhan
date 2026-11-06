@@ -37,10 +37,13 @@ try{
   page.on('pageerror',e=>errors.push(e.message));
   await page.waitForURL('http://127.0.0.1:*/');
   await openTestArchive(page);await page.locator('#libraryHome #appearance').click();
-  await page.locator('#libraryHome #showOnStartup').uncheck();
+  const startup = page.locator('#libraryHome #showOnStartup');
+  if(await startup.isChecked())await startup.press('Space');
+  assert.equal(await startup.isChecked(),false);
   await enterTestWorkspace(page);
   const initial=await page.evaluate(async()=>fetch('/api/status').then(r=>r.json()));
-  const status={...initial,ready:true,bootError:null,edge:{connected:true,launched:true,version:'演示浏览器'},login:{loggedIn:true,reason:'演示账号已连接'},qianwen:{loggedIn:true},account:{},running:false,reviewCount:1,progress:{done:0,total:0,current:null},runStats:null};
+  const status={...initial,platforms:undefined,ready:true,bootError:null,edge:{connected:true,launched:true,version:'演示浏览器'},login:{loggedIn:true,reason:'演示账号已连接'},qianwen:{loggedIn:true},account:{},running:false,reviewCount:1,progress:{done:0,total:0,current:null},runStats:null};
+  status.settings={...initial.settings,answerBank:{source:'ai'}};
   const sockets=new Set();
   const sendStatus=()=>{for(const ws of sockets)ws.send(JSON.stringify({type:'status',data:status}));};
   await page.route('**/api/status',route=>route.fulfill({json:status}));
@@ -57,12 +60,63 @@ try{
   await page.reload();await revealTestTools(page);await page.locator('[data-tab=overview]').click();
   await revealTestTools(page);await page.locator('[data-tab=overview]').click();
   await page.locator('#overviewTaskCount').filter({hasText:'18'}).waitFor();
-  await page.locator('#kLoginState').filter({hasText:'已登录'}).waitFor();
+  await page.locator('#readinessTitle').filter({hasText:'连接已就绪'}).waitFor();
   const capture=async name=>page.screenshot({path:path.join(output,'round-'+round+'-'+name+'.png'),fullPage:false,animations:'disabled'});
+  await openTestArchive(page);
+  const archive=page.locator('#libraryHome');
+  const paletteTrigger=archive.getByRole('button',{name:'主题配色',exact:true});
+  const palette=archive.locator('#archivePalette');
+  await paletteTrigger.click();
+  await palette.waitFor({state:'visible'});
+  await capture('archive-palette');
+  await palette.getByRole('button',{name:'蔷薇',exact:true}).click();
+  await page.waitForFunction(()=>document.getAnimations().some(a=>a.animationName==='theme-wipe'));
+  const archiveTheme=page.frameLocator('#archiveFrame').locator('html[data-accent=pink]');
+  await archiveTheme.waitFor({state:'attached'});
+  assert.equal(await archiveTheme.evaluate(el=>el.style.getPropertyValue('--accent')),'#c2547f');
+  assert.equal(await archive.isVisible(),true);
+  await paletteTrigger.click();
+  assert.equal(await palette.getByRole('button',{name:'蔷薇',exact:true}).getAttribute('aria-pressed'),'true');
+  await page.keyboard.press('Escape');
+  await palette.waitFor({state:'hidden'});
+  assert.equal(await archive.isVisible(),true);
+  await enterTestWorkspace(page);
+  await revealTestTools(page,'appearance');
+  assert.equal(await page.locator('#themeMenu [data-accent=pink]').getAttribute('aria-pressed'),'true');
+  await page.locator('#themeMenu [data-accent=green]').click();
+  await page.locator('html[data-accent=green]').waitFor();
   await revealTestTools(page);await page.locator('[data-tab=overview]').click();await capture('overview');
-  await revealTestTools(page);await page.locator('#toggleClassicUi').click();
+  await page.locator('#modeToggle').click();
+  await page.waitForFunction(()=>document.getAnimations().some(a=>a.animationName==='theme-reveal'));
+  await page.locator('html[data-mode="dark"]').waitFor();
+  await capture('overview-dark');
+  await page.locator('#modeToggle').click();
+  await page.locator('html[data-mode="light"]').waitFor();
+  await page.evaluate(()=>{
+    const toggle=document.getElementById('modeToggle');
+    toggle.click();toggle.click();toggle.click();
+  });
+  await page.locator('html[data-mode="dark"]').waitFor();
+  await page.locator('#modeToggle').click();
+  await page.locator('html[data-mode="light"]').waitFor();
+  const originalPlatforms=status.platforms;
+  status.platforms={
+    chaoxing:{running:true,total:8,done:3,current:'设计入门 · 材料与表达',progress:{taskType:'video',percent:.642,currentTime:385,duration:600,playbackRate:2}},
+    zhihuishu:{running:true,total:4,done:1,current:'英语听说 · 章节测试',progress:{taskType:'work',phase:'ask-ai',questionIndex:3,questionTotal:5}},
+  };
+  sendStatus();
+  const total=page.getByRole('progressbar',{name:'全部平台任务总进度'});
+  await total.and(page.locator('[aria-valuenow="33.3"]')).waitFor();
+  assert.equal(await page.locator('#overviewTaskProgress').isVisible(),false);
+  assert.equal(await page.locator('#overviewProgressSlot .platform-task-progress:visible').count(),2);
+  await capture('overview-parallel');
+  await page.locator('[data-tab="courses"]').click();
+  assert.equal(await page.locator('#coursesProgressSlot .platform-task-progress:visible').count(),2);
+  await capture('courses-parallel');
+  status.platforms=originalPlatforms;sendStatus();
+  await revealTestTools(page,'appearance');await page.locator('#toggleClassicUi').click();
   assert.equal(await page.locator('#workspaceDesign').evaluate(el=>el.disabled),true);
-  await revealTestTools(page);await page.locator('#toggleClassicUi').click();
+  await revealTestTools(page,'appearance');await page.locator('#toggleClassicUi').click();
   assert.equal(await page.locator('#workspaceDesign').evaluate(el=>el.disabled),false);
   await page.waitForTimeout(250); // Read steady colours after the appearance transition.
   // 键盘焦点与核心文字对比度。
@@ -71,8 +125,16 @@ try{
   const focus=await page.evaluate(()=>({width:getComputedStyle(document.activeElement).outlineWidth,style:getComputedStyle(document.activeElement).outlineStyle}));
   assert.equal(focus.width,'2px');assert.equal(focus.style,'solid');
   const contrasts=await page.evaluate(()=>{
-    const luminance=color=>{const rgb=color.match(/[0-9.]+/g).slice(0,3).map(Number).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4});return .2126*rgb[0]+.7152*rgb[1]+.0722*rgb[2];};
-    return ['body','.hero-description','.hint','.tab.active','button.primary'].map(selector=>{
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=1;
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});
+    const luminance=color=>{
+      ctx.clearRect(0,0,1,1);ctx.fillStyle=color;ctx.fillRect(0,0,1,1);
+      const rgb=[...ctx.getImageData(0,0,1,1).data].slice(0,3).map(channel=>{
+        const v=channel/255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;
+      });
+      return .2126*rgb[0]+.7152*rgb[1]+.0722*rgb[2];
+    };
+    return ['body','.hero-description','#panel-overview .readiness .hint','.tab.active','#overviewStart'].map(selector=>{
       const e=document.querySelector(selector),foreground=getComputedStyle(e).color;let ancestor=e,background;
       while(ancestor){background=getComputedStyle(ancestor).backgroundColor;if(background!=='rgba(0, 0, 0, 0)'&&background!=='transparent')break;ancestor=ancestor.parentElement;}
       const a=luminance(foreground),b=luminance(background);return {selector,ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)};
@@ -105,18 +167,20 @@ try{
   await page.locator('#panel-courses [data-action=startRun]').click();
   await page.locator('#runBar').waitFor({state:'visible'});
   assert.equal(await page.locator('#panel-courses [data-action=stopRun]').isEnabled(),true);
-  assert.match(await page.locator('#runSub').innerText(),/实际 2×/);
+  assert.match(await page.locator('#runTaskProgress [data-tp="detail"]').innerText(),/实际 2×/);
   assert.equal(await page.locator('#runTaskProgress [role=progressbar]').getAttribute('aria-valuenow'),'64.2');
-  assert.equal(await page.locator('#runProg').innerText(),'2 / 8');
+  await page.waitForFunction(()=>document.getAnimations().some(a=>a.animationName==='particle-flow'));
+  assert.equal(await page.locator('[data-total-count]').innerText(),'完成 2 / 8 项');
   await capture('running');
   await page.locator('#panel-courses [data-action=stopRun]').click();
   assert.equal(status.running,false);
+  await page.locator('#runTaskProgress .tp-track[data-active="false"]').waitFor();
   await page.locator('.tab[data-tab=review]').click();
   await page.locator('.qedit textarea').waitFor();
   assert.match(await page.locator('.qedit textarea').inputValue(),/好的设计/);
   await capture('review');
-  await revealTestTools(page);await page.locator('.tab[data-tab=settings]').click();
-  await page.locator('.setrow').first().waitFor();
+  await revealTestTools(page,'learning');
+  await page.locator('#settingLearning .setrow').first().waitFor();
   await capture('settings');
   assert.equal(await page.locator('#settingsAdvanced').isVisible(),false);
   await page.locator('[data-setting=muted]').uncheck();
@@ -124,18 +188,87 @@ try{
   await page.locator('[data-setting=videoCompletionMode]').selectOption('check90');
   const saved=page.waitForResponse(r=>r.url().endsWith('/api/settings')&&r.request().method()==='POST');
   await page.locator('#saveSettings').click();await saved;
-  await page.locator('#settingsDirty').filter({hasText:'已改'}).waitFor();
+  await page.locator('#settingsSaveFeedback').filter({hasText:'设置已保存'}).waitFor();
   const savedSettings=JSON.parse(fs.readFileSync(path.join(data,'state.json'),'utf8')).settings;
   assert.equal(savedSettings.muted,false);assert.equal(savedSettings.playbackSpeed,'2');assert.equal(savedSettings.videoCompletionMode,'check90');
+  await page.getByRole('tab',{name:'外观与显示'}).click();
+  const previewFill=page.locator('.tp-preview .tp-fill');
+  await page.getByRole('button',{name:'海蓝',exact:true}).click();
+  await page.waitForFunction(()=>document.getAnimations().some(a=>a.animationName==='theme-wipe'));
+  const mask=await page.evaluate(async ()=>{
+    const wipe=document.getAnimations().find(a=>a.animationName==='theme-wipe');
+    wipe.pause();
+    await wipe.ready;
+    wipe.currentTime=220;
+    const style=getComputedStyle(document.documentElement,'::view-transition-new(root)');
+    return {image:style.maskImage,position:style.maskPosition};
+  });
+  assert.match(mask.image,/linear-gradient/);
+  assert.match(mask.position,/^50%/);
+  assert.equal(await previewFill.evaluate(fill=>getComputedStyle(fill).backgroundColor),'rgb(58, 110, 168)');
+  await page.screenshot({path:path.join(output,'round-'+round+'-accent-wipe.png')});
+  await page.evaluate(()=>document.getAnimations().find(a=>a.animationName==='theme-wipe')?.finish());
+  await page.locator('html[data-theme-wipe]').waitFor({state:'detached'});
+  await page.getByRole('button',{name:'森林',exact:true}).click();
+  await page.waitForFunction(()=>getComputedStyle(document.querySelector('.tp-preview .tp-fill')).backgroundColor==='rgb(63, 125, 90)');
+  const style=page.getByRole('combobox',{name:'进度条样式'});
+  await style.selectOption('classic');
+  await page.locator('html[data-progress-style="classic"]').waitFor();
+  assert.equal(await page.locator('.tp-preview').evaluate(el=>getComputedStyle(el,'::after').content),'""');
+  await capture('progress-style-classic');
+  await page.locator('#saveSettings').click();
+  await page.locator('#settingsSaveFeedback').filter({hasText:'设置已保存'}).waitFor();
+  assert.equal(JSON.parse(fs.readFileSync(path.join(data,'state.json'),'utf8')).settings.progressStyle,'classic');
+  await style.selectOption('particles');
+  await page.locator('#saveSettings').click();
+  await page.locator('#settingsSaveFeedback').filter({hasText:'设置已保存'}).waitFor();
   await revealTestTools(page);await page.locator('.tab[data-tab=overview]').click();
   status.running=true;status.progress={done:2,total:8,current:'设计入门 · 1.2 从物品到设计',playbackRate:2,taskType:'video',percent:.642,currentTime:385,duration:600};sendStatus();
   await page.locator('#overviewActivity').filter({hasText:'学习进行中'}).waitFor();
-  assert.match(await page.locator('#kCurrent').innerText(),/实际 2×/);
+  assert.match(await page.locator('#overviewTaskProgress [data-tp="detail"]').innerText(),/实际 2×/);
   assert.equal(await page.locator('#overviewTaskProgress [role=progressbar]').getAttribute('aria-valuenow'),'64.2');
   await capture('overview-running');
+  const taskTrack=page.locator('#overviewTaskProgress .tp-track');
+  const waitParticleRate=rate=>page.waitForFunction(value=>{
+    const track=document.querySelector('#overviewTaskProgress .tp-track');
+    const particles=track.getAnimations({subtree:true}).filter(a=>a.animationName==='particle-flow');
+    return particles.length===2&&particles.every(a=>a.playState==='running'&&a.playbackRate===value&&a.currentTime>0);
+  },rate);
+  await waitParticleRate(1.65);
+  status.progress.playbackRate=1;sendStatus();
+  await waitParticleRate(1);
+  const particleImage=()=>taskTrack.locator('.tp-fill').evaluate(fill=>getComputedStyle(fill,'::after').backgroundImage);
+  assert.match(await particleImage(),/linearGradient/);
+  await taskTrack.evaluate(track=>{window.pausingParticles=track.getAnimations({subtree:true}).filter(a=>a.animationName==='particle-flow');});
+  status.progress.paused=true;sendStatus();
+  await taskTrack.and(page.locator('[data-active=false]')).waitFor();
+  assert.match(await particleImage(),/circle/);
+  assert.doesNotMatch(await particleImage(),/linearGradient/);
+  await taskTrack.evaluate(async track=>{
+    const particles=track.getAnimations({subtree:true}).filter(a=>a.animationName==='particle-flow');
+    await Promise.all(particles.map(a=>a.ready));
+    const times=particles.map(a=>a.currentTime);
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const actual=particles.map((a,i)=>({same:window.pausingParticles.includes(a),state:a.playState,time:a.currentTime,pausedAt:times[i]}));
+    if(particles.length!==2||!actual.every(a=>a.same&&a.state==='paused'&&a.time===a.pausedAt))throw Error('暂停后粒子未保留原位 '+JSON.stringify(actual));
+  });
+  status.progress.paused=false;status.progress.playbackRate=2;sendStatus();
+  await waitParticleRate(1.65);
+  assert.match(await particleImage(),/linearGradient/);
+  assert.equal(await taskTrack.evaluate(track=>track.getAnimations({subtree:true}).filter(a=>a.animationName==='particle-flow').every((a,i)=>a===window.pausingParticles[i])),true);
   status.progress.phase='verifying';status.progress.percent=.9;sendStatus();
   await page.locator('#overviewTaskProgress [data-tp=label]').filter({hasText:'核对平台状态'}).waitFor();await capture('overview-verifying');
+  assert.equal(await page.locator('#overviewTaskProgress .tp-track').getAttribute('data-active'),'false');
+  status.progress={...status.progress,taskType:'work',questionIndex:0,questionTotal:4,phase:'bank-lookup',answerSource:'bank',percent:null};sendStatus();
+  await waitParticleRate(1.65);
+  assert.equal(await taskTrack.getAttribute('aria-valuenow'),'0');
+  await capture('bank-lookup');
+  status.progress={...status.progress,questionIndex:1,phase:'asking'};sendStatus();
+  await taskTrack.and(page.locator('[aria-valuenow="25"][data-particles=fill]')).waitFor();
+  await waitParticleRate(1.65);
+  delete status.progress.answerSource;
   status.progress={...status.progress,taskType:'work',questionIndex:1,questionTotal:4,phase:'asking',percent:null,currentTime:null,duration:null};sendStatus();
+  await waitParticleRate(1);
   await page.locator('#overviewTaskProgress [data-tp=percent]').filter({hasText:'25.0'}).waitFor();await capture('overview-quiz');
   status.progress={...status.progress,taskType:'video',questionIndex:null,questionTotal:null,phase:'playing',percent:.642,currentTime:385,duration:600};sendStatus();
   status.running=false;sendStatus();
@@ -149,14 +282,22 @@ try{
   for(const tab of ['courses','review','settings']){
     await page.locator('.tab[data-tab='+tab+']').click();
     if(tab==='review')await page.locator('.qedit textarea').waitFor();
-    if(tab==='settings')await page.locator('.setrow').first().waitFor();
+    if(tab==='settings')await page.locator('.settings-page:not([hidden])').waitFor();
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'窄窗口 '+tab+' 溢出');
     await capture('narrow-'+tab);
   }
   await revealTestTools(page);await page.locator('.tab[data-tab=overview]').click();
   await page.emulateMedia({reducedMotion:'reduce'});
-  assert.equal(await page.locator('#overviewProgressFill').evaluate(e=>getComputedStyle(e).transitionDuration),'0s');
+  status.running=true;sendStatus();
+  await page.locator('#overviewTaskProgress .tp-track[data-active="true"]').waitFor();
+  assert.equal(await page.locator('.platform-total .tp-fill').evaluate(e=>getComputedStyle(e).transitionDuration),'0s');
   assert.equal(await page.locator('#overviewTaskProgress .tp-fill').evaluate(e=>getComputedStyle(e).transitionDuration),'0s');
+  assert.equal(await page.evaluate(()=>document.getAnimations().some(a=>a.animationName==='particle-flow')),false);
+  await page.locator('#modeToggle').click();
+  status.running=false;sendStatus();
+  assert.equal(await page.locator('html').getAttribute('data-mode'),'dark');
+  assert.equal(await page.evaluate(()=>document.getAnimations().some(a=>a.animationName==='theme-reveal')),false);
+  await page.locator('#modeToggle').click();
   await application.evaluate(({BrowserWindow})=>{const win=BrowserWindow.getAllWindows().find(window=>window.getOpacity()>0);win.setMinimumSize(960,660);win.setContentSize(1240,800);});
   await page.emulateMedia({reducedMotion:'no-preference'});
   // 首次使用：无清单时主按钮扫描，扫描结束自动加载清单。

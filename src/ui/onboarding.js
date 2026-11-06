@@ -97,7 +97,7 @@ $('onboardingCheckLogin').onclick = () => run(async () => {
   await action('refreshLogin');
   if (!status.login?.loggedIn) throw new Error('还未检测到学习通登录，请在软件内的学习通网页完成登录后重试。');
 });
-$('onboardingOpenAI').onclick = () => run(async () => { await saveProvider();if(provider()==='api'){dismiss();workspace.navigate('settings');const details=$('apiSettings');if(details)details.open=true;}else await action('openAI'); });
+$('onboardingOpenAI').onclick = () => run(async () => { await saveProvider();if(provider()==='api'){dismiss();workspace.openSettings('ai');const details=$('apiSettings');if(details)details.open=true;}else await action('openAI'); });
 $('onboardingCheckAI').onclick = () => run(async () => {
   await saveProvider(); await action('checkQianwen');
   if (status.ai?.provider !== provider() || !status.ai.loggedIn) throw new Error('还未检测到所选 AI 登录，请完成网页登录后重试，也可以稍后登录。');

@@ -25,7 +25,8 @@ try {
   await page.waitForURL('http://127.0.0.1:*/');
   await page.evaluate(()=>localStorage.setItem('kebo-library-startup','skip'));
   const initial=await page.evaluate(()=>fetch('/api/status').then(r=>r.json()));
-  const status={...initial,bootError:null,ready:true,edge:{connected:true},login:{loggedIn:true},qianwen:{loggedIn:true},account:{},running:false,reconRunning:false};
+  const status={...initial,platforms:undefined,bootError:null,ready:true,edge:{connected:true},login:{loggedIn:true},qianwen:{loggedIn:true},account:{},running:false,reconRunning:false};
+  status.settings={...initial.settings,answerBank:{source:'ai'}};
   const sockets=new Set();
   await page.route('**/api/status',route=>route.fulfill({json:status}));
   await page.routeWebSocket('**/ws',ws=>{sockets.add(ws);ws.send(JSON.stringify({type:'status',data:status}));ws.onClose(()=>sockets.delete(ws));});
@@ -37,7 +38,7 @@ try {
   const selection=()=>page.evaluate(()=>window.__console.tree.data.courses.map(c=>({id:c.courseId,enabled:c.enabled,tasks:c.tasks.filter(t=>t.willHandle).map(t=>t.key)})));
   assert.equal(await page.locator('#deskQuickRules').getAttribute('open'),null);
   assert.equal(await page.locator('#deskPresetsPanel').getAttribute('open'),null);
-  assert.equal(await page.locator('#workspaceUtilities').getAttribute('open'),null);
+  assert.equal(await page.locator('#workspaceUtilities').isVisible(),false);
   assert.equal(await page.locator('#deskRunActions [data-action=startRun]').isVisible(),true);
   const before=await selection();
   await page.locator('#viewTree').click();assert.equal(await page.locator('#legacyCourseTree').isVisible(),true);
@@ -130,7 +131,7 @@ try {
   await page.locator('#deskRunState').filter({hasText:'进行中'}).waitFor();
   assert.equal(await page.locator('#deskRunActions [data-action=startRun]').isDisabled(),true);
   assert.equal(await page.locator('#deskRunActions [data-action=stopRun]').isVisible(),true);
-  assert.match(await page.locator('#deskProgress').innerText(),/完成 2\/9/);
+  assert.match(await page.locator('#coursesProgressSlot [data-total-count]').innerText(),/完成 2 \/ 9 项/);
   await page.screenshot({path:path.join(output,'focus-running.png'),animations:'disabled'});
   await page.locator('#deskRunActions [data-action=stopRun]').click();await page.locator('#deskRunState').filter({hasText:'已停止'}).waitFor();
   assert.deepEqual(actions,['startRun','stopRun']);

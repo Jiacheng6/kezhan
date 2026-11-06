@@ -107,7 +107,7 @@ export function getStatus() {
   } catch {
     /* 读取失败就用缓存值 */
   }
-  const platforms = { chaoxing: { running: status.running, progress: status.progress, done: status.progress?.done || 0,
+  const platforms = { chaoxing: { running: status.running, stopping: status.running && status.progress?.stopping === true, progress: status.progress, done: status.progress?.done || 0,
     total: status.progress?.total || 0, current: status.progress?.current, phase: status.running ? 'running' : 'idle' }, ...(status.platformRuns || {}) };
   const zhs = platforms.zhihuishu;
   return { ...status, reviewCount, platforms, running: status.running || !!zhs?.running,

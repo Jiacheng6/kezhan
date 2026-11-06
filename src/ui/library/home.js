@@ -75,6 +75,8 @@ function courses() {
 }
 function publish(force = false) {
   if (!frameReady) return;
+  const style = getComputedStyle(document.documentElement);
+  const colors = Object.fromEntries(['bg','bg2','fg','fg2','line','acc'].map(key=>[key,style.getPropertyValue('--'+key).trim()]));
   const value = {
     type: "kebo-archive-state",
     active,
@@ -84,7 +86,7 @@ function publish(force = false) {
     theme: {
       mode: document.documentElement.dataset.mode || 'light',
       accent: document.documentElement.dataset.accent || 'green',
-      colors: Object.fromEntries(['bg','bg2','fg','fg2','line','acc'].map(key=>[key,getComputedStyle(document.documentElement).getPropertyValue('--'+key).trim()])),
+      colors,
     },
     status: { running: !!model.status?.running, loading: !!model.loading },
     courses: courses(),
@@ -116,6 +118,36 @@ function syncMotion() {
     $("#motion").textContent = reduced ? "恢复动态" : "减少动态";
   }
   publish();
+}
+function setupArchivePalette() {
+  const trigger = document.createElement('button');
+  trigger.textContent = '主题配色';
+  trigger.setAttribute('popovertarget', 'archivePalette');
+
+  const palette = document.createElement('section');
+  palette.id = 'archivePalette';
+  palette.setAttribute('popover', 'auto');
+  palette.setAttribute('aria-label', '主题配色');
+  const choices = [...document.querySelectorAll('#themeMenu .theme-accent')].map(source => {
+    const swatch = source.cloneNode(true);
+    swatch.className = 'archive-swatch';
+    swatch.style.setProperty('--dot', getComputedStyle(source).getPropertyValue('--dot'));
+    swatch.addEventListener('click', () => {
+      palette.hidePopover();
+      trigger.focus({ preventScroll: true });
+      document.dispatchEvent(new CustomEvent('kebo-select-accent', { detail: swatch.dataset.accent }));
+    });
+    return swatch;
+  });
+  palette.append(...choices);
+  const sync = () => {
+    for (const swatch of choices) {
+      swatch.setAttribute('aria-pressed', String(swatch.dataset.accent === document.documentElement.dataset.accent));
+    }
+  };
+  document.addEventListener('kebo-theme-change', sync);
+  sync();
+  return { trigger, palette };
 }
 syncMotion();
 media.addEventListener("change", (event) => {
@@ -169,7 +201,8 @@ async function show() {
     root.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        if (!$("#displayOptions").hidden) options(false);
+        if ($("#archivePalette")?.matches(':popover-open')) $("#archivePalette").hidePopover();
+        else if (!$("#displayOptions").hidden) options(false);
         else enterWorkspace();
       }
     });
@@ -192,10 +225,29 @@ async function show() {
   if (!root.querySelector('#sharedArchiveTheme')) {
     const style=document.createElement('style');style.id='sharedArchiveTheme';
     style.textContent=':host{background:var(--bg)}.toolbar{top:28px;right:32px;gap:8px;padding:6px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 24px #0000000a}.toolbar button{padding:9px 12px;border-radius:7px;color:var(--fg);transition:background 160ms}.toolbar button:hover{background:var(--bg3)}.toolbar #enterWorkspace{background:var(--acc);color:var(--acc-ink)}.options{background:var(--bg2);border-color:var(--line);color:var(--fg);border-radius:12px;top:58px}.options select,.options #motion{background:var(--bg3);border-color:var(--line);color:var(--fg)}.options small{color:var(--fg2)}#skip{display:none}input{accent-color:var(--acc)}';
+    style.textContent += `
+#archivePalette {
+  position: fixed; inset: 78px 32px auto auto; margin: 0; padding: 8px;
+  width: min(360px, calc(100vw - 40px)); color: var(--fg); background: var(--bg2);
+  border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
+}
+#archivePalette:popover-open { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.archive-swatch {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px;
+  padding: 6px 5px; color: var(--fg); border: 1px solid var(--line); border-radius: 7px; white-space: nowrap;
+}
+.archive-swatch i { flex: 0 0 10px; height: 10px; border-radius: 50%; background: var(--dot); }
+.archive-swatch:hover { background: var(--bg3); }
+.archive-swatch[aria-pressed="true"] { color: var(--acc); background: var(--acc-soft); border-color: var(--acc); }
+@media (max-width: 600px) { #archivePalette { right: 16px; } }
+@media (max-width: 390px) { #archivePalette:popover-open { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+`;
     root.append(style);
-    const themeButton=document.createElement('button');themeButton.textContent='切换日夜';themeButton.onclick=()=>document.querySelector('#modeToggle')?.click();
-    const colorButton=document.createElement('button');colorButton.textContent='主题配色';colorButton.onclick=()=>{enterWorkspace();workspace.navigate('settings');};
-    root.querySelector('.toolbar').prepend(themeButton,colorButton);
+    const themeButton=document.createElement('button');
+    themeButton.textContent='切换日夜';
+    themeButton.onclick=()=>document.dispatchEvent(new CustomEvent('kebo-toggle-mode',{detail:themeButton}));
+    const { trigger, palette } = setupArchivePalette();
+    root.querySelector('.toolbar').prepend(themeButton, trigger, palette);
   }
   $("#showOnStartup").checked = startup;
   $("#quality").value = quality;
@@ -212,6 +264,7 @@ function options(open) {
 function enterWorkspace() {
   if (!active) return;
   active = false;
+  $("#archivePalette").hidePopover();
   document.documentElement.style.overflow = previousOverflow;
   options(false);
   inert(false);

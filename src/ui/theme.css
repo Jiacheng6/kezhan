@@ -337,3 +337,44 @@ select:focus-visible {
     animation: none !important;
   }
 }
+/* The new day or night view opens over the previous view. */
+::view-transition { pointer-events: none; }
+::view-transition-group(root) { animation: none; }
+::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-old(root) {
+  z-index: 0;
+  mix-blend-mode: normal;
+  animation: none;
+}
+:root[data-theme-reveal]::view-transition-new(root) {
+  z-index: 1;
+  animation: theme-reveal 440ms cubic-bezier(.22,1,.36,1) both;
+}
+@keyframes theme-reveal {
+  from { clip-path: circle(0 at var(--theme-reveal-origin)); }
+  to { clip-path: circle(var(--theme-reveal-radius) at var(--theme-reveal-origin)); }
+}
+:root[data-theme-capture],
+:root[data-theme-capture] *,
+:root[data-theme-capture] *::before,
+:root[data-theme-capture] *::after { transition: none !important; }
+:root[data-theme-wipe]::view-transition-new(root) {
+  --wipe-feather: clamp(32px, 5vw, 72px);
+  z-index: 1;
+  mask-image: linear-gradient(to right,
+    #000 calc(50% - var(--wipe-feather)),
+    transparent calc(50% + var(--wipe-feather)));
+  mask-size: calc(200% + 2 * var(--wipe-feather)) 100%;
+  mask-repeat: no-repeat;
+  animation: theme-wipe 440ms ease-in-out both;
+}
+@keyframes theme-wipe {
+  from { mask-position: 100% 0; }
+  to { mask-position: 0 0; }
+}
+:root.reduce-motion::view-transition-old(root),
+:root.reduce-motion::view-transition-new(root) { animation: none; mask-image: none; }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  :root:is([data-theme-reveal], [data-theme-wipe])::view-transition-new(root) { animation: none; mask-image: none; }
+}

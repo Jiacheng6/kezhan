@@ -11,15 +11,19 @@ export class PlatformRuns {
   stop(id) { const s = this.sessions.get(id); if (s?.running) { s.stop = true; this.changed(this.snapshot()); } }
   stopAll() { for (const id of this.sessions.keys()) this.stop(id); }
   start(id, tasks, context) {
-    if (this.sessions.get(id)?.running) throw Error('该平台的任务已在运行');
+    const previous = this.sessions.get(id);
+    if (previous?.running) throw Error('该平台的任务已在运行');
     if (!tasks.length || tasks.some(t => t.platform !== id || typeof t.key !== 'string' || !t.key) || new Set(tasks.map(t => t.key)).size !== tasks.length) throw Error('平台任务范围无效');
-    const s = { running: true, stop: false, done: 0, skipped:0,review: 0, total: tasks.length, current: null, progress: null, error: null, phase: 'running' };
+    const resuming = ['stopped', 'needs-human', 'failed'].includes(previous?.phase) && previous.taskKey === tasks[0].key;
+    const s = { running: true, stop: false, done: 0, skipped:0,review: 0, total: tasks.length, current: resuming ? tasks[0].name : null,
+      progress: resuming && previous.progress ? { ...previous.progress, resuming: true } : null, error: null, phase: 'running' };
     this.sessions.set(id, s); this.changed(this.snapshot());
     s.finished = (async () => {
       try {
         for (const task of tasks) {
           if (s.stop) break;
-          s.current = task.name; s.progress = null; this.changed(this.snapshot());
+          if (task !== tasks[0]) s.progress = null;
+          s.taskKey = task.key; s.current = task.name; this.changed(this.snapshot());
           const result = await runWithTaskRestart(recovery=>this.execute({ platform: id, task, context, ...recovery,shouldStop: () => s.stop,
             onProgress: progress => { s.progress = progress; this.changed(this.snapshot()); } }),{
               task,shouldStop:()=>s.stop,delayMs:this.restartDelayMs,maxAttempts:this.restartMaxAttempts,onRestart:info=>{s.progress=null;this.changed(this.snapshot());return this.onRestart({...info,platform:id});}

@@ -1,4 +1,5 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, dialog, ipcMain, shell, utilityProcess, powerSaveBlocker, Notification, safeStorage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, dialog, ipcMain, shell, utilityProcess, powerSaveBlocker, Notification, safeStorage, webContents, session } = require('electron');
+const { setTimeout: delay } = require('node:timers/promises');
 const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
@@ -7,6 +8,8 @@ const { CloseConfirmation } = require('./close-confirmation.cjs');
 const { EmbeddedBrowser } = require('./embedded-browser.cjs');
 const { NotificationCenter } = require('./notifications.cjs');
 const {createApiService}=require('./ai-api.cjs');
+const { BANK_ORIGIN, createAnswerBank } = require('./answer-bank.cjs');
+const { readBankPortalToken, bankPortalRejected, openBankEdge, waitBankEdgeToken } = require('./bank-portal.cjs');
 require('../src/brand-env.cjs');
 const {BRAND,migrateProfile}=require('./brand.cjs');
 
@@ -42,8 +45,12 @@ let mainWindow, tray, worker, serviceUrl, error = '', quitting = false, closeDia
 let heartbeat, startupTimer, blocker;
 let updates, internalBrowser, rendererGone = false;
 let notifications, previousUpdatePhase = null;
-let apiService;
+let apiService, answerBank;
+let startupReady = false;
 async function handleBrowserRequest(request){
+  if(request.method==='bank-status')return answerBank.status();
+  if(request.method==='bank-query')return answerBank.query(request);
+  if(request.method==='bank-cancel')return answerBank.cancel(request.jobId);
   if(request.method==='api-status')return apiService.status();
   if(request.method==='api-cancel')return apiService.cancel(request.jobId);
   if(request.method==='api-ask')return apiService.ask(request);
@@ -57,9 +64,14 @@ function log(message) {
   try { fs.mkdirSync(path.dirname(logFile), { recursive: true }); fs.appendFileSync(logFile, `${new Date().toISOString()} ${message}\n`); } catch {}
 }
 function showMain() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!startupReady || !mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show(); mainWindow.focus();
+}
+function presentStartupWindow() {
+  if (startupReady) return;
+  startupReady = true;
+  if (!testMode || process.env.KEBO_TEST_SHOW_STARTUP === '1') showMain();
 }
 function safePage(url) {
   return url === loadingUrl || (!!serviceUrl && new URL(url).origin === new URL(serviceUrl).origin);
@@ -78,7 +90,11 @@ async function serviceAction(name) {
 }
 function showError(message) {
   error = String(message); log(`ERROR ${error}`);
-  if (mainWindow && !mainWindow.isDestroyed() && !serviceUrl) mainWindow.loadURL(loadingUrl);
+  if (mainWindow && !mainWindow.isDestroyed() && (!startupReady || !serviceUrl)) {
+    void mainWindow.loadURL(loadingUrl).then(presentStartupWindow, () => {
+      if (!startupReady && !testMode) dialog.showErrorBox(title, error);
+    });
+  }
   if (tray) tray.setToolTip(`${title}：服务异常，请打开软件查看`);
   notifications?.push({kind:'service-error',key:'service-error',detail:error});
 }
@@ -174,9 +190,19 @@ async function startWorker() {
       const url = new URL(message.url);
       if (url.hostname !== '127.0.0.1' || url.protocol !== 'http:') return showError('后台服务返回了无效地址');
       serviceUrl = message.url;
-      clearTimeout(startupTimer);
       log(`服务就绪 ${serviceUrl}`);
-      await mainWindow.loadURL(serviceUrl);
+      try {
+        await mainWindow.loadURL(serviceUrl);
+      } catch {
+        if (worker !== child || quitting) return;
+        serviceUrl = null;
+        clearTimeout(startupTimer);
+        showError('无法打开工作台，请重新启动后台服务。');
+        return;
+      }
+      if (worker !== child || quitting) return;
+      clearTimeout(startupTimer);
+      presentStartupWindow();
       void updates.checkAtStartup();
       if (tray) tray.setToolTip(title + '：服务运行中');
       notifications?.publish();
@@ -226,7 +252,7 @@ else {
     Menu.setApplicationMenu(null);
     const icon = path.join(__dirname, 'assets', 'icon.png');
     mainWindow = new BrowserWindow({ title, width: 1240, height: 840, minWidth: 960, minHeight: 660,
-      backgroundColor: '#f7f6f1', icon, show: !testMode,
+      backgroundColor: '#f4f5f7', icon, show: false,
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), nodeIntegration: false,
         contextIsolation: true, sandbox: true, backgroundThrottling: false },
     });
@@ -305,6 +331,121 @@ else {
     ]));
     const handle = (channel, fn) => ipcMain.handle(channel, (event, ...args) => { assertSender(event); return fn(...args); });
     apiService=createApiService({dataDir,safeStorage});
+    answerBank=createAnswerBank({dataDir,safeStorage,onQuota:quota=>{
+      if (!mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:bank-quota', quota);
+    }});
+    handle('desktop:bank-status',()=>answerBank.status());
+    handle('desktop:bank-save',patch=>answerBank.save(patch));
+    handle('desktop:bank-quota', refresh => refresh ? answerBank.refreshQuota() : answerBank.quotaStatus());
+    const bankSession = session.fromPartition('persist:axe-bank-web');
+    bankSession.setUserAgent(internalBrowser.session.getUserAgent());
+    bankSession.setPermissionRequestHandler((_contents, _permission, respond) => respond(false));
+    bankSession.setPermissionCheckHandler(() => false);
+    let bankPortalId;
+    let bankImport;
+    let bankEdge;
+    const publishBankImport = state => {
+      if (!mainWindow.isDestroyed()) mainWindow.webContents.send('desktop:bank-import', state);
+    };
+    async function importBankToken(id, request) {
+      const deadline = Date.now() + 5 * 60_000;
+      while (bankImport === request && !mainWindow.isDestroyed() && Date.now() < deadline) {
+        const { visible, tabs, active } = internalBrowser.snapshot();
+        if (!visible || !tabs.some(tab => tab.id === id)) break;
+        const contents = active === id ? webContents.fromId(id) : null;
+        if (await bankPortalRejected(contents).catch(() => false) && bankImport === request) {
+          publishBankImport({kind:'authorization-error'});
+          return;
+        }
+        const token = await readBankPortalToken(contents).catch(() => '');
+        const current = internalBrowser.snapshot();
+        if (token && bankImport === request && current.visible && current.active === id) {
+          try {
+            if (answerBank.status().configured) break;
+            const config = answerBank.save({origin:BANK_ORIGIN,token});
+            publishBankImport({kind:'saved',config});
+            await internalBrowser.command({action:'hide'});
+            return;
+          } catch {
+            publishBankImport({kind:'save-error'});
+            return;
+          }
+        }
+        await delay(700, undefined, {ref:false});
+      }
+      if (bankImport === request) publishBankImport({kind:'stopped'});
+    }
+    handle('desktop:bank-portal', async (importToken, fresh) => {
+      const request = {};
+      bankImport = request;
+      const wantsImport = importToken === true && !answerBank.status().configured;
+      if (wantsImport && fresh === true) {
+        if (bankPortalId != null) await internalBrowser.command({action:'close',id:bankPortalId});
+        bankPortalId = undefined;
+        await bankSession.clearStorageData({storages:['cookies']});
+      }
+      if (bankImport !== request) return internalBrowser.snapshot();
+      if (bankPortalId != null && internalBrowser.snapshot().tabs.some(tab => tab.id === bankPortalId)) {
+        await internalBrowser.command({action:'select',id:bankPortalId});
+      } else {
+        ({id:bankPortalId} = await internalBrowser.create({url:BANK_ORIGIN,show:true,pageSession:bankSession}));
+      }
+      if (wantsImport) {
+        void importBankToken(bankPortalId, request).catch(() => {
+          if (bankImport === request) publishBankImport({kind:'stopped'});
+        });
+      }
+      return internalBrowser.snapshot();
+    });
+    handle('desktop:bank-edge', async account => {
+      const config = answerBank.status();
+      if (account !== true && config.configured) return {configured:true,config};
+      if (bankEdge) {
+        await bankEdge.page?.bringToFront().catch(() => {});
+        return;
+      }
+      const request = {page:null};
+      bankImport = bankEdge = request;
+      try {
+        const {browser,page} = await openBankEdge(path.join(dataDir,'axe-edge'), account === true);
+        request.page = page;
+        const closeEdge = () => { void browser.close().catch(() => {}); };
+        mainWindow.once('closed',closeEdge);
+        browser.once('close', () => {
+          mainWindow.removeListener('closed',closeEdge);
+          if (bankEdge === request) bankEdge = undefined;
+        });
+        if (bankImport !== request || mainWindow.isDestroyed()) {
+          mainWindow.removeListener('closed',closeEdge);
+          closeEdge();
+          bankEdge = undefined;
+          return;
+        }
+        if (account === true) return;
+        internalBrowser.setVisible(false);
+        void (async () => {
+          try {
+            const token = await waitBankEdgeToken(page, () => bankImport === request);
+            if (bankImport !== request || mainWindow.isDestroyed()) return;
+            if (!token) { publishBankImport({kind:'edge-stopped'}); return; }
+            if (answerBank.status().configured) return;
+            const config = answerBank.save({origin:BANK_ORIGIN,token});
+            publishBankImport({kind:'saved',config});
+            await browser.close().catch(() => {});
+            showMain();
+          } catch {
+            if (bankImport === request) publishBankImport({kind:'edge-error'});
+          } finally {
+            mainWindow.removeListener('closed',closeEdge);
+            await browser.close().catch(() => {});
+            if (bankEdge === request) bankEdge = undefined;
+          }
+        })();
+      } catch (error) {
+        bankEdge = undefined;
+        throw error;
+      }
+    });
     if(testMode)module.exports.handleBrowserRequest=handleBrowserRequest;
     handle('desktop:api-status',()=>apiService.status());
     handle('desktop:api-save',patch=>apiService.save(patch));
@@ -355,5 +496,8 @@ else {
     await internalBrowser.restoreCookies();
     await internalBrowser.create();
     await startWorker();
-  }).catch((err) => { showError(err.message); dialog.showErrorBox(title, err.message); });
+  }).catch((err) => {
+    showError(err.message);
+    if (!mainWindow || mainWindow.isDestroyed()) dialog.showErrorBox(title, err.message);
+  });
 }

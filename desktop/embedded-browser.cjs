@@ -116,7 +116,7 @@ class EmbeddedBrowser {
       }) };
   }
   publish() { if (!this.disposed) this.onState(this.snapshot()); }
-  async create({ url = 'about:blank', show = false } = {}) {
+  async create({ url = 'about:blank', show = false, pageSession = this.session } = {}) {
     if (!webURL(url)) throw new Error('仅支持软件内的 HTTP/HTTPS 网页');
     // Release only persisted, idle review pages. The queue can restore them;
     // never turn a page-count threshold into a dead end for a new task.
@@ -124,7 +124,7 @@ class EmbeddedBrowser {
       const idle=[...this.views.values()].filter(r=>r.role==='review'&&!r.busy&&r.view.webContents.id!==this.active).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
       for(const r of idle){if(this.views.size<10)break;await this.closePage(r);}
     }
-    const view = new WebContentsView({ webPreferences: { session: this.session, nodeIntegration: false,
+    const view = new WebContentsView({ webPreferences: { session: pageSession, nodeIntegration: false,
       nodeIntegrationInSubFrames: false, contextIsolation: true, sandbox: true, webSecurity: true,
       backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required' } });
     const record = await this.register(view);
@@ -150,7 +150,7 @@ class EmbeddedBrowser {
     c.setWindowOpenHandler(({ url, disposition }) => {
       if (!webURL(url)) return { action: 'deny' };
       return { action: 'allow', createWindow: options => {
-        const popup = new WebContentsView({ webContents: options.webContents, webPreferences: { ...options.webPreferences, session: this.session, preload: undefined, nodeIntegration: false, nodeIntegrationInSubFrames: false,
+        const popup = new WebContentsView({ webContents: options.webContents, webPreferences: { ...options.webPreferences, session: c.session, preload: undefined, nodeIntegration: false, nodeIntegrationInSubFrames: false,
           contextIsolation: true, sandbox: true, webSecurity: true, backgroundThrottling: false } });
         void this.register(popup).then(() => this.activate(popup.webContents.id, this.visible)).catch(() => this.log('内置新页面打开失败'));
         if (disposition === 'background-tab') void popup.webContents.loadURL(url).catch(() => {});

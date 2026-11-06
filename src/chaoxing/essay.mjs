@@ -1,9 +1,10 @@
 import { normalizeEssayText, MAX_ESSAY_LENGTH } from '../ai/parse.mjs';
 import { throwIfStopped } from '../control.mjs';
+import { QUIZ_BLOCK_SELECTOR } from './quiz.mjs';
 
 // 运行在题目所在 frame。全部定位限定在一道题内，避免误写相邻题的编辑器。
-function editorAction({ domIndex, text, write, overwrite }) {
-  const q = document.querySelectorAll('.TiMu, .newTiMu')[domIndex];
+function editorAction({ domIndex, text, write, overwrite, blocks }) {
+  const q = document.querySelectorAll(blocks)[domIndex];
   if (!q) return { ok: false, error: '找不到对应的简答题' };
   const normalize = (value) => String(value || '').replace(/\r\n?/g, '\n').replace(/[\u0000\u200b\ufeff]/g, '').trim();
   const equal = (a, b) => normalize(a).replace(/\s+/g, ' ') === normalize(b).replace(/\s+/g, ' ');
@@ -54,10 +55,20 @@ function editorAction({ domIndex, text, write, overwrite }) {
   const read = () => {
     const visibleText = target.area ? normalize(target.area.value) : htmlText(target.body.innerHTML);
     const storedText = storage ? (target.kind === 'textarea' && storage === target.area ? normalize(storage.value) : htmlText(storage.value)) : visibleText;
-    return { visibleText, storedText };
+    const field = storage || target.area;
+    let formVerified = false;
+    if (field?.form && field.name && visibleText) {
+      const values = new FormData(field.form).getAll(field.name);
+      if (values.length === 1 && typeof values[0] === 'string') {
+        const formText = field === target.area ? normalize(values[0]) : htmlText(values[0]);
+        formVerified = equal(visibleText, storedText) && equal(visibleText, formText);
+      }
+    }
+    return { visibleText, storedText, formVerified };
   };
   const before = read();
-  if (!write) return { ok: true, kind: target.kind, ...before, hasStorage: !!storage };
+  const hasStorage = !!storage && !storage.disabled || Boolean(target.area?.form && target.area?.name);
+  if (!write) return { ok: true, kind: target.kind, ...before, hasStorage };
   if (!overwrite && ((before.visibleText && !equal(before.visibleText, text)) || (before.storedText && !equal(before.storedText, text)))) {
     return { ok: false, error: '已有答案，未覆盖；请在待审队列核对后选择保存并填入', code: 'existing-answer', kind: target.kind };
   }
@@ -84,23 +95,23 @@ function editorAction({ domIndex, text, write, overwrite }) {
   }
   const back = read();
   if (!equal(back.visibleText, text) || !equal(back.storedText, text)) return { ok: false, error: '简答正文与表单存储值回读不一致，请人工检查', kind: target.kind };
-  return { ok: true, verified: true, kind: target.kind, text: back.visibleText, chars: text.length, hasStorage: !!storage };
+  return { ok: true, verified: true, kind: target.kind, text: back.visibleText, chars: text.length, hasStorage, formVerified: back.formVerified };
 }
 
 export async function readEssayAnswer(workFrame, domIndex) {
-  return workFrame.evaluate(editorAction, { domIndex, write: false });
+  return workFrame.evaluate(editorAction, { domIndex, write: false, blocks:QUIZ_BLOCK_SELECTOR });
 }
 
 export async function fillEssayAnswer(workFrame, domIndex, value, { overwrite = false, shouldStop } = {}) {
   throwIfStopped(shouldStop);
   const text = normalizeEssayText(value);
   if (!text || text.length > MAX_ESSAY_LENGTH) return { ok: false, error: `简答正文须为 1～${MAX_ESSAY_LENGTH} 字符` };
-  const result = await workFrame.evaluate(editorAction, { domIndex, text, write: true, overwrite });
+  const result = await workFrame.evaluate(editorAction, { domIndex, text, write: true, overwrite, blocks:QUIZ_BLOCK_SELECTOR });
   throwIfStopped(shouldStop);
   if (!result.ok) return result;
   // 再回读一次，抓编辑器事件随后将内容覆盖/清空的情况。
   const back = await readEssayAnswer(workFrame, domIndex);
   const equal = (a, b) => normalizeEssayText(a).replace(/\s+/g, ' ') === normalizeEssayText(b).replace(/\s+/g, ' ');
   if (!back.ok || !equal(back.visibleText, text) || !equal(back.storedText, text)) return { ok: false, error: '简答草稿填写后回读校验失败' };
-  return result;
+  return { ...result, formVerified: back.formVerified };
 }

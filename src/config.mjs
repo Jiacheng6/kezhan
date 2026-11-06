@@ -169,6 +169,8 @@ export const DEFAULT_SETTINGS = {
    * 用户第 9 问确认：默认关闭，因为作业通常只有 1 次提交机会。
    */
   homeworkModule: false,
+  answerBank: { source: 'bank', fallback: 'ai', aboveLimit: 'ai', remind: true },
+  progressStyle: 'particles',
   /** 问千问时使用的提问词 */
   quizPrompt:
     '请给出这道题的答案。只回答答案本身，不要解释：选择题回答选项字母（多选题形如 AB），判断题回答「对」或「错」。',
@@ -320,5 +322,11 @@ export function loadSettings() {
 export function mergeSettings(overrides = {}) {
   const defaults = structuredClone(DEFAULT_SETTINGS);
   const saved = overrides && typeof overrides === 'object' ? overrides : {};
-  return { ...defaults, ...saved, ai: { ...defaults.ai, ...(saved.ai || {}) } };
+  return {
+    ...defaults,
+    ...saved,
+    progressStyle: saved.progressStyle === 'classic' ? 'classic' : defaults.progressStyle,
+    ai: { ...defaults.ai, ...(saved.ai || {}) },
+    answerBank: { ...defaults.answerBank, ...(saved.answerBank || {}) },
+  };
 }

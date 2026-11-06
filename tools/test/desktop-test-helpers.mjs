@@ -14,11 +14,14 @@ export async function enterTestWorkspace(page) {
     await page.locator('#libraryHome').waitFor({ state: 'hidden' });
   }
 }
-export async function revealTestTools(page) {
+export async function revealTestTools(page, category = 'system') {
   await dismissTestOnboarding(page);
   await enterTestWorkspace(page);
   const tools = page.locator('#workspaceUtilities');
-  if (await tools.evaluate(e => !!e.closest('#panel-settings')) && !await tools.isVisible()) await page.locator('[data-tab=settings]').click();
+  if (await tools.evaluate(e => !!e.closest('#panel-settings'))) {
+    await page.locator('[data-tab=settings]').click();
+    await page.locator(`[data-settings-category="${category}"]`).click();
+  }
   if (!await tools.evaluate(e => e.open)) await tools.locator(':scope > summary').click();
 }
 export async function dismissTestOnboarding(page) {
@@ -28,5 +31,5 @@ export async function dismissTestOnboarding(page) {
 export async function openTestArchive(page) {
   await dismissTestOnboarding(page);
   if (await page.locator('#libraryHome').isVisible()) return;
-  await revealTestTools(page); await page.locator('#enterLibrary').click();
+  await revealTestTools(page,'appearance'); await page.locator('#enterLibrary').click();
 }

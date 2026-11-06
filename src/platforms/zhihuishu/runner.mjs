@@ -103,7 +103,7 @@ export async function runZhihuishuVideo({ task, context, shouldStop=()=>false, o
         }
       }
       const player = state.players[0];
-      onProgress({ percent: player?.duration ? player.currentTime / player.duration : null, currentTime: player?.currentTime, duration: player?.duration, playbackRate:player?.rate, taskType: 'video', platform: 'zhihuishu' });
+      onProgress({ percent: player?.duration ? player.currentTime / player.duration : null, currentTime: player?.currentTime, duration: player?.duration, paused: player?.paused, playbackRate:player?.rate, taskType: 'video', platform: 'zhihuishu' });
       if (player?.error) throw Error('智慧树播放器报告错误');
       await page.waitForTimeout(1000);
     }

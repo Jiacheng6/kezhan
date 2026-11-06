@@ -1,12 +1,9 @@
 import { animate, motionEnabled } from './motion.js';
 // Move existing controls with their listeners, rather than duplicate actions.
-const settings=document.querySelector('#panel-settings');
 const tools=document.querySelector('#workspaceUtilities');
-const toolsSection=document.createElement('section');toolsSection.className='settings-section software-section';
-toolsSection.innerHTML='<div class="settings-section-heading"><h3>软件与数据</h3><p>课程档案、更新、窗口和本机数据。</p></div>';
-toolsSection.append(tools);settings.append(toolsSection);tools.open=true;
-tools.querySelector('.desktop-more')?.setAttribute('open','');
-const appearance=document.querySelector('.appearance-section');
+document.querySelector('#settingsUtilities').append(tools);
+tools.open=true;
+const appearance=document.querySelector('#settingsAppearanceTools');
 const library=document.querySelector('#libraryTools');if(library)appearance.append(library);
 const classic=document.querySelector('#toggleClassicUi');if(classic)appearance.append(classic);
 // A single moving surface connects adjacent buttons instead of blinking backgrounds.

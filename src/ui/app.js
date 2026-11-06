@@ -23,12 +23,14 @@ import {
 import { completionOf, completionCounts, courseCompletion, sectionCompletion, mergeTaskCompletion } from './task-status.js';
 import { changePanel, expandCourse, preserveTreeFocus } from './motion.js';
 import { createSelectionDesk } from './selection-desk.js';
-import { renderTaskProgress } from './task-progress.js';
+import { activeTaskPlatforms, mainTaskStatus, renderTaskProgress } from './task-progress.js';
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
 import { runScopeRequest, pendingRunTasks } from './run-scope.js';
+import { confirmBankUse } from './bank-guide.js';
+import { selectSettingsSection } from './settings-navigation.js';
 
 const state = {
   status: null,
@@ -51,6 +53,7 @@ export const workspace = Object.freeze({
   snapshot: workspaceSnapshot,
   subscribe(callback) { workspaceListeners.add(callback); callback(workspaceSnapshot()); return () => workspaceListeners.delete(callback); },
   navigate: switchTab,
+  openSettings: openSettingsSection,
   action: runAction,
   reload: loadChecklist,
   setPlatformFilter(id) {
@@ -115,6 +118,11 @@ $$('.tab').forEach((btn) => {
     const name = btn.dataset.tab;
     document.body.dataset.panel = name;
     $$('.panel').forEach((p) => p.classList.toggle('active', p.id === `panel-${name}`));
+    if (name === 'overview' || name === 'courses') {
+      const slot = $(`#${name}ProgressSlot`);
+      const progress = $('#platformSessions');
+      if (progress.parentElement !== slot) slot.append(progress);
+    }
     changePanel(previous, document.getElementById('panel-' + name));
     $('#pageTitle').textContent = ({ overview: '学习工作台', courses: '选课与学习', review: '待审答案', logs: '运行记录', settings: '偏好设置' })[name] || '学习空间';
   });
@@ -123,10 +131,16 @@ $$('.tab').forEach((btn) => {
 $$('[data-navigate]').forEach((btn) => {
   btn.addEventListener('click', () => switchTab(btn.dataset.navigate));
 });
+$$('[data-settings-link]').forEach(btn => btn.addEventListener('click', () => openSettingsSection(btn.dataset.settingsLink)));
 
 function switchTab(name) {
   const btn = $(`.tab[data-tab="${name}"]`);
   if (btn) btn.click();
+}
+
+function openSettingsSection(section) {
+  selectSettingsSection(section);
+  switchTab('settings');
 }
 
 /* ---------------- 渲染：状态 ---------------- */
@@ -164,7 +178,7 @@ function renderStatus(s) {
   const submitAuto = s.settings?.submitMode === 'auto';
   setPill(
     $('#pillRecon'),
-    submitAuto ? '提交：自动（仅高可靠）' : '提交：人工确认',
+    submitAuto ? '提交：自动（核对后）' : '提交：人工确认',
     submitAuto ? 'ok' : 'warn',
   );
   const qOk = !!s.qianwen?.loggedIn;
@@ -172,7 +186,9 @@ function renderStatus(s) {
   setPill($('#pillQuiz'), qOk ? `答题通道：${aiLabel}就绪` : `答题通道：未登录${aiLabel}`, qOk ? 'ok' : 'warn');
   const channelTitle=$('#readyQianwen b');if(channelTitle)channelTitle.textContent=`${aiLabel}答题通道`;
 
-  $('#phaseLine').textContent = s.running ? '任务运行中 · 隐藏窗口后继续运行' : '选择课程后开始 · 进度自动保存';
+  const activePlatforms = activeTaskPlatforms(s);
+  const learning = activePlatforms.length > 0;
+  $('#phaseLine').textContent = learning ? '任务运行中 · 进度自动保存' : '进度自动保存';
 
   // 概览：浏览器
   $('#kEdgeState').textContent = edgeOk ? '已连接，可在后台运行' : '等待连接';
@@ -193,10 +209,7 @@ function renderStatus(s) {
 
   // 概览：任务
   const p = s.progress || {};
-  $('#kDone').textContent = p.done ?? 0;
-  $('#kTotal').textContent = p.total ?? 0;
-  $('#kCurrent').textContent = [p.current || '空闲', p.playbackRate ? `实际 ${p.playbackRate}×` : '', p.playbackPhase || ''].filter(Boolean).join(' · ');
-  $('#kRunning').textContent = s.running ? '运行中' : '未运行';
+  $('#kRunning').textContent = learning ? '运行中' : '未运行';
   $('#overviewReviewCount').textContent = s.reviewCount ?? 0;
   $('#overviewQianwen').textContent = qOk ? '已登录，答题通道就绪' : `使用答题功能前请登录${aiLabel}`;
   for (const [id, ready] of [['readyBrowser', edgeOk], ['readyLogin', loggedIn], ['readyQianwen', qOk]]) {
@@ -204,23 +217,16 @@ function renderStatus(s) {
   }
   renderReadinessLayout(s);
   const activity = $('#overviewActivity');
-  const paused = !s.running && s.runStats?.paused;
-  activity.textContent = paused ? '已暂停 · 待处理' : s.reconRunning ? '正在扫描' : s.running ? '学习进行中' : !loggedIn ? '等待登录' : '已就绪';
-  activity.classList.toggle('running', !!s.running || !!s.reconRunning);
-  $('#overviewHeadline').textContent = paused ? '任务尚未完成，需要你处理' : s.reconRunning ? '正在整理课程清单' : s.running ? '学习任务运行中' : !loggedIn ? '先登录学习通' : '准备开始学习';
-  $('#overviewSubtitle').textContent = s.reconRunning ? s.reconProgress?.total ? `正在扫描第 ${s.reconProgress.index}/${s.reconProgress.total} 门课程${s.reconProgress.sections?` · 小节 ${s.reconProgress.section}/${s.reconProgress.sections}`:''}，原有进度保留。` : '正在读取课程与章节任务，原有进度会保留。' : s.running ? '你可以返回工作台，任务会继续运行。' : !loggedIn ? '在软件内打开学习通登录，再检测登录状态。' : '选择课程与任务范围，再开始这一次学习。';
+  const paused = !learning && !s.reconRunning && s.runStats?.paused;
+  activity.textContent = paused ? '已暂停 · 待处理' : s.reconRunning ? '正在扫描' : learning ? '学习进行中' : !loggedIn ? '等待登录' : '已就绪';
+  activity.classList.toggle('running', learning || !!s.reconRunning);
+  $('#overviewHeadline').textContent = paused ? '任务暂停，需要你处理' : s.reconRunning ? '正在整理课程清单' : learning ? '学习任务运行中' : !loggedIn ? '先登录学习通' : '准备开始学习';
+  $('#overviewSubtitle').textContent = s.reconRunning ? '正在读取课程与章节任务，原有进度会保留。' : learning ? '收起网页后，学习任务仍会继续。' : !loggedIn ? '在软件内打开学习通登录，再检测登录状态。' : '选择课程与任务范围，再开始这一次学习。';
   if (paused) $('#overviewSubtitle').textContent = s.runStats.pauseReason || '请查看通知与待审答案，处理后重新开始。';
-  const sessionPercent = p.total ? Math.min(100, ((p.done || 0) / p.total) * 100) : 0;
-  $('#overviewProgressFill').style.width = `${sessionPercent}%`;
-  $('#overviewSessionProgress').classList.toggle('hidden', !p.total && !s.running);
-  $('#overviewSessionDetails').classList.toggle('hidden', !p.total && !s.running);
-  $('#overviewProgressTitle').textContent = s.running ? '本次已完成' : '最近一次运行';
+  $('#overviewSessionDetails').classList.toggle('hidden', !p.total && !learning);
   renderOverviewSelection();
   // Other platforms have independent workers; the overview must reflect them too.
-  const activePlatforms = Object.values(s.platforms || {}).filter(run => run.running);
-  if (activePlatforms.length && !s.running && !s.reconRunning) {
-    activity.textContent = '学习进行中';
-    activity.classList.add('running');
+  if (activePlatforms.length > 1 && !s.reconRunning) {
     $('#overviewHeadline').textContent = `${activePlatforms.length} 个平台正在学习`;
     $('#overviewSubtitle').textContent = '各平台独立运行；可在上方分别停止，或停止全部任务。';
   }
@@ -267,8 +273,9 @@ function renderStatus(s) {
   renderSettings(s);
 
   // 执行状态条
-  renderTaskProgress($('#overviewTaskProgress'), s);
-  renderTaskProgress($('#runTaskProgress'), s);
+  const currentTask = mainTaskStatus(s, activePlatforms);
+  renderTaskProgress($('#overviewTaskProgress'), currentTask);
+  renderTaskProgress($('#runTaskProgress'), currentTask);
   renderRunBar(s);
 
   // 待审队列计数
@@ -283,18 +290,17 @@ function renderReadinessLayout(s) {
   const ready = !!s.edge?.connected && !!s.login?.loggedIn && !!s.qianwen?.loggedIn;
   const key = `${compactLayout.matches}:${ready}`;
   if (key !== readinessLayoutState) {
-    $('#readinessDetails').open = !compactLayout.matches || !ready;
+    $('#readinessDetails').open = !ready;
     readinessLayoutState = key;
   }
   $('.overview-rail').classList.toggle('all-ready', ready);
-  $('#readinessTitle').textContent = compactLayout.matches && ready ? '连接已就绪' : '连接与登录';
-  $('#readinessIndex').textContent = compactLayout.matches && ready ? '3 项已就绪 · 展开查看' : '01—03';
+  $('#readinessTitle').textContent = ready ? '连接已就绪' : '连接与登录';
+  $('#readinessIndex').textContent = ready ? '3 项已就绪' : '3 项连接';
 }
 
 /** 执行中/停止状态条 */
 function renderRunBar(s) {
   const bar = $('#runBar');
-  const p = s.progress || {};
   const st = s.runStats;
   const running = !!s.running || !!s.reconRunning;
   const anyRunning = running || Object.values(s.platforms || {}).some(run => run.running);
@@ -311,43 +317,30 @@ function renderRunBar(s) {
     runBtn.textContent = s.reconRunning ? '正在扫描课程…' : anyRunning ? '学习进行中…' : `开始学习（${count} 项）↗`;
   });
   $$('[data-action="stopRun"]').forEach((stopBtn) => { stopBtn.disabled = !anyRunning; });
+  $$('[data-action="startStandaloneWork"]').forEach(btn => { btn.disabled = btn.classList.contains('busy') || running || !s.ready || !s.edge?.connected || !s.login?.loggedIn; });
   $$('[data-action="startRecon"]').forEach((btn) => { btn.disabled = running || !s.ready || !s.edge?.connected || !s.login?.loggedIn; });
 
   if (!bar) return;
 
-  // 有进度或有统计才显示状态条
-  const show = running || (st && (st.done || st.failed || st.review || st.handbook || st.paused));
-  bar.classList.toggle('hidden', !show);
-  if (!show) return;
-
-  const total = p.total || st?.total || 0;
-  const done = st?.done ?? p.done ?? 0;
-  const failed = st?.failed ?? 0;
-  const cur = p.current || '';
-
-  $('#runLabel').textContent = st?.paused ? '已暂停，待处理' : running ? '本次已完成' : '运行已停止';
-  $('#runProg').textContent = `${done} / ${total}`;
-  $('#runFill').style.width = `${total ? Math.min(100, (done / total) * 100) : 0}%`;
-
-  const parts = [`完成 ${done}/${total}`];
-  if (p.playbackRate) parts.push(`实际 ${p.playbackRate}×`);
-  if (p.playbackPhase) parts.push(p.playbackPhase);
-  if (failed) parts.push(`失败 ${failed}`);
-  if (st?.review) parts.push(`待审 ${st.review}`);
+  const parts = [];
+  if (st?.paused && !anyRunning) parts.push('已暂停，待处理');
+  if (st?.failed) parts.push(`失败 ${st.failed}`);
   if (st?.handbook) parts.push(`待人工 ${st.handbook}`);
   if (st?.resumes) parts.push(`纠偏 ${st.resumes}`);
-  $('#runSub').innerHTML =
-    `${parts.join(' · ')}` + (cur && $('#runTaskProgress').hidden ? `<br><span class="muted">当前：${escapeHtml(cur)}</span>` : '');
+  $('#runSub').textContent = parts.join(' · ');
+  bar.classList.toggle('hidden', $('#runTaskProgress').hidden && !parts.length);
 }
 
 /* ---------------- 设置（可编辑，落盘 state.json） ---------------- */
 
 /** 设置表单的本地状态：改动先攒在这里，点保存才落盘 */
 const settingsForm = { rows: [], readonly: [], changed: [], dirty: false };
+const isAnswerStrategy = path => path.startsWith('answerBank.') || path === 'submitMode';
+const draftSettings = new Set(['essayAutoFill', 'discussionDrafts', 'homeworkModule']);
+const learningSettings = new Set(['playbackSpeed', 'videoCompletionMode', 'muted', 'docDwellSec']);
 
 async function loadSettingsForm() {
   const box = $('#settingsForm');
-  const adv = $('#settingsAdvanced');
   if (!box) return;
   try {
     const r = await fetch('/api/settings').then((x) => x.json());
@@ -355,24 +348,28 @@ async function loadSettingsForm() {
     settingsForm.rows = r.result.rows || [];
     settingsForm.readonly = r.result.readonly || [];
     settingsForm.changed = r.result.changed || [];
-    settingsForm.dirty = false;
+    settingsForm.dirty = Object.keys(settingsForm.pending || {}).length > 0;
     renderSettingsForm();
   } catch (err) {
-    box.innerHTML = `<p class="placeholder">读取设置失败：${escapeHtml(err.message)}</p>`;
+    $('#settingsSaveFeedback').textContent = '读取设置失败：' + err.message;
   }
 }
 
 function renderSettingsForm() {
-  const box = $('#settingsForm');
-  const adv = $('#settingsAdvanced');
-  if (!box) return;
-  box.innerHTML = '';
-  if (adv) adv.innerHTML = '';
+  const hosts = {
+    bank: $('#bankStrategyRows'), drafts: $('#settingsDrafts'), ai: $('#settingsAI'),
+    learning: $('#settingsForm'), advanced: $('#settingsAdvanced'), appearance: $('#settingsProgressStyle'),
+  };
+  for (const host of Object.values(hosts)) host.replaceChildren();
 
   for (const row of settingsForm.rows) {
-    const host = row.advanced && adv ? adv : box;
-    host.appendChild(renderSettingRow(row));
+    const path = row.path;
+    const host = path === 'progressStyle' ? hosts.appearance : isAnswerStrategy(path) ? hosts.bank : draftSettings.has(path) ? hosts.drafts
+      : path === 'ai.provider' ? hosts.ai : learningSettings.has(path) ? hosts.learning : hosts.advanced;
+    host.appendChild(renderSettingRow({ ...row, value: settingsForm.pending?.[row.path] ?? row.value }));
   }
+  renderAnswerStrategy();
+  applyProgressStyle(settingsForm.pending?.progressStyle ?? settingsForm.rows.find(row => row.path === 'progressStyle')?.value);
 
   // 只读项
   const ro = $('#settingsReadonly');
@@ -388,12 +385,31 @@ function renderSettingsForm() {
       .join('');
   }
 
-  const pill = $('#settingsDirty');
-  if (pill) {
-    const n = settingsForm.changed.length;
-    pill.textContent = settingsForm.dirty ? '有未保存改动' : n ? `已改 ${n} 项` : '默认值';
-    pill.className = `pill${settingsForm.dirty ? ' warn' : n ? '' : ''}`;
+  renderSettingsSave();
+}
+
+function renderAnswerStrategy() {
+  const rows = $('#bankStrategyRows');
+  if (!rows) return;
+  const control = path => rows.querySelector(`[data-setting="${path}"]`);
+  const source = control('answerBank.source');
+  const fallback = control('answerBank.fallback');
+  const aboveLimit = control('answerBank.aboveLimit');
+  const remind = control('answerBank.remind');
+  if (source && fallback && aboveLimit) {
+    fallback.closest('.setrow').hidden = source.value !== 'bank';
+    aboveLimit.closest('.setrow').hidden = source.value !== 'bank' || fallback.value !== 'random';
+    if (remind) remind.closest('.setrow').hidden = source.value !== 'bank';
   }
+}
+
+function renderSettingsSave() {
+  const pending = Object.keys(settingsForm.pending || {}).length;
+  const changed = settingsForm.changed.length;
+  const pill = $('#settingsDirty');
+  pill.textContent = pending ? `有未保存改动（${pending} 项）` : changed ? `已改 ${changed} 项` : '未修改';
+  pill.className = pending ? 'pill warn' : 'pill';
+  $('#saveSettings').disabled = !pending || Boolean(settingsForm.saving);
 }
 
 /** 一行设置：按 kind 渲染对应控件。控件用 data-setting 标识，避免动态 id 干扰检查工具 */
@@ -468,24 +484,29 @@ function markDirty(path, rawValue) {
   settingsForm.dirty = true;
   settingsForm.pending = settingsForm.pending || {};
   settingsForm.pending[path] = rawValue;
-  const pill = $('#settingsDirty');
-  if (pill) {
-    pill.textContent = `有未保存改动（${Object.keys(settingsForm.pending).length} 项）`;
-    pill.className = 'pill warn';
-  }
+  if (path === 'progressStyle') applyProgressStyle(rawValue);
+  if (isAnswerStrategy(path)) renderAnswerStrategy();
+  $('#settingsSaveFeedback').textContent = '';
+  renderSettingsSave();
+}
+
+function applyProgressStyle(style) {
+  document.documentElement.dataset.progressStyle = style === 'classic' ? 'classic' : 'particles';
 }
 
 async function saveSettingsForm() {
-  const patch = settingsForm.pending || {};
+  if (settingsForm.saving) return { ok: false, error: '正在保存设置，请稍候' };
+  const patch = { ...settingsForm.pending };
   if (!Object.keys(patch).length) {
     appendLog({ t: Date.now(), level: 'info', message: '设置没有改动，无需保存' });
     return { ok: true, noop: true };
   }
   const btn = $('#saveSettings');
-  if (btn) {
-    btn.classList.add('busy');
-    btn.textContent = '保存中…';
-  }
+  const feedback = $('#settingsSaveFeedback');
+  settingsForm.saving = true;
+  renderSettingsSave();
+  btn.classList.add('busy');
+  btn.textContent = '保存中…';
   try {
     const r = await fetch('/api/settings', {
       method: 'POST',
@@ -494,6 +515,7 @@ async function saveSettingsForm() {
     }).then((x) => x.json());
     if (!r.ok) {
       appendLog({ t: Date.now(), level: 'error', message: `设置保存失败：${r.error || '未知错误'}` });
+      feedback.textContent = r.error || '保存失败，请重试';
       return r;
     }
     const res = r.result || {};
@@ -505,15 +527,22 @@ async function saveSettingsForm() {
       level: 'ok',
       message: `设置已保存（${Object.keys(res.applied || {}).length} 项）${(res.errors || []).length ? '，部分值被夹紧到允许范围' : ''}`,
     });
-    settingsForm.pending = {};
+    for (const [path, value] of Object.entries(patch)) {
+      if (settingsForm.pending?.[path] === value) delete settingsForm.pending[path];
+    }
     await loadSettingsForm();
+    feedback.textContent = settingsForm.dirty ? '已保存，另有新改动' : '设置已保存';
     await refreshTreeProgress();
     return r;
+  } catch (error) {
+    appendLog({ t: Date.now(), level: 'error', message: `设置保存失败：${error.message}` });
+    feedback.textContent = error.message || '保存失败，请重试';
+    return { ok: false, error: error.message };
   } finally {
-    if (btn) {
-      btn.classList.remove('busy');
-      btn.textContent = '保存设置';
-    }
+    settingsForm.saving = false;
+    renderSettingsSave();
+    btn.classList.remove('busy');
+    btn.textContent = '保存设置';
   }
 }
 
@@ -590,6 +619,9 @@ $('#clearLogs').addEventListener('click', () => {
 async function runAction(name, btn) {
   const label = btn ? btn.textContent : name;
   let runRequest = null;
+  if (name === 'startStandaloneWork' && !await confirmBankUse(state.status?.settings?.answerBank)) {
+    return { ok: false, cancelled: true };
+  }
 
   /*
    * 「开始执行」前强制对齐选择。
@@ -603,7 +635,10 @@ async function runAction(name, btn) {
     if (!tree.data) return {ok:false,error:'请先读取清单并选择任务'};
     runRequest = runScopeRequest(tree.data.courses);
     if (!runRequest.taskKeys.length) return {ok:false,error:'请先选择至少一个任务'};
-    if(!pendingRunTasks(tree.data.courses).length)return {ok:false,error:'所选任务均已完成，无需重复执行'};
+    const pendingTasks = pendingRunTasks(tree.data.courses);
+    if (!pendingTasks.length) return {ok:false,error:'所选任务均已完成，无需重复执行'};
+    if (pendingTasks.some(task => task.type === 'work' && platformOf(task) === 'chaoxing') &&
+        !await confirmBankUse(state.status?.settings?.answerBank)) return { ok: false, cancelled: true };
     try {
       const r = await saveSelection();
       if (r && r.ok) {
@@ -629,6 +664,7 @@ async function runAction(name, btn) {
     btn.classList.add('busy');
     btn.dataset.old = label;
     btn.textContent = '执行中…';
+    if (name === 'startStandaloneWork') btn.disabled = true;
   }
   try {
     const res = await fetch(`/api/action/${name}`, { method: 'POST', ...(runRequest ? {
@@ -646,7 +682,7 @@ async function runAction(name, btn) {
     if (btn) {
       btn.classList.remove('busy');
       btn.textContent = btn.dataset.old || label;
-      if (state.status && ['startRun', 'stopRun', 'startRecon'].includes(name)) renderRunBar(state.status);
+      if (state.status && ['startRun', 'stopRun', 'startRecon', 'startStandaloneWork'].includes(name)) renderRunBar(state.status);
     }
   }
 }
@@ -731,7 +767,7 @@ const selectionDesk = createSelectionDesk({ root: $('#selectionDesk'), snapshot:
   change() { tree.dirty = true; renderTree(); }, save: saveSelection, navigate: switchTab, action: runAction,openDiscussionSettings });
 
 async function openDiscussionSettings(){
-  switchTab('settings');await loadSettingsForm();
+  openSettingsSection('answer');await loadSettingsForm();
   const input=document.querySelector('[data-setting="discussionDrafts"]');input?.scrollIntoView({block:'center'});input?.focus();
 }
 
@@ -1583,8 +1619,15 @@ function renderReview(data) {
     const k = keptMap.get(taskKey);
     const discussion=list[0].qtype==='discussion';
     head.appendChild(platformBadge(list[0]));
-    head.appendChild(el('span', 'gname', `${list[0].course || ''} · ${list[0].secNo || ''} ${list[0].sectionName || ''}`));
-    head.appendChild(el('span', 'gmeta', `${list.length} ${discussion?'条':'题'}`));
+    const section = [list[0].secNo, list[0].sectionName].filter(Boolean).join(' ');
+    const title = [list[0].course, section].filter(Boolean).join(' · ') || k?.info?.name || '作业';
+    head.appendChild(el('span', 'gname', title));
+    const counts = [`${list.length} ${discussion ? '条' : '题'}`];
+    const bankCount = list.filter(item => item.answerSource === 'bank' && !item.editedByHuman).length;
+    const randomCount = list.filter(item => item.answerSource === 'random' && !item.editedByHuman).length;
+    if (bankCount) counts.push(`题库 ${bankCount}`);
+    if (randomCount) counts.push(`随机补填 ${randomCount}`);
+    head.appendChild(el('span', 'gmeta', counts.join(' · ')));
     {
       const opened=!!k&&!k.closed&&k.submittable;
       head.appendChild(el('span',`chip ${opened?'':'skip'}`,discussion?(opened?'讨论页已打开':'讨论页已关闭，可恢复'):(opened?'作业页已打开':'作业页已关闭，可恢复')));
@@ -1603,9 +1646,10 @@ function renderReview(data) {
           if(hasReviewEdits()){reviewFeedback.set(taskKey,'请先保存正在编辑的答案，再继续未完成题目');await loadReview();return;}
           retry.disabled=true;retry.textContent='正在继续…';
           try{
+            if (platformOf(list[0]) === 'chaoxing' && !await confirmBankUse(state.status?.settings?.answerBank)) return;
             const response=await fetch('/api/action/retryReview',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({taskKey})}).then(r=>r.json());
             const started=response.ok&&response.result?.started;
-            reviewFeedback.set(taskKey,started?'已继续此作业：保留并恢复已保存答案，只向 AI 询问未完成题目；完成后仍需核对提交':response.error||response.result?.reason||'未能继续，草稿已保留');
+            reviewFeedback.set(taskKey,started?'已恢复已保存的答案，只处理未完成的题目。完成后请核对。':response.error||response.result?.reason||'未能继续，草稿已保留');
           }catch(error){reviewFeedback.set(taskKey,'继续失败：'+error.message);}finally{await loadReview();}
         });
         head.appendChild(retry);
@@ -1636,12 +1680,21 @@ function renderQCard(it, taskKey) {
   if (!it.imagePath) card.classList.add('no-shot');
   const isDiscussion=it.qtype==='discussion';
   const isEssay = it.qtype === 'essay'||isDiscussion;
+  const isFill = it.qtype === 'fill';
+  const bankSource = it.answerSource === 'bank' || it.answerSource === 'random';
+  const sourceLabel = it.answerSource === 'random' ? '随机补填' : 'AXE 题库';
 
   const head = el('div', 'qhead');
   head.appendChild(el('span', 'qno', isDiscussion?'讨论':`第 ${it.questionIndex} 题`));
   head.appendChild(el('span', 'chip', it.qtypeRaw || it.qtype));
-  const conf = el('span', `badge ${it.confidence}`, it.confidenceLabel || it.confidence);
-  if(!isDiscussion)head.appendChild(conf);
+  if (!isDiscussion && it.answerSource !== 'random' && (it.confidenceLabel || it.confidence)) {
+    head.appendChild(el('span', `badge ${it.confidence || ''}`, it.confidenceLabel || it.confidence));
+  }
+  if (bankSource) {
+    const sourceBadge = el('span', 'answer-source', it.editedByHuman ? `原答案 · ${sourceLabel}` : sourceLabel);
+    sourceBadge.dataset.source = it.answerSource;
+    head.appendChild(sourceBadge);
+  }
   if (it.editedByHuman) head.appendChild(el('span', 'chip', '人工改过'));
   head.appendChild(el('span', 'chip', isDiscussion?(it.filled?.verified?'已填入讨论页':'待发布草稿'):it.autoFilled ? '已自动填入' : it.filled?.verified ? '已人工填入' : '未填入'));
   if (isEssay) head.appendChild(el('span', 'chip', isDiscussion?'讨论需逐条确认发布':'简答需人工核对'));
@@ -1665,16 +1718,22 @@ function renderQCard(it, taskKey) {
   } else {
     shot.innerHTML = '<div class="nolink">无截图</div>';
   }
-  if(!isDiscussion||it.imagePath)bodyEl.appendChild(shot);
+  if ((!isDiscussion && !bankSource) || it.imagePath) bodyEl.appendChild(shot);
 
   // 右：AI 答案 + 解析 + 编辑
   const info = el('div', 'qinfo');
   if(isDiscussion){const topic=el('div','row');topic.appendChild(el('span','lbl','讨论题目'));topic.appendChild(el('div','ai-text',it.archive?.stemTextRaw||it.sectionName||''));info.appendChild(topic);}
+  if (bankSource && !it.imagePath) {
+    const topic = el('div', 'row');
+    topic.append(el('span', 'lbl', '题干'), el('div', 'ai-text', it.archive?.stemTextRaw || '请打开作业查看题干'));
+    info.appendChild(topic);
+  }
 
   const r1 = el('div', 'row');
-  r1.appendChild(el('span', 'lbl', isDiscussion?'讨论草稿':isEssay ? '简答草稿' : 'AI 解析出的答案'));
-  r1.appendChild(el(isEssay ? 'div' : 'span', isEssay ? 'ai-text' : null,
-    isEssay ? it.textAnswer || '(无可用正文)' : (it.letters || []).join('') || '(无)'));
+  r1.appendChild(el('span', 'lbl', isDiscussion ? '讨论草稿' : isEssay ? '简答草稿' : '当前答案'));
+  const letters = (it.letters || []).map(value => value === 'true' ? '正确' : value === 'false' ? '错误' : value);
+  const answer = isEssay ? it.textAnswer : isFill ? (it.blanks || []).join(' / ') : letters.join('、');
+  r1.appendChild(el(isEssay ? 'div' : 'span', isEssay ? 'ai-text' : null, answer || '暂无'));
   info.appendChild(r1);
 
   const r2 = el('div', 'row');
@@ -1686,7 +1745,7 @@ function renderQCard(it, taskKey) {
     opts.appendChild(el('span', `optitem${isAns ? ' answer' : ''}`, `${o.letter}. ${o.text}`));
   }
   r2.appendChild(opts);
-  if (!isEssay) info.appendChild(r2);
+  if (!isEssay && it.options?.length) info.appendChild(r2);
 
   const r3 = el('div', 'row');
   r3.appendChild(el('span', 'lbl', '判定依据'));
@@ -1695,13 +1754,19 @@ function renderQCard(it, taskKey) {
     r3.appendChild(el('span', 'reason', `　${isEssay ? '提交提示' : '拦截'}：${it.validation.errors.join('；')}`));
   }
   if (it.fillError) r3.appendChild(el('span', 'reason', `　填写失败：${it.fillError}`));
-  if(!isDiscussion)info.appendChild(r3);
+  if (!isDiscussion && r3.textContent !== '判定依据') info.appendChild(r3);
 
-  const r4 = el('div', 'row');
-  r4.appendChild(el('span', 'lbl', isDiscussion?'草稿来源':'AI 原始回答'));
-  const ai = el('div', 'ai-text', (isDiscussion?(it.discussion?.source==='popular-copy'?`已有评论原文：近似回答出现 ${it.discussion.matches} 次；已读取 ${it.discussion.scanned} 条${it.discussion.complete?'，已读完':'，未读完全部评论'}`:'所选 AI 生成，待你核对'):(it.aiAnswer || it.aiError || '(无)')).slice(0, 1500));
-  r4.appendChild(ai);
-  info.appendChild(r4);
+  if (!bankSource && (isDiscussion || it.aiAnswer || it.aiError)) {
+    const r4 = el('div', 'row');
+    r4.appendChild(el('span', 'lbl', isDiscussion ? '草稿来源' : it.aiError && !it.aiAnswer ? '处理情况' : 'AI 原始回答'));
+    const detail = isDiscussion
+      ? (it.discussion?.source === 'popular-copy' ? `已有评论原文：近似回答出现 ${it.discussion.matches} 次；已读取 ${it.discussion.scanned} 条${it.discussion.complete ? '，已读完' : '，未读完全部评论'}` : '所选 AI 生成，待你核对')
+      : it.aiAnswer || it.aiError || '暂无';
+    r4.appendChild(el('div', 'ai-text', detail.slice(0, 1500)));
+    info.appendChild(r4);
+  } else if (it.answerSource === 'random' && !it.editedByHuman) {
+    info.appendChild(el('p', 'answer-source-note', '随机补填的答案请先核对。'));
+  }
 
   // 人工改答案
   const edit = el('div', 'qedit');
@@ -1709,6 +1774,7 @@ function renderQCard(it, taskKey) {
   if (isEssay) { inp.rows = 6; inp.maxLength = isDiscussion?1500:10000; } else inp.type = 'text';
   inp.value = isEssay ? it.textAnswer || '' : (it.letters || []).map((l) => String(l).toUpperCase()).join('');
   inp.dataset.savedValue=inp.value;
+  inp.setAttribute('aria-label', isDiscussion ? '讨论草稿' : `第 ${it.questionIndex} 题的答案`);
   inp.placeholder = isDiscussion?'填写简短讨论回答':isEssay ? '填写简答正文，支持分段' : '如 AB';
   inp.title = isDiscussion?'仅保存本地讨论草稿；核对后点击该组的确认发布讨论才会发表':isEssay ? '保存并填入将替换该题页面上的草稿；不会提交作业' : '人工修改答案（选择题填字母，判断题填 T/F 或 对/错）';
   const save = el('button', null, isDiscussion?'保存讨论草稿':'保存并填入');
@@ -1762,8 +1828,8 @@ function renderQCard(it, taskKey) {
     if(!response.ok)reviewFeedback.set(taskKey,response.error||'丢弃失败，请稍后重试');
     await loadReview();
   });
-  edit.appendChild(inp);
-  edit.appendChild(save);
+  if (isFill) edit.appendChild(el('span', 'muted', '填空答案请在原作业页核对或修改。'));
+  else edit.append(inp, save);
   edit.appendChild(discard);
   info.appendChild(edit);
 
@@ -1782,6 +1848,10 @@ $$('.tab').forEach((btn) => {
 /** 设置页按钮 */
 function bindSettingsTools() {
   $('#saveSettings')?.addEventListener('click', () => saveSettingsForm());
+  $('#openBankSettings')?.addEventListener('click', () => {
+    openSettingsSection('answer');
+    $('#bankSettingsTitle')?.focus();
+  });
   $('#reloadSettings')?.addEventListener('click', () => loadSettingsForm());
   $('#resetSettings')?.addEventListener('click', async () => {
     const ok = window.confirm('恢复默认设置？\n会清掉 state.json 里的 settings 段（课程选择、进度不受影响）。');
@@ -1791,8 +1861,10 @@ function bindSettingsTools() {
       appendLog({ t: Date.now(), level: 'ok', message: '设置已恢复默认' });
       settingsForm.pending = {};
       settingsForm.rows = [];
+      $('#settingsSaveFeedback').textContent = '已恢复默认';
       await loadSettingsForm();
     } else {
+      $('#settingsSaveFeedback').textContent = r.error || '恢复默认失败，请重试';
       appendLog({ t: Date.now(), level: 'error', message: `恢复默认失败：${r.error || '未知错误'}` });
     }
   });

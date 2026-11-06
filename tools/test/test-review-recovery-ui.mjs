@@ -29,6 +29,10 @@ function seed(key,{mode='normal',missing=false,edited=false,append=false,pending
     {id:key+'#q1',taskKey:key,questionId:'choice-demo',questionIndex:1,domIndex:0,qtype:'single',qtypeRaw:'单选题',options,letters:edited?['B']:['A'],editedByHuman:edited,autoFilled:!edited,status:'filled'},
     {id:key+'#q2',taskKey:key,questionId:'essay-demo',questionIndex:2,domIndex:1,qtype:'essay',qtypeRaw:'简答题',options:[],textAnswer:draft,requiresReview:true,autoFilled:!missing,status:missing?'pending-review':'filled'},
   ].map(item=>({...item,courseId:task.courseId,clazzId:task.clazzId,knowledgeId:key,course:'示例课程',secNo:'1.2',sectionName:'示例小节'}));
+  if (key === 'closed-demo' || key === 'incomplete-demo') {
+    items[0].answerSource = key === 'closed-demo' ? 'bank' : 'random';
+    items[0].archive = {stemTextRaw:'示例选择题干'};
+  }
   if(mode==='legacy-essay'){items[1].questionId='1';items[1].archive={stemTextRaw:'示例简答题干'};}
   mutateState(state=>{
     state.onboarding={version:2,completedAt:new Date().toISOString()};
@@ -54,13 +58,14 @@ await context.route('https://mooc1.chaoxing.com/**',async route=>{
   if(url.pathname.includes('/work/doHomeWorkNew')){
     const key=url.searchParams.get('workId'),mode=variants.get(key);
     if(mode==='completed')return route.fulfill({contentType:'text/html',body:'<meta charset="utf-8"><p>已提交，本次成绩 90 分</p>'});
-    return route.fulfill({contentType:'text/html',body:`<meta charset="utf-8">
+    return route.fulfill({contentType:'text/html',body:`<meta charset="utf-8"><form>
 <div class="TiMu" data="essay-demo"><div class="TiMuHead"><span class="newZy_TItle">【简答题】</span></div><div class="Zy_TItle"><p>示例简答题干</p></div><textarea name="answerEditor-${mode==='legacy-essay'?'0':'essay-demo'}"></textarea></div>
 <div class="TiMu"><span class="newZy_TItle">【单选题】</span><div class="Zy_TItle"><p>示例选择题干</p></div><ul class="Zy_ulTop">${options.map(option=>`<li role="radio" qid="${mode==='changed'?'changed-question':'choice-demo'}"><span class="num_option ${mode==='prefilled'&&option.letter==='A'?'check_answer':''}" data="${option.letter}">${option.letter}</span><a class="after"><p>${option.text}</p></a></li>`).join('')}</ul></div>
 ${mode==='pending'?'<p>我的答案：已完成。本次成绩 100 分（这是题目示例，仍未提交）。</p>':''}
-<button class="btnSubmit" ${mode==='readonly'?'disabled':''} onclick="document.querySelector('#popok').hidden=false">提交</button><button id="popok" hidden>确认提交</button>
+<button type="button" class="btnSubmit" ${mode==='readonly'?'disabled':''} onclick="document.querySelector('#popok').hidden=false">提交</button><button type="button" id="popok" hidden>确认提交</button></form>
 <script>document.querySelectorAll('li[qid]').forEach(li=>li.onclick=()=>{li.parentElement.querySelectorAll('span[data]').forEach(span=>span.classList.remove('check_answer'));li.querySelector('span').classList.add('check_answer');});
-document.querySelector('#popok').onclick=()=>{window.fixtureSubmitted({key:${JSON.stringify(key)},choice:[...document.querySelectorAll('.check_answer')].map(span=>span.getAttribute('data')),essay:document.querySelector('textarea').value});${mode==='pending'?"document.querySelector('#popok').hidden=true;":"document.body.innerHTML='<p>提交成功，本次成绩 90 分</p>';"}};</script>`});
+${mode==='form-empty'?"document.querySelector('form').addEventListener('formdata',event=>event.formData.delete('answerEditor-essay-demo'));":''}
+document.querySelector('#popok').onclick=()=>{window.fixtureSubmitted({key:${JSON.stringify(key)},choice:[...document.querySelectorAll('.check_answer')].map(span=>span.getAttribute('data')),essay:document.querySelector('textarea').value});${mode==='pending'?"":"document.body.innerHTML='<p>提交成功，本次成绩 90 分</p>';"}};</script>`});
   }
   return route.abort();
 });
@@ -80,6 +85,8 @@ try{
   seed('closed-demo');
   const ui=await context.newPage();await ui.goto(service.url);await ui.locator('[data-tab="review"]').click();
   await ui.getByText('作业页已关闭，可恢复',{exact:true}).waitFor();
+  await ui.locator('.answer-source[data-source="bank"]').filter({hasText:'AXE 题库'}).waitFor();
+  await ui.getByText('示例选择题干',{exact:true}).waitFor();
   assert.equal(await ui.getByText('作业页已打开',{exact:true}).count(),0,'关闭记录不能误报打开');
   await ui.getByRole('button',{name:'重新打开并恢复',exact:true}).click();
   await ui.locator('.review-feedback').filter({hasText:'恢复 2 题'}).waitFor();
@@ -106,11 +113,23 @@ try{
 
   seed('incomplete-demo',{missing:true});
   await ui.locator('#panel-review [data-action="loadReview"]').click();
+  await ui.locator('.answer-source[data-source="random"]').filter({hasText:'随机补填'}).waitFor();
+  await ui.getByText('随机补填的答案请先核对。',{exact:true}).waitFor();
   await ui.getByRole('button',{name:'恢复后提交这一组',exact:true}).click();
   await ui.locator('.review-feedback').filter({hasText:'尚未填写完整'}).waitFor();
   assert.equal(confirmed.length,1);assert.equal(listReviewItems().length,2);
   assert.equal(loadState().taskPoints['incomplete-demo'].status,'manual');
   await ui.screenshot({path:path.join(data,'incomplete-preserved.png')});
+
+  seed('form-empty-demo',{mode:'form-empty'});
+  const emptyForm = await post('submit',{taskKey:'form-empty-demo'});
+  assert.equal(emptyForm.ok,false);
+  assert.match(emptyForm.error,/未同步到提交表单/);
+  const emptyFormDraft = await readEssayAnswer(findWorkFrame(getKeptPage('form-empty-demo').page),0);
+  assert.equal(emptyFormDraft.visibleText,draft);
+  assert.equal(emptyFormDraft.storedText,draft);
+  assert.equal(emptyFormDraft.formVerified,false);
+  assert.equal(confirmed.length,1,'编辑器和答案字段都有值，但实际表单缺字段时不得提交');
 
   seed('changed-demo',{mode:'changed'});
   let response=await post('submit',{taskKey:'changed-demo'});
@@ -163,14 +182,13 @@ try{
   ui.off('request',countUISubmit);
   seed('uncertain-demo',{pending:true,mode:'pending'});
 
-  // A persisted uncertain flag must not permanently block restoring a server
-  // draft after restart. Retrying submission alone remains blocked above.
+  // A new uncertain submission must stay pending even if a fresh page shows
+  // an editor. The old attempt must produce a verifiable result first.
   response=await post('open',{taskKey:'uncertain-demo'});
-  assert.equal(response.ok,true,JSON.stringify(response));
-  assert.equal(response.result.pendingRecovered,true);
-  assert.equal(response.result.restored,2,'已有不确定页必须重新读取服务器草稿再恢复');
-  assert.equal(loadState().keptPages['uncertain-demo'].info.submissionPending,false);
-  assert.equal(confirmed.length,3,'恢复平台草稿不会自动提交');
+  assert.equal(response.ok,false,JSON.stringify(response));
+  assert.match(response.error,/仍待平台确认/);
+  assert.equal(loadState().keptPages['uncertain-demo'].info.submissionPending,true);
+  assert.equal(confirmed.length,3,'重新核对不能重发提交');
 
   seed('restart-pending-demo',{pending:true,mode:'legacy-essay'});
   response=await post('submit',{taskKey:'restart-pending-demo'});
@@ -234,7 +252,7 @@ try{
   const retryRequest=ui.waitForRequest(req=>new URL(req.url()).pathname==='/api/action/retryReview');
   await ui.getByRole('button',{name:'只重试未完成题目',exact:true}).click();
   assert.deepEqual((await retryRequest).postDataJSON(),{taskKey:'retry-only-demo'},'重试按钮只传本组任务标识，不能提交或启动其他作业');
-  await ui.locator('.review-feedback').filter({hasText:'只向 AI 询问未完成题目'}).waitFor();
+  await ui.locator('.review-feedback').filter({hasText:'只处理未完成的题目'}).waitFor();
   console.log('✓ 真实隔离页面：关闭/重启记录恢复、题序变化、选择与简答回填、人工修改、缺题/错题/换次拦截、提交结果核实、未知结果不重交、并发和批量部分失败通过');
   console.log(`截图：${path.join(data,'restored-review.png')}`);
 }finally{
