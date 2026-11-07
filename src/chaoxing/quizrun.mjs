@@ -391,7 +391,9 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
       if (!previous && !chosen && preferBank) {
         const reason = bankAnswer?.kind === 'unsupported' ? ({
           'question-font': '题面使用学习通混淆字体，未向题库查询',
-          'question-media': '题面包含图片、公式或其他媒体，未向题库查询',
+          'question-media': '题面中的图片或公式暂无法可靠转换，未向题库查询',
+          'question-resource': '题面资源地址缺失或暂不支持，未向题库查询',
+          'question-length': '公式或图片数据超过题库长度限制，未向题库查询',
           'question-type': '题库不支持该题型，未查询',
           'question-text': '题面或选项无法可靠读取，未向题库查询',
         })[bankAnswer.reason] || '题面或题型暂不支持题库查询' : ({
@@ -603,7 +605,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
         domIndex: q.domIndex,
         qtype: q.qtype,
         qtypeRaw: q.qtypeRaw,
-        options: (q.options || []).map((o) => ({ letter: o.letter, displayLetter:o.displayLetter, text: o.text })),
+        options: (q.options || []).map((o) => ({ letter: o.letter, displayLetter:o.displayLetter, text: o.text, contentKey:o.contentKey })),
         imagePath: solved.imagePath,
         aiAnswer: solved.aiAnswer,
         aiError: solved.aiError,

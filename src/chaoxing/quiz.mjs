@@ -1,5 +1,7 @@
 import { inspectQuestionFonts } from './question-fonts.mjs';
 import { resolveCxQuestionFont } from './answer-bank-font.mjs';
+import { extractBankMathContent } from './answer-bank-math.mjs';
+import { createHash } from 'node:crypto';
 /**
  * 测验/作业的题目提取与截图（P4）。
  *
@@ -21,7 +23,8 @@ import { resolveCxQuestionFont } from './answer-bank-font.mjs';
  *   按钮   .btnSave（暂时保存）  .btnSubmit（提交）
  *
  * 关键设计决策：
- *   题库只使用可读文本或已完整还原的字形；AI 通道仍使用截图。
+ *   题库使用可读文本、已还原字形及原版兼容的公式/资源字符串；
+ *   无法可靠转换的题面仍交给截图 AI 或待审。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -83,13 +86,13 @@ export async function waitWorkFrame(page, timeoutMs = 30000) {
  */
 export async function extractQuestions(workFrame, {decodeBankText = false} = {}) {
   const cxFont = decodeBankText ? await resolveCxQuestionFont(workFrame, QUIZ_BLOCK_SELECTOR) : null;
-  return workFrame.evaluate(({blocks,optionSelector,cxFont}) => {
+  const questions = await workFrame.evaluate(({blocks,optionSelector,cxFont}) => {
     const normalize = text => text.trim().replace(/\s+/g, ' ');
     const t = el => normalize(el?.textContent || '');
     const fontName = family => family.replace(/["']/g, '').trim().toLowerCase();
     const customFonts = new Set([...document.fonts].map(face => fontName(face.family)).filter(family => !/^cxchinesequote\d*$/.test(family)));
     const privateText = /[\ue000-\uf8ff\ufffd]/u;
-    const media = 'img,svg,math,canvas,video,audio';
+    const media = 'img,svg,math,canvas,video,audio,iframe,.audioReader';
     const readBankText = (el, group = el) => {
       if (!el) return { text: '', issue: 'question-text' };
       if (group.querySelector(media)) return { text: t(el), issue: 'question-media' };
@@ -207,6 +210,7 @@ export async function extractQuestions(workFrame, {decodeBankText = false} = {})
         bankTextSafe: !bankTextIssue,
         bankTextIssue,
         bankTextDecoded,
+        bankHasMedia: !!(q.querySelector('.Zy_TItle') || headingElement)?.querySelector(media) || [...q.querySelectorAll(optionSelector)].some(option => option.querySelector(media)),
         bankBlankCount,
         optionCount: options.length,
         options,
@@ -215,6 +219,27 @@ export async function extractQuestions(workFrame, {decodeBankText = false} = {})
       };
     });
   },{blocks:QUIZ_BLOCK_SELECTOR,optionSelector:OPTION_SELECTOR,cxFont});
+  if (!questions.some(question => question.bankHasMedia)) return questions;
+  const representations = await workFrame.evaluate(extractBankMathContent, {blocks:QUIZ_BLOCK_SELECTOR,optionSelector:OPTION_SELECTOR,cxFont});
+  const key = value => value ? createHash('sha256').update(value).digest('hex') : undefined;
+  return questions.map(question => {
+    const representation = representations[question.domIndex];
+    if (!representation || representation.options.length !== question.options.length) return question;
+    return {
+      ...question,
+      bankFormat: 'legacy-math',
+      bankStem: representation.stem.text.replace(/^\[(?:多选|单选|判断|填空|简答)题\]\s*/u, ''),
+      bankTextSafe: !representation.issue,
+      bankTextIssue: representation.issue,
+      bankTextDecoded: representation.decoded,
+      stemContentKey: key(representation.stem.identity),
+      options: question.options.map((option,index) => ({...option,
+        bankText: representation.options[index].text,
+        bankAnswerKeys: representation.options[index].aliases,
+        contentKey: key(representation.options[index].identity),
+      })),
+    };
+  });
 }
 
 // The answer card and platform totals are independent of the .TiMu extractor.

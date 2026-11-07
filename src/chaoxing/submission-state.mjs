@@ -48,7 +48,12 @@ export async function submissionState(frame) {
       for (const node of resultBody.querySelectorAll('.TiMu,.newTiMu,.questionLi,script,style')) node.remove();
       summary = resultBody.textContent || '';
     }
-    const result=/提交成功|已提交|测评结果|本次成绩\s*[:：]?\s*[\d.]+\s*分|老师正在批阅|待批阅|已完成本次作业|作业已完成/.test(summary);
+    // Some reviewed results have no score/receipt text, just the platform's
+    // completed header and the original answers. Require that exact header on
+    // a result route; a question saying “已完成” must never certify submission.
+    const completedHeader=resultPage&&[...document.querySelectorAll('.newTestTitle > .testTit_status_complete')].some(e=>
+      visible(e)&&!e.closest('.TiMu,.newTiMu,.questionLi')&&e.textContent.trim()==='已完成');
+    const result=completedHeader||/提交成功|已提交|测评结果|本次成绩\s*[:：]?\s*[\d.]+\s*分|老师正在批阅|待批阅|已完成本次作业|作业已完成/.test(summary);
     const receipt=[...document.querySelectorAll('#submitBackOk')].some(visible);
     const score=summary.match(/本次成绩\s*[:：]?\s*([\d.]+)\s*分|得分\s*[:：]?\s*([\d.]+)/);
     return {submitted:(!submit&&result&&(!hasQuestions||resultPage))||receipt,confirmation:receipt,score:score?.[1]||score?.[2]||null};

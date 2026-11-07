@@ -15,8 +15,8 @@ import {recoverReviewIdentity} from './review-identity.mjs';
 export { withReviewLock } from './review-lock.mjs';
 
 const text=value=>String(value||'').replace(/\s+/g,' ').trim();
-const optionSignature=options=>JSON.stringify((options||[]).map(o=>[String(o.letter),text(o.text)]).sort((a,b)=>a[0].localeCompare(b[0])));
-const optionContents = options => JSON.stringify((options || []).map(option => text(option.text)).sort());
+const optionSignature=(options,keyed=false)=>JSON.stringify((options||[]).map(o=>[String(o.letter),keyed?o.contentKey:text(o.text)]).sort((a,b)=>a[0].localeCompare(b[0])));
+const optionContents = (options,keyed=false) => JSON.stringify((options || []).map(option => keyed?option.contentKey:text(option.text)).sort());
 const matchesStem = (question, stem) => [question.stemTextRaw, ...(question.stemTextRawVariants || [])].some(value => text(value) === stem);
 // Legacy essay records used answerEditor0/1 (a render index) as a question ID.
 // Those indices change with ordering and cannot be used as platform identity.
@@ -39,18 +39,23 @@ export function matchReviewQuestions(items, questions) {
   const used=new Set();
   return items.map(item=>{
     const id=questionId(item),stem=text(item.archive?.stemTextRaw);
+    const keyed = (item.options || []).some(option => option.contentKey);
+    const keysComplete = question => !keyed || (item.options || []).every(option => option.contentKey) && question.options.every(option => option.contentKey);
     const candidates=questions.filter(q=>q.qtype===item.qtype && (id ? String(q.questionId)===id :
-      !!stem&&matchesStem(q,stem)&&optionContents(item.options)===optionContents(q.options)));
+      !!stem&&matchesStem(q,stem)&&keysComplete(q)&&optionContents(item.options,keyed)===optionContents(q.options,keyed)));
     if(candidates.length!==1||used.has(candidates[0].domIndex))throw new Error(`第 ${item.questionIndex} 题无法唯一对应，题目可能已变化；已保留草稿，请人工核对`);
     const question=candidates[0];
+    if (item.archive?.stemContentKey && item.archive.stemContentKey !== question.stemContentKey) throw new Error(`第 ${item.questionIndex} 题的公式或图片已变化，未恢复或提交`);
     if (stem && text(question.stemTextRaw) && !matchesStem(question,stem)) throw new Error(`第 ${item.questionIndex} 题的题干已变化，未恢复或提交`);
+    if (!keysComplete(question)) throw new Error(`第 ${item.questionIndex} 题的公式选项无法完整核对，未恢复或提交`);
     let letters = item.letters || [];
-    if(optionSignature(item.options)!==optionSignature(question.options)) {
-      if (optionContents(item.options) !== optionContents(question.options)) throw new Error(`第 ${item.questionIndex} 题的选项已变化，未恢复或提交`);
+    if(optionSignature(item.options,keyed)!==optionSignature(question.options,keyed)) {
+      if (optionContents(item.options,keyed) !== optionContents(question.options,keyed)) throw new Error(`第 ${item.questionIndex} 题的选项已变化，未恢复或提交`);
       letters = letters.map(letter => {
-        const label = text(item.options.find(option => option.letter === letter)?.text);
-        const matches = question.options.filter(option => text(option.text) === label);
-        if (!label || matches.length !== 1 || item.options.filter(option => text(option.text) === label).length !== 1) throw new Error(`第 ${item.questionIndex} 题的选项无法唯一对应`);
+        const value = option => keyed ? option?.contentKey : text(option?.text);
+        const label = value(item.options.find(option => option.letter === letter));
+        const matches = question.options.filter(option => value(option) === label);
+        if (!label || matches.length !== 1 || item.options.filter(option => value(option) === label).length !== 1) throw new Error(`第 ${item.questionIndex} 题的选项无法唯一对应`);
         return matches[0].letter;
       });
     }

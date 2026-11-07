@@ -16,7 +16,11 @@ function truth(value) {
 
 export function bankAnswer(reply, question) {
   if (reply.kind !== 'candidate') return reply;
-  if (!clean(reply.stem) || clean(reply.stem) !== clean(question.bankStem ?? question.stemTextRaw)) return { kind: 'unusable' };
+  // Formula spelling is significant: NFKC would turn x² into x2. Keep the
+  // exact provider-compatible representation, never use a similarity score
+  // to approve a different formula or a different resource URL.
+  const compare = question.bankFormat === 'legacy-math' ? value => String(value ?? '').trim() : clean;
+  if (!compare(reply.stem) || compare(reply.stem) !== compare(question.bankStem ?? question.stemTextRaw)) return { kind: 'unusable' };
   if (question.qtype === 'fill') {
     const blanks = reply.answer.split('#!#').map(part => part.trim());
     return blanks.length === question.bankBlankCount && blanks.every(Boolean) ? { kind: 'hit', blanks } : { kind: 'unusable' };
@@ -28,12 +32,15 @@ export function bankAnswer(reply, question) {
     options = question.options.filter(option => (truth(option.letter) ?? truth(option.text)) === expected);
     if (options.length !== 1) return { kind: 'unusable' };
   } else {
+    if (question.bankFormat === 'legacy-math' && question.qtype === 'multiple' &&
+        question.options.some(option => (option.bankAnswerKeys || [option.bankText]).some(key => key?.includes('#')))) return { kind: 'unusable' };
     const parts = question.qtype === 'multiple' ? reply.answer.split('#') : [reply.answer];
     if (parts.length < (question.qtype === 'multiple' ? 2 : 1)) return { kind: 'unusable' };
     options = [];
     for (const part of parts) {
       if (!clean(part)) return { kind: 'unusable' };
-      const matches = question.options.filter(option => clean(option.bankText ?? option.text) === clean(part));
+      const matches = question.options.filter(option => (question.bankFormat === 'legacy-math'
+        ? option.bankAnswerKeys || [option.bankText ?? option.text] : [option.bankText ?? option.text]).some(key => compare(key) === compare(part)));
       if (matches.length !== 1 || options.includes(matches[0])) return { kind: 'unusable' };
       options.push(matches[0]);
     }

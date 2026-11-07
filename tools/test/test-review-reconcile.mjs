@@ -51,5 +51,29 @@ const b=await chromium.launch({executablePath:findEdge(),headless:true});try{
  assert.equal((await submissionState(gradedPage.mainFrame())).submitted,false,'只有题内提交字样不能冒充结果');
  await gradedPage.setContent('<h2>本次成绩：100 分</h2><button class="btnSubmit">提交</button><div class="TiMu">示例题</div>');
  assert.equal((await submissionState(gradedPage.mainFrame())).submitted,false,'仍可提交的页面不能仅凭结果字样核销');
+ const completedHeader='<div class="newTestTitle"><div class="TestTitle_name">章节测验</div><div class="fr testTit_status testTit_status_complete"><i></i>已完成</div></div>';
+ await gradedPage.setContent(completedHeader+'<div class="TiMu">原题与我的答案保留，没有成绩。</div>');
+ assert.equal((await submissionState(gradedPage.mainFrame())).submitted,true,'实际结果页仅显示已完成标题且保留原题时也应确认');
+ assert.equal((await submissionState(gradedPage.mainFrame())).score,null,'无成绩不能推测分数');
+ assert.equal((await pageSubmissionState(gradedPage,gradedPage.mainFrame(),{expected:{...expected,workanswerid:'wrong-attempt'}})).submitted,false,'已完成标题仍受原作答身份约束');
+ let checkpoints=0;
+ const completed=await submitWork(gradedPage.mainFrame(),{expected,verificationOnly:true,beforeSubmit:()=>checkpoints++});
+ assert.equal(completed.alreadySubmitted,true);assert.equal(checkpoints,0,'无成绩已完成结果不能再次提交');
+ mutateState(s=>{s.reviewQueue.push({id:'completed-header#q1',taskKey:'completed-header',status:'filled',aiAnswer:'保留已提交答案'});s.quizzes['completed-header']={submitted:false,totalQuestions:2};s.taskPoints['completed-header']={status:'manual'};s.keptPages['completed-header']={url:gradedPage.url(),info:{personId:'demo-user',workIdentity:expected,submissionPending:true,submissionVerificationOnly:true,task:{standalone:true}}};});
+ assert.equal((await reconcileOneReview(context,'completed-header',{personId:'demo-user',waitMs:500})).state,'submitted');
+ assert.equal(loadState().taskPoints['completed-header'].status,'done');
+ assert.equal(loadState().quizzes['completed-header'].submitted,true);
+ assert.equal(listReviewItems().some(i=>i.taskKey==='completed-header'),false,'核对已完成结果后从待审移除');
+ assert.equal(loadState().reviewQueue.find(i=>i.id==='completed-header#q1').aiAnswer,'保留已提交答案','历史答案不删除');
+ for(const html of [
+  '<div class="TiMu">'+completedHeader+'</div>',
+  '<div hidden>'+completedHeader+'</div>',
+  '<p>已完成</p><div class="TiMu">只有普通文字</div>',
+  completedHeader+'<button class="btnSubmit">提交</button><div class="TiMu">仍可提交</div>',
+ ]){await gradedPage.setContent(html);assert.equal((await submissionState(gradedPage.mainFrame())).submitted,false,'题内、隐藏、普通文本或仍可提交均不得核销');}
+ await gradedPage.goto('https://mooc1.chaoxing.com/mooc-ans/work/doHomeWorkNew?workId=graded-work&workAnswerId=graded-attempt');
+ await gradedPage.setContent(completedHeader+'<div class="TiMu">编辑页，不能凭标题核销</div>');
+ assert.equal((await submissionState(gradedPage.mainFrame())).submitted,false,'可编辑作业路由不能仅凭已完成标题核销');
+ assert.equal(submits,0,'整轮结果回查不执行提交');
  console.log('✓ 两平台关闭页面后的只读核销、完整身份核对、未交/错章草稿保护、零提交及跨平台提交权限检查通过');
 }finally{await b.close();}

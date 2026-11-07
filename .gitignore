@@ -102,6 +102,7 @@ tools/run/
 
 # 回归工具白名单，避免实际账号测试记录进入仓库
 tools/test/*
+!tools/test/test-answer-bank-math.mjs
 !tools/test/test-web-conversation-recovery.mjs
 !tools/test/test-doubao-image-recovery.mjs
 !tools/test/test-review-reconcile.mjs
