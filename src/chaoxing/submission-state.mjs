@@ -39,10 +39,18 @@ export async function submissionState(frame) {
     const submit=[...document.querySelectorAll(selector)].some(visible);
     // Questions and answers can themselves contain words such as “已提交”.
     const hasQuestions = !!document.querySelector('.TiMu,.newTiMu,.questionLi');
-    const result=/提交成功|已提交|测评结果|本次成绩\s*[\d.]+\s*分|老师正在批阅|待批阅|已完成本次作业|作业已完成/.test(body);
+    const resultPage = /\/(?:viewWork|workView|workAnswer|selectWorkQuestionYiPiYue)(?:[/?]|$)/i.test(location.pathname);
+    // Reviewed work pages retain all question blocks. Read the result summary
+    // outside those blocks, so answer text cannot masquerade as a receipt.
+    let summary = body;
+    if (resultPage) {
+      const resultBody = document.body.cloneNode(true);
+      for (const node of resultBody.querySelectorAll('.TiMu,.newTiMu,.questionLi,script,style')) node.remove();
+      summary = resultBody.textContent || '';
+    }
+    const result=/提交成功|已提交|测评结果|本次成绩\s*[:：]?\s*[\d.]+\s*分|老师正在批阅|待批阅|已完成本次作业|作业已完成/.test(summary);
     const receipt=[...document.querySelectorAll('#submitBackOk')].some(visible);
-    const score=body.match(/本次成绩\s*([\d.]+)\s*分|得分[:：]?\s*([\d.]+)/);
-    const resultPage = /\/(?:viewWork|workView|workAnswer)(?:[/?]|$)/i.test(location.pathname);
+    const score=summary.match(/本次成绩\s*[:：]?\s*([\d.]+)\s*分|得分\s*[:：]?\s*([\d.]+)/);
     return {submitted:(!submit&&result&&(!hasQuestions||resultPage))||receipt,confirmation:receipt,score:score?.[1]||score?.[2]||null};
   },WORK_SUBMIT_SELECTOR);
 }

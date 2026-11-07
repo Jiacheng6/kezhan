@@ -1,4 +1,5 @@
 import { inspectQuestionFonts } from './question-fonts.mjs';
+import { resolveCxQuestionFont } from './answer-bank-font.mjs';
 /**
  * 测验/作业的题目提取与截图（P4）。
  *
@@ -11,7 +12,7 @@ import { inspectQuestionFonts } from './question-fonts.mjs';
  *   每道题：.TiMu.newTiMu[data]
  *     题干   .Zy_TItle
  *              题型 .newZy_TItle        → "【多选题】" / "【单选题】" / "【判断题】" / "【填空题】"
- *              正文 p                    → ⚠ 字体加密，DOM 文本是乱码，只能用截图
+ *              正文 p                    → 部分作业需要还原混淆字体
  *     选项   ul.Zy_ulTop > li[role=checkbox|radio][qid][qtype][aria-label]
  *              onclick="addMultipleChoice(this)" 或 "addSingleChoice(this)"
  *              data="A"  → 选项字母
@@ -20,8 +21,7 @@ import { inspectQuestionFonts } from './question-fonts.mjs';
  *   按钮   .btnSave（暂时保存）  .btnSubmit（提交）
  *
  * 关键设计决策：
- *   因为题干是字体加密的，**不依赖 DOM 文本**来判断题目内容；
- *   截图是唯一可靠输入。DOM 只用来：定位题目、拿选项字母、点选、提交。
+ *   题库只使用可读文本或已完整还原的字形；AI 通道仍使用截图。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -74,22 +74,63 @@ export async function waitWorkFrame(page, timeoutMs = 30000) {
 }
 
 /**
- * 提取所有题目（结构化，不含题干文本 —— 那是加密的）。
+ * 提取所有题目的结构及可用于题库的文本。
  *
  * @returns {Promise<Array>} 每题：
  *   { index, qid, qtype, qtypeRaw, stemTextRaw(乱码，仅供参考),
  *     options: [{ letter, text, role, onclick, qid }],
  *     hasAnswered }
  */
-export async function extractQuestions(workFrame) {
-  return workFrame.evaluate(({blocks,optionSelector}) => {
-    const t = (el) => (el?.textContent || '').trim().replace(/\s+/g, ' ');
+export async function extractQuestions(workFrame, {decodeBankText = false} = {}) {
+  const cxFont = decodeBankText ? await resolveCxQuestionFont(workFrame, QUIZ_BLOCK_SELECTOR) : null;
+  return workFrame.evaluate(({blocks,optionSelector,cxFont}) => {
+    const normalize = text => text.trim().replace(/\s+/g, ' ');
+    const t = el => normalize(el?.textContent || '');
+    const fontName = family => family.replace(/["']/g, '').trim().toLowerCase();
+    const customFonts = new Set([...document.fonts].map(face => fontName(face.family)).filter(family => !/^cxchinesequote\d*$/.test(family)));
+    const privateText = /[\ue000-\uf8ff\ufffd]/u;
+    const media = 'img,svg,math,canvas,video,audio';
+    const readBankText = (el, group = el) => {
+      if (!el) return { text: '', issue: 'question-text' };
+      if (group.querySelector(media)) return { text: t(el), issue: 'question-media' };
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      let text = '';
+      let decoded = false;
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (!node.data.trim()) { text += node.data; continue; }
+        const families = getComputedStyle(node.parentElement).fontFamily.split(',').map(fontName);
+        const custom = families.filter(name => customFonts.has(name) || /secret|obfuscat/i.test(name));
+        if (custom.length) {
+          if (!cxFont || custom.length !== 1 || families[0] !== 'font-cxsecret') return { text: t(el), issue: 'question-font' };
+          for (const ch of node.data) {
+            if (/\s/u.test(ch) && !Object.hasOwn(cxFont, ch)) { text += ch; continue; }
+            if (!Object.hasOwn(cxFont, ch) || cxFont[ch] === null) return { text: t(el), issue: 'question-font' };
+            text += cxFont[ch];
+            decoded ||= cxFont[ch] !== ch;
+          }
+        } else text += node.data;
+      }
+      return { text: normalize(text), issue: privateText.test(text) ? 'question-text' : null, decoded };
+    };
 
     return Array.from(document.querySelectorAll(blocks)).map((q, i) => {
+      const headingElement = q.querySelector('.Zy_TItle .fontLabel') || q.querySelector('.Zy_TItle, .fontLabel');
+      // Keep the pre-bank DOM identity stable for saved AI/manual drafts.
+      // The narrower .fontLabel is only a bank lookup input; changing this
+      // fallback would drop the outer title/type prefix from legacy archives.
       const heading=t(q.querySelector('.Zy_TItle .fontLabel, .Zy_TItle, .fontLabel'));
       const typeRaw = t(q.querySelector('.newZy_TItle'))||heading.match(/【[^】]+】/)?.[0]||t(q.querySelector('[class*="TItle"] span'));
-      const stemRaw = t(q.querySelector('.Zy_TItle .fontLabel p, .Zy_TItle p'))||heading;
-      const bankStem = heading.replace(/^【(?:多选|单选|判断|填空|简答)题】\s*/u, '');
+      const paragraph = t(q.querySelector('.Zy_TItle .fontLabel p, .Zy_TItle p'));
+      const stemRaw = paragraph || heading;
+      // The first local bank hotfix saved the inner label on pages without
+      // a paragraph. Accept that exact DOM representation too, without using
+      // fuzzy matching or changing the stored/raw text to decoded bank text.
+      const innerStemRaw = paragraph || t(headingElement);
+      const bankHeading = readBankText(headingElement, q.querySelector('.Zy_TItle') || headingElement);
+      const bankStem = bankHeading.text.replace(/^【(?:多选|单选|判断|填空|简答)题】\s*/u, '');
+      let bankTextIssue = bankHeading.issue;
+      let bankTextDecoded = Boolean(bankHeading.decoded);
 
       const options = Array.from(q.querySelectorAll(optionSelector)).map((li) => {
         /*
@@ -113,11 +154,17 @@ export async function extractQuestions(workFrame) {
         // aria-label 形如 "A 有原创性、有价值的内容选择"（尾部可能带"选择"/"选项"）
         const ariaText = aria.replace(/^\s*[A-Z]\s*/, '').replace(/选择$|选项$/, '').trim();
         const innerText = t(li.querySelector('.after p, .after')) || (!ariaText ? t(li).replace(/^[A-Z][.、\s]+/u, '') : '');
+        const optionElement = li.querySelector('.after');
+        const bankOption = readBankText(optionElement || li, li);
+        const bankText = optionElement ? bankOption.text || ariaText
+          : bankOption.decoded ? bankOption.text.replace(/^[A-Z][.、\s]+/u, '') : innerText || ariaText;
+        bankTextIssue ||= bankOption.issue || (privateText.test(bankText) ? 'question-text' : null);
+        bankTextDecoded ||= Boolean(bankOption.decoded);
         return {
           letter,
           displayLetter,
           text: ariaText || innerText,
-          bankText: innerText || ariaText,
+          bankText,
           textFromAria: !!ariaText,
           role: li.getAttribute('role') || '',
           onclick: li.getAttribute('onclick') || '',
@@ -137,16 +184,6 @@ export async function extractQuestions(workFrame) {
 
       const editor=q.querySelector('[name^="answerEditor"], [id^="answerEditor"]');
       const editorId=(editor?.getAttribute('name')||editor?.id||'').replace(/^answerEditor[_-]?/,'');
-      const questionText = q.querySelector('.Zy_TItle, .fontLabel');
-      const textNodes = [questionText, ...q.querySelectorAll(optionSelector)].filter(Boolean);
-      const customFonts = new Set([...document.fonts].map(face => face.family.replace(/["']/g, '').trim().toLowerCase())
-        .filter(family => !/^cxchinesequote\d*$/.test(family)));
-      const bankTextSafe = !!questionText && !/[\ue000-\uf8ff\ufffd]/u.test(bankStem) && options.every(option => !/[\ue000-\uf8ff\ufffd]/u.test(option.bankText)) && textNodes.every(node =>
-        !node.querySelector('img,svg,math,canvas,video,audio') && [node, ...node.querySelectorAll('*')].every(element =>
-          !getComputedStyle(element).fontFamily.toLowerCase().split(',').some(family => {
-            const name = family.replace(/["']/g, '').trim();
-            return customFonts.has(name) || /secret|obfuscat/i.test(name);
-          })));
       const bankBlankCount = [...q.querySelectorAll('input[type="text"][name],textarea[name]')].filter(el =>
         el.form && !el.disabled && !el.readOnly && el.getClientRects().length && getComputedStyle(el).visibility === 'visible').length;
       return {
@@ -165,8 +202,11 @@ export async function extractQuestions(workFrame) {
           return ({0:'single',1:'multiple',2:'fill',3:'judge'})[q.querySelector('input[name*="answertype"]')?.value] || 'unknown';
         })(),
         stemTextRaw: stemRaw, // 注意：字体加密，仅供排查
+        stemTextRawVariants: innerStemRaw && innerStemRaw !== stemRaw ? [innerStemRaw] : [],
         bankStem,
-        bankTextSafe,
+        bankTextSafe: !bankTextIssue,
+        bankTextIssue,
+        bankTextDecoded,
         bankBlankCount,
         optionCount: options.length,
         options,
@@ -174,14 +214,15 @@ export async function extractQuestions(workFrame) {
         domIndex: i,
       };
     });
-  },{blocks:QUIZ_BLOCK_SELECTOR,optionSelector:OPTION_SELECTOR});
+  },{blocks:QUIZ_BLOCK_SELECTOR,optionSelector:OPTION_SELECTOR,cxFont});
 }
 
 // The answer card and platform totals are independent of the .TiMu extractor.
 export async function readIndependentQuizCount(frame) {
   return frame.evaluate(() => {
     const counts = [];
-    for (const field of document.querySelectorAll('input[type="hidden"][name="questionCount"],input[type="hidden"][name="questionTotal"]')) {
+    for (const field of document.querySelectorAll('input[type="hidden"][name="questionCount"],input[type="hidden"][name="questionTotal"],input[type="hidden"][name="totalQuestionNum"],input[type="hidden"]#totalQuestionNum')) {
+      if (field.closest('.TiMu,.newTiMu,.questionLi')) continue;
       if (/^[1-9]\d{0,3}$/.test(field.value)) counts.push(Number(field.value));
     }
     for (const header of document.querySelectorAll('.workTitle,.questionTotal,header [data-question-total]')) {
@@ -189,6 +230,13 @@ export async function readIndependentQuizCount(frame) {
       const total = header.getAttribute('data-question-total') || header.innerText.match(/共\s*([1-9]\d{0,3})\s*题/)?.[1];
       if (/^[1-9]\d{0,3}$/.test(total || '')) counts.push(Number(total));
     }
+    // newTestType describes a question-type section, not necessarily the whole
+    // work. Sum all independently displayed section totals; never compare one
+    // type's count with the whole paper or silently omit an unreadable section.
+    const sections = [...document.querySelectorAll('.newTestType')].filter(header =>
+      header.getClientRects().length && getComputedStyle(header).visibility !== 'hidden' && !header.closest('.TiMu,.newTiMu,.questionLi'));
+    const sectionCounts = sections.map(header => header.innerText.match(/共\s*([1-9]\d{0,3})\s*题/)?.[1]);
+    if (sectionCounts.length && sectionCounts.every(Boolean)) counts.push(sectionCounts.reduce((sum,count) => sum + Number(count),0));
     for (const card of document.querySelectorAll('#answerCard,.answerCard,#answerSheet,.answerSheet,[data-answer-card]')) {
       if (!card.getClientRects().length) continue;
       const labels = [...card.querySelectorAll('a,button,[data-question-number]')].map(el => (el.getAttribute('data-question-number') || el.textContent).trim()).filter(s => /^[1-9]\d{0,3}$/.test(s));

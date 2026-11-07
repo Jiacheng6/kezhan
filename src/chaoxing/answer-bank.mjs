@@ -76,11 +76,13 @@ export async function bankConfigured() {
 }
 
 async function queryAnswerBank(question, shouldStop) {
-  const type = types[question.qtype];
+  if (!question.bankTextSafe) return { kind: 'unsupported', reason: question.bankTextIssue || 'question-text' };
+  const type = Object.hasOwn(types, question.qtype) ? types[question.qtype] : undefined;
+  if (type === undefined) return { kind: 'unsupported', reason: 'question-type' };
   const stem = question.bankStem ?? question.stemTextRaw;
   const options = question.options.map(option => option.bankText ?? option.text);
-  if (type === undefined || !question.bankTextSafe || !clean(stem) ||
-      (type === 2 && !question.bankBlankCount) || (type < 2 && (options.length < 2 || options.some(option => !clean(option))))) return { kind: 'unsupported' };
+  if (!clean(stem) || (type === 2 && !question.bankBlankCount) ||
+      (type < 2 && (options.length < 2 || options.some(option => !clean(option))))) return { kind: 'unsupported', reason: 'question-text' };
   const jobId = randomUUID();
   try {
     const response = await waitForRead(() => embeddedRequest('bank-query', {

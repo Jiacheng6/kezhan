@@ -13,6 +13,8 @@ const { loadState, mutateState } = await import('../../src/state.mjs');
 const { runQuizTask, submitWork } = await import('../../src/chaoxing/quizrun.mjs');
 const { matchReviewQuestions } = await import('../../src/chaoxing/review-recovery.mjs');
 const { reconcileOneReview } = await import('../../src/review-reconcile.mjs');
+const { getRecentLogs } = await import('../../src/logbus.mjs');
+const { extractQuestions, readIndependentQuizCount } = await import('../../src/chaoxing/quiz.mjs');
 
 assert.equal(classifyBankResponse({code:0,msg:'相似度低于70%:11.03%'}).kind, 'miss');
 assert.equal(classifyBankResponse({code:0,msg:'次数不足，请充值'}).kind, 'unavailable');
@@ -69,6 +71,20 @@ assert.deepEqual(quotaEvents.filter(value=>value.kind==='known').map(value=>valu
 const browser = await chromium.launch({executablePath:findEdge(),headless:true});
 try {
   const context = await browser.newContext();
+  const identityPage = await context.newPage();
+  await identityPage.setContent('<div class="TiMu"><div class="Zy_TItle">1. 【单选题】 <span class="fontLabel">示例题干</span></div><ul><li role="radio" qid="identity"><span data="A">A</span><span class="after">甲</span></li><li role="radio" qid="identity"><span data="B">B</span><span class="after">乙</span></li></ul></div>');
+  for (const decodeBankText of [false, true]) {
+    const [question] = await extractQuestions(identityPage.mainFrame(), {decodeBankText});
+    assert.equal(question.stemTextRaw, '1. 【单选题】 示例题干', '题库开关不能改变旧版草稿的题干身份');
+    assert.deepEqual(question.stemTextRawVariants, ['示例题干']);
+    assert.equal(question.bankStem, '示例题干', '查题使用独立题干文字');
+    assert.equal(matchReviewQuestions([{...original,questionId:'identity',archive:{stemTextRaw:'1. 【单选题】 示例题干'}}],[question]).length,1);
+  }
+  await identityPage.setContent('<input type="hidden" name="totalQuestionNum" value="5"><div class="newTestType">一、单选题（共 3 题）</div><div class="newTestType">二、多选题（共 2 题）</div>');
+  assert.equal(await readIndependentQuizCount(identityPage.mainFrame()),5,'混合题型的分组题数应相加，再与平台总题数核对');
+  await identityPage.locator('input').evaluate(field=>field.value='6');
+  assert.equal(await readIndependentQuizCount(identityPage.mainFrame()),null,'分组总数与隐藏字段不一致时不得自动提交');
+  await identityPage.close();
   const origin = 'https://mooc1.chaoxing.com';
   const workUrl = id => `${origin}/mooc-ans/work/doHomeWorkNew?workId=${id}${id === 'legacy' ? '' : `&workAnswerId=${id}-attempt`}`;
   let submissions = 0;
@@ -83,10 +99,15 @@ try {
       const n = index + 1;
       if (id === 'fill' && n === 3) return '<div class="TiMu" data="fixture-fill"><div class="newZy_TItle">【填空题】</div><div class="Zy_TItle">示例填空</div><input type="text" name="blank1"><input type="text" name="blank2"></div>';
       if (id === 'legacy') return `<div class="questionLi" data="fixture-q${n}"><span class="fontLabel">示例题 ${n}</span><input name="answertype${n}" type="hidden" value="0"><ul>${options.map(option=>`<li><input type="radio" name="q${n}" value="${option.letter}">${option.letter} ${option.text}</li>`).join('')}</ul></div>`;
-      return `<div class="TiMu" data="fixture-q${n}"><div class="newZy_TItle">【单选题】</div><div class="Zy_TItle">示例题 ${n}</div><ul>${options.map(option=>`<li qid="fixture-q${n}" role="radio"><input type="radio" name="q${n}" value="${option.letter}"><span class="after">${option.text}</span></li>`).join('')}</ul></div>`;
+      const font = id.startsWith('font-') ? ' style="font-family: font-cxsecret, sans-serif"' : '';
+      return `<div class="TiMu" data="fixture-q${n}"><div class="newZy_TItle">【单选题】</div><div class="Zy_TItle"${font}>示例题 ${n}</div><ul>${options.map(option=>`<li qid="fixture-q${n}" role="radio"><input type="radio" name="q${n}" value="${option.letter}"><span class="after">${option.text}</span></li>`).join('')}</ul></div>`;
     }).join('');
     const submit = id === 'legacy' ? '<input type="hidden" name="workAnswerId" value="legacy-attempt"><a class="workBtnIndex" href="#" onclick="validateTime()">提交</a>' : '<button class="btnSubmit" type="button" onclick="fixtureSubmit().then(()=>{document.body.innerHTML=\'<p>已提交，本次成绩 90 分</p>\'})">提交</button>';
-    return `<meta charset="utf-8"><h1>测试作业</h1><nav data-answer-card>${[1,2,3,4,5].map(i=>`<button>${i}</button>`).join('')}</nav><form>${body}${submit}</form>`;
+    const totals = id === 'platform-total-field' ? '<input type="hidden" name="totalQuestionNum" value="5">'
+      : id === 'platform-total-header' ? '<div class="newTestType">章节测验（共 5 题）</div>'
+      : id === 'platform-total-conflict' ? '<input type="hidden" name="totalQuestionNum" value="6"><div class="newTestType">章节测验（共 5 题）</div>'
+      : `<nav data-answer-card>${[1,2,3,4,5].map(i=>`<button>${i}</button>`).join('')}</nav>`;
+    return `<meta charset="utf-8"><h1>测试作业</h1>${totals}<form>${body}${submit}</form>`;
   };
   await context.route('**/*', route => {
     const url = new URL(route.request().url());
@@ -135,6 +156,34 @@ try {
   assert.equal(draft.queued,1);
   assert.equal(submissions,1);
   await outage.page.close();
+
+  const encrypted = await standalone('font-review');
+  currentKey = encrypted.task.key;
+  const fontDraft = await runQuizTask({ctx:context,task:encrypted.task,personId:'fixture'}, {
+    configured:async()=>true,checkAi:unexpected,solve:unexpected,
+  });
+  assert.equal(fontDraft.queued,5);
+  assert.equal(fontDraft.submitted,false);
+  assert.ok(fontDraft.items.every(item=>item.bankOutcome==='unsupported' && /混淆字体，未向题库查询，留到待审/.test(item.parseReason)));
+  assert.ok(getRecentLogs().some(({message})=>message.includes('不支持，未查询 5 题')));
+  await encrypted.page.close();
+
+  setMode('random','ai','manual');
+  mutateState(state=>{state.settings.ai={provider:'doubao'};});
+  const encryptedAi = await standalone('font-ai');
+  currentKey = encryptedAi.task.key;
+  let fontAiCalls = 0;
+  const filledByAi = await runQuizTask({ctx:context,task:encryptedAi.task,personId:'fixture'}, {
+    configured:async()=>true,checkAi:async()=>({loggedIn:true}),solve:async()=>{
+      fontAiCalls++;
+      assert.match(getRecentLogs().at(-1).message,/混淆字体，未向题库查询，按设置交给 豆包 补答/);
+      return {aiAnswer:'答案：A',parsed:{letters:['A'],confidence:'high'},validation:{safe:true}};
+    },
+  });
+  assert.equal(fontAiCalls,5);
+  assert.equal(filledByAi.answered,5);
+  assert.ok(filledByAi.items.every(item=>item.answerSource!=='random' && item.bankOutcome==='unsupported'));
+  await encryptedAi.page.close();
 
   setMode('ai');
   const noLogin = await standalone('no-ai-login');
@@ -188,6 +237,22 @@ try {
   assert.equal(done.items.some(item=>item.answerSource==='random'),false);
   assert.equal(done.submitted,true);
   assert.equal(submissions,2);
+  setMode('review');
+  for (const id of ['platform-total-field','platform-total-header']) {
+    const fixture = await standalone(id);
+    assert.equal(await readIndependentQuizCount(fixture.page.mainFrame()),5);
+    const completed = await execute(fixture.task,[],unexpected,unexpected);
+    assert.equal(completed.submitted,true,'平台隐藏总题数字段或独立汇总标题都应支持完整核对后自动提交');
+    await fixture.page.close();
+  }
+  assert.equal(submissions,4);
+  const conflicting = await standalone('platform-total-conflict');
+  assert.equal(await readIndependentQuizCount(conflicting.page.mainFrame()),null);
+  const notSubmitted = await execute(conflicting.task,[],unexpected,unexpected);
+  assert.equal(notSubmitted.answered,5);
+  assert.equal(notSubmitted.submitted,false,'平台两个独立总题数互相冲突时仍须留待审');
+  assert.equal(submissions,4);
+  await conflicting.page.close();
   console.log('✓ 章节测验与独立作业：题库无需 AI 登录，20% 随机边界、超过上限 AI 兜底、故障待审、独立题数、表单回读和提交检查点通过');
 } finally {
   await browser.close();

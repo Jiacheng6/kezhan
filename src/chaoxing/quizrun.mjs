@@ -295,7 +295,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
     if (!meta.questionTotal) throw new Error('未读到任何题目');
     if (!meta.submitBtn) log('    ! 未找到提交按钮，将只填不交', 'warn');
 
-    questions = await extractQuestions(workFrame);
+    questions = await extractQuestions(workFrame, {decodeBankText:settings.answerBank?.source !== 'ai'});
     // Resume only answers belonging to this exact work/attempt and a stable
     // question mapping. A number alone is never enough to reuse an answer.
     const cached=listReviewItems().filter(item=>item.taskKey===task.key);
@@ -324,13 +324,24 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
     const bank = settings.answerBank || {};
     const preferBank = bank.source !== 'ai';
     const useBank = preferBank && await configured();
+    if (useBank) {
+      const restored = questions.filter(q => !reusable.has(q.index) && q.bankTextSafe && q.bankTextDecoded).length;
+      if (restored) log(`    已还原 ${restored} 题的混淆字体，先查题库`, 'info');
+    }
     const bankAnswers = useBank ? await lookup(questions, reusable, { shouldStop,
       onProgress: () => onProgress?.({ index: 0, total: questions.length, phase: 'bank-lookup', answerSource: 'bank' }),
     }) : new Map();
     const bankOutcomes = questions.map(q => reusable.get(q.index)?.bankOutcome ?? (reusable.has(q.index) ? 'restored' : bankAnswers.get(q.index)?.kind));
     const allowRandom = useBank && bank.fallback === 'random' && randomEligible(bankOutcomes, independentCount);
     const fallback = bank.fallback === 'random' ? bank.aboveLimit : bank.fallback;
-    if (useBank) log(`    题库查询完成：命中 ${bankOutcomes.filter(kind=>kind==='hit').length} 题，明确未命中 ${bankOutcomes.filter(kind=>kind==='miss').length} 题`, 'info');
+    if (useBank) {
+      const answers = [...bankAnswers.values()];
+      const counts = [['hit','命中'], ['miss','明确未命中'], ['unsupported','题面或题型不支持，未查询'],
+        ['unavailable','题库不可用'], ['unusable','题库答案未能核对']]
+        .map(([kind,label]) => [answers.filter(answer => answer.kind === kind).length,label]);
+      if (reusable.size) counts.push([reusable.size,'复用已保存答案']);
+      log(`    题库处理结果：${counts.filter(([count]) => count > 0).map(([count,label]) => `${label} ${count} 题`).join('；') || '无新题可查询'}`, 'info');
+    }
     let aiReady = false;
     let aiRequests = 0;
     const ask = async opts => {
@@ -375,8 +386,23 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
       const bankAnswer = bankAnswers.get(q.index);
       if (previous?.answerSource === 'random' && !allowRandom) previous = null;
       const chosen = bankAnswer?.kind === 'hit' ? bankAnswer : allowRandom && bankAnswer?.kind === 'miss' ? randomBankAnswer(q) : null;
-      if (!previous && !chosen && preferBank && (allowRandom || fallback === 'review')) {
-        const item = pendingQuizItem(task, q, '题库未取得可回填答案，按设置转待审', {bankOutcome:bankAnswer?.kind});
+      const leaveForReview = allowRandom || fallback === 'review';
+      let bankReason;
+      if (!previous && !chosen && preferBank) {
+        const reason = bankAnswer?.kind === 'unsupported' ? ({
+          'question-font': '题面使用学习通混淆字体，未向题库查询',
+          'question-media': '题面包含图片、公式或其他媒体，未向题库查询',
+          'question-type': '题库不支持该题型，未查询',
+          'question-text': '题面或选项无法可靠读取，未向题库查询',
+        })[bankAnswer.reason] || '题面或题型暂不支持题库查询' : ({
+          miss: allowRandom ? '题库未命中，该题无法随机补填' : '题库未命中',
+          unavailable: '题库服务暂不可用', unusable: '题库返回的答案无法与题面核对',
+        })[bankAnswer?.kind] || (useBank ? '题库未取得可回填答案' : '题库未配置或无法读取配置');
+        bankReason = `${reason}，${leaveForReview ? '留到待审' : `按设置交给 ${selectedProvider(settings).label} 补答`}`;
+        log(`        ${bankReason}`, 'info');
+      }
+      if (bankReason && leaveForReview) {
+        const item = pendingQuizItem(task, q, bankReason, {bankOutcome:bankAnswer?.kind});
         const existing = result.items.findIndex(value => value.questionIndex === q.index);
         if (existing >= 0) result.items[existing] = item; else result.items.push(item);
         result.queued++;
@@ -649,7 +675,14 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
         log(`    未确认提交成功，转入待审：${submission.error}`, 'warn');
       }
     }
-    if (subm === 'auto' && !verified) log('    提交前未能独立核对整份作业，已转待审', 'warn');
+    if (subm === 'auto' && !verified) {
+      const reason = independentCount === null ? '未读到一致的独立总题数'
+        : independentCount !== questions.length ? `平台共 ${independentCount} 题，实际读取 ${questions.length} 题`
+        : result.queued ? `仍有 ${result.queued} 题待人工核对`
+        : !allHigh ? '已填答案未全部通过自动提交条件'
+        : '提交前题目身份或表单回读核对未通过';
+      log(`    提交前核对未通过：${reason}，已转待审`, 'warn');
+    }
     if(!result.submitted){
       /*
        * 需要人工确认：**保持作业页打开**，让人能核对答案后点提交。
@@ -763,7 +796,7 @@ export async function findStandaloneWork(ctx, { expected, personId, results = fa
       const url = new URL(page.url());
       if (url.protocol !== 'https:' || !['mooc1.chaoxing.com','mooc1-api.chaoxing.com','mooc1-2.chaoxing.com'].includes(url.hostname)) continue;
       if (!/^\/mooc-ans\/(?:api\/)?work\/(?:doHomeWorkNew|selectWorkQuestion)$/i.test(url.pathname) &&
-          !(results && /^\/mooc-ans\/(?:api\/)?work\/(?:viewWork|workView|workAnswer)$/i.test(url.pathname))) continue;
+          !(results && /^\/mooc-ans\/(?:api\/)?work\/(?:viewWork|workView|workAnswer|selectWorkQuestionYiPiYue)$/i.test(url.pathname))) continue;
       if (personId && url.searchParams.has('cpi') && url.searchParams.get('cpi') !== String(personId)) continue;
       const identity = await frameWorkIdentity(page.mainFrame());
       if (sameWorkAttempt(expected || identity, identity)) candidates.push(page);

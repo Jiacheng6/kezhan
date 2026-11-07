@@ -15,6 +15,11 @@ assert.equal(matchReviewQuestions([{...item,questionId:''}],[live])[0].question.
 assert.throws(()=>matchReviewQuestions([item],[{...live,questionId:'changed'}]),/无法唯一对应/);
 assert.throws(()=>matchReviewQuestions([item],[live,{...live,domIndex:0}]),/无法唯一对应/);
 assert.throws(()=>matchReviewQuestions([item],[{...live,options:[options[1],{...options[0],text:'变更选项'}]}]),/选项已变化/);
+const wrapped = {...live,stemTextRaw:'1. 【单选题】 示例题干',stemTextRawVariants:['示例题干']};
+assert.equal(matchReviewQuestions([item],[wrapped])[0].question.domIndex,1,'兼容首版题库补丁保存的内层题干，仍须精确匹配当前 DOM');
+assert.equal(matchReviewQuestions([{...item,archive:{stemTextRaw:wrapped.stemTextRaw}}],[wrapped])[0].question.domIndex,1,'旧版整段题干仍可恢复');
+assert.throws(()=>matchReviewQuestions([{...item,archive:{stemTextRaw:'变化后的题干'}}],[wrapped]),/题干已变化/,'不能用相同题目 ID 放行真正变化的题干');
+assert.throws(()=>matchReviewQuestions([item],[{...wrapped,options:[options[1],{...options[0],text:'变更选项'}]}]),/选项已变化/,'兼容题干格式也不能放过选项变化');
 assert.throws(()=>matchReviewQuestions([{...item,questionId:'',archive:{}}],[live]),/无法唯一对应/,'没有身份信息不得按位置猜测');
 const essay={...item,qtype:'essay',questionId:'1',options:[],archive:{stemTextRaw:'简答题完整题干'}};
 const essayLive={...live,qtype:'essay',questionId:'0',options:[],stemTextRaw:'简答题完整题干'};

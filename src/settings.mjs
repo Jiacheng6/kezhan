@@ -19,9 +19,9 @@ import { DEFAULT_SETTINGS } from './config.mjs';
  */
 export const SETTING_SPEC = [
   { path: 'progressStyle', label: '进度条样式', kind: 'select', options: [['particles', '粒子流'], ['classic', '经典刻度']], help: '即时预览，保存后下次继续使用。' },
-  { path: 'answerBank.source', label: '学习通答题来源', kind: 'select', options: [['bank', 'AXE 题库优先'], ['ai', '只用现有 AI']], help: '适用于章节测验和独立作业。配置题库后可在截图前查询。' },
-  { path: 'answerBank.fallback', label: '题库未命中时', kind: 'select', options: [['ai', '用现有 AI 补答'], ['review', '留到待审'], ['random', '未命中不超过 20% 时随机补填']], help: '随机仅处理明确未命中的选择题和判断题。随机答案会明确标记。' },
-  { path: 'answerBank.aboveLimit', label: '随机补填条件不满足时', kind: 'select', options: [['ai', '用现有 AI 补答'], ['review', '留到待审']], help: '包括未命中超过 20%、题库故障或总题数无法独立核对。' },
+  { path: 'answerBank.source', label: '学习通答题来源', kind: 'select', options: [['bank', 'AXE 题库优先'], ['ai', '只用现有 AI']], help: '适用于学习通章节测验和独立作业。题库未能答出时，按下方设置处理。' },
+  { path: 'answerBank.fallback', label: '题库没有可用答案时', kind: 'select', options: [['ai', '用现有 AI 补答'], ['review', '留到待审'], ['random', '未命中不超过 20% 时随机补填']], help: '不想调用 AI 可选“留到待审”。随机仅处理明确查过但没命中的选择题和判断题。' },
+  { path: 'answerBank.aboveLimit', label: '随机补填条件不满足时', kind: 'select', options: [['ai', '用现有 AI 补答'], ['review', '留到待审']], help: '包括未命中超过 20%、题面无法读取、题库故障或题数无法核对。' },
   { path: 'answerBank.remind', label: '未开通时提醒', kind: 'bool', help: '仅在准备处理学习通作业且选了题库优先时提醒。也可随时手动打开向导。' },
   { path: 'ai.provider', label: 'AI 答题通道', kind: 'select', options: [['qianwen', '千问网页版'], ['doubao', '豆包网页版'], ['deepseek', 'DeepSeek 网页版'],['api','OpenAI 兼容 API']], help: '网页版使用自己的账号；API 地址、密钥和模型在此页配置。切换通道前请先停止任务。' },
   {

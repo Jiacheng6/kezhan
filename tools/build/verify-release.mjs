@@ -8,6 +8,9 @@ import { loadLearningTerms, containsLearningTerms } from '../test/privacy-learni
 import { isPublicNumericAsset } from '../test/privacy-public-assets.mjs';
 const dist = process.env.KEBO_RELEASE_DIR ? path.resolve(process.env.KEBO_RELEASE_DIR) : path.join(ROOT, 'dist');
 const app = path.join(dist, 'win-unpacked', 'resources', 'app');
+for (const relative of ['src/chaoxing/answer-bank.mjs','src/chaoxing/answer-bank-font.mjs','src/chaoxing/quiz.mjs','src/chaoxing/quizrun.mjs','src/chaoxing/review-recovery.mjs','src/chaoxing/submission-state.mjs','src/chaoxing/vendor/cx-font/typr.mjs','src/chaoxing/vendor/cx-font/glyph-table.json','src/chaoxing/vendor/cx-font/THIRD-PARTY-LICENSES.txt','src/settings.mjs','src/ui/ai-controls.js']) {
+  assert.equal(fs.readFileSync(path.join(app,relative)).equals(fs.readFileSync(path.join(ROOT,relative))),true,'题库与提交修复缺失或版本不一致：'+relative);
+}
 for(const relative of ['src/ai/throttle.mjs','src/platforms/zhihuishu/quiz.mjs','desktop/main.cjs','src/platforms/zhihuishu/quiz-submit.mjs','src/task-recovery.mjs','src/platforms/zhihuishu/entry.mjs','src/ui/platforms.css','src/ui/platforms.js','src/ui/kebo.css','src/ui/kebo.js','src/ai/queue.mjs','src/platforms/catalog.mjs','src/platforms/runs.mjs','src/platforms/zhihuishu/scan.mjs','src/platforms/zhihuishu/runner.mjs','src/platforms/zhihuishu/read-page.mjs','src/platforms/zhihuishu/video.mjs','src/platforms/zhihuishu/quiz-task.mjs','src/platforms/zhihuishu/quiz-run.mjs']){
   assert.equal(fs.readFileSync(path.join(app,relative)).equals(fs.readFileSync(path.join(ROOT,relative))),true,'多平台更新模块缺失或版本不一致：'+relative);
 }

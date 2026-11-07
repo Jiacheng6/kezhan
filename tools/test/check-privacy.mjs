@@ -21,7 +21,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadLearningTerms, containsLearningTerms } from './privacy-learning.mjs';
-import { isPublicNumericAsset } from './privacy-public-assets.mjs';
+import { isPublicNumericAsset, withoutPinnedAuthorEmail } from './privacy-public-assets.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SCAN_ALL = process.argv.includes('--all');
@@ -322,7 +322,7 @@ for (const rel of files) {
   }
   for (const [re, why] of PATTERNS) {
     if ((why === '手机号' || why === '身份证号') && isPublicNumericAsset(rel, text)) continue;
-    const m = text.match(re);
+    const m = (why === '邮箱' ? withoutPinnedAuthorEmail(rel, text) : text).match(re);
     if (m) hits.push({ rel, why, sample: String(m[0]).slice(0, 60) });
   }
   if (containsLearningTerms(text, learningTerms)) hits.push({ rel, why: '真实课程、章节或其他学习信息' });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { isPublicNumericAsset } from './privacy-public-assets.mjs';
+import { isPublicNumericAsset, withoutPinnedAuthorEmail } from './privacy-public-assets.mjs';
 const file = 'src/ui/library/vendor/three.module.min.js';
 const content = fs.readFileSync(file, 'utf8');
 assert.equal(isPublicNumericAsset(file, content), true, 'Pinned public asset must match its upstream bytes');
@@ -12,3 +12,10 @@ assert.equal(isPublicNumericAsset(archiveVendor,archiveContent),true);
 assert.equal(isPublicNumericAsset(archiveVendor,archiveContent+'\n// synthetic content'),false);
 assert.equal(isPublicNumericAsset('src/ui/library/home.js',archiveContent),false);
 console.log('✓ 公共数学常量只按固定路径和完整 SHA-256 豁免通用数字规则，改动立即失效');
+const tableFile='src/chaoxing/vendor/cx-font/glyph-table.json',table=fs.readFileSync(tableFile,'utf8');
+const email=/\b[\w.+-]+@(?:[\w-]+\.)+[A-Za-z]{2,}\b/;
+assert.equal(email.test(withoutPinnedAuthorEmail(tableFile,table)),false);
+assert.equal(withoutPinnedAuthorEmail(tableFile,table+' '),table+' ','改动即取消作者邮箱例外');
+assert.equal(withoutPinnedAuthorEmail('src/config.mjs',table),table,'例外不适用于其他文件');
+assert.equal(email.test(table),true,'不得为通过扫描而移除上游作者署名');
+console.log('✓ 上游作者邮箱仅在原文件完整哈希一致时豁免通用邮箱规则，其余扫描保留');

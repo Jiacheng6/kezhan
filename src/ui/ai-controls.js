@@ -22,7 +22,7 @@ function renderBankContext({ status, platformFilter }) {
   if (!policy) return;
   if (policy.source === 'ai') setBankState('bankWorkMode', '只用 AI');
   else if (bankConfig?.configured) {
-    const mode = { ai: 'AI 补答', review: '未命中转待审', random: '未命中 ≤20% 时随机补填' };
+    const mode = { ai: '无可用答案时 AI 补答', review: '无可用答案时待审', random: `未命中 ≤20% 时随机补填，条件不符时${policy.aboveLimit === 'review' ? '待审' : ' AI 补答'}` };
     setBankState('bankWorkMode', '题库优先 · ' + (mode[policy.fallback] || mode.ai), 'ready');
   } else if (!canConfigureBank || bankConfig || bankStatusFailed) {
     setBankState('bankWorkMode', bankStatusFailed ? '题库状态未知' : '题库未配置', 'warn');

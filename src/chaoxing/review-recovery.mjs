@@ -17,6 +17,7 @@ export { withReviewLock } from './review-lock.mjs';
 const text=value=>String(value||'').replace(/\s+/g,' ').trim();
 const optionSignature=options=>JSON.stringify((options||[]).map(o=>[String(o.letter),text(o.text)]).sort((a,b)=>a[0].localeCompare(b[0])));
 const optionContents = options => JSON.stringify((options || []).map(option => text(option.text)).sort());
+const matchesStem = (question, stem) => [question.stemTextRaw, ...(question.stemTextRawVariants || [])].some(value => text(value) === stem);
 // Legacy essay records used answerEditor0/1 (a render index) as a question ID.
 // Those indices change with ordering and cannot be used as platform identity.
 const questionId=item=>{const id=String(item.questionId||item.archive?.questionId||'');return /^\d{1,4}$/.test(id)&&item.qtype==='essay'?'':id;};
@@ -39,10 +40,10 @@ export function matchReviewQuestions(items, questions) {
   return items.map(item=>{
     const id=questionId(item),stem=text(item.archive?.stemTextRaw);
     const candidates=questions.filter(q=>q.qtype===item.qtype && (id ? String(q.questionId)===id :
-      !!stem&&text(q.stemTextRaw)===stem&&optionContents(item.options)===optionContents(q.options)));
+      !!stem&&matchesStem(q,stem)&&optionContents(item.options)===optionContents(q.options)));
     if(candidates.length!==1||used.has(candidates[0].domIndex))throw new Error(`第 ${item.questionIndex} 题无法唯一对应，题目可能已变化；已保留草稿，请人工核对`);
     const question=candidates[0];
-    if (stem && text(question.stemTextRaw) && stem !== text(question.stemTextRaw)) throw new Error(`第 ${item.questionIndex} 题的题干已变化，未恢复或提交`);
+    if (stem && text(question.stemTextRaw) && !matchesStem(question,stem)) throw new Error(`第 ${item.questionIndex} 题的题干已变化，未恢复或提交`);
     let letters = item.letters || [];
     if(optionSignature(item.options)!==optionSignature(question.options)) {
       if (optionContents(item.options) !== optionContents(question.options)) throw new Error(`第 ${item.questionIndex} 题的选项已变化，未恢复或提交`);
