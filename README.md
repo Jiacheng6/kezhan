@@ -1,5 +1,16 @@
 # 课栈 · Kezhan
 
+<!-- upstream-attribution -->
+## 开源协议与上游项目
+
+| 上游仓库 | 用途 | 原协议 |
+| --- | --- | --- |
+| [LBEILC / RhineLabUI](https://github.com/LBEILC/RhineLabUI) | 课程档案阵列与相关视觉实现，作者 LBEILC | MIT |
+| [SubmergeDQ / Auto-WeLearn](https://github.com/SubmergeDQ/Auto-WeLearn) | WeLearn 课件解析与接口模块，固定版本 `9459bb7fafcd98868f9796d6187afd1d5fe6c049` | GPLv3 |
+
+课栈 0.9.0 整体按 **GNU GPL v3** 发布，第三方组件保留原版权及许可。[完整对应源码与许可文件](https://github.com/Jiacheng6/kezhan-releases/releases/download/v0.9.0/Kezhan-0.9.0-Source.zip) · [第三方声明和构建说明](https://github.com/Jiacheng6/kezhan-releases/blob/main/THIRD-PARTY-NOTICES.md)。
+<!-- /upstream-attribution -->
+
 课栈是面向 Windows 的多平台学习工作台。你可以在一个窗口里查看各平台的课程和完成情况、选定学习范围、追踪任务进度，以及核对待审答案。
 
 **当前版本 0.8.2** · Windows 10 / 11（x64）
