@@ -103,6 +103,8 @@ tools/run/
 # 回归工具白名单，避免实际账号测试记录进入仓库
 tools/test/*
 !tools/test/test-answer-bank-math.mjs
+!tools/test/test-welearn.mjs
+!tools/test/test-welearn-protocol.mjs
 !tools/test/test-web-conversation-recovery.mjs
 !tools/test/test-doubao-image-recovery.mjs
 !tools/test/test-review-reconcile.mjs
@@ -237,3 +239,7 @@ docs/qa/2026-11-01-ucampus-recon.md
 docs/qa/2026-11-02-ucampus-acceptance.md
 docs/qa/2026-11-03-ai-draft-recovery.md
 docs/qa/2026-11-04-normal-start-recovery.md
+!tools/test/test-platform-entry-recovery.mjs
+!tools/test/test-ucampus-checklist-identity.mjs
+!tools/test/test-ucampus-vocab-credit.mjs
+!tools/test/test-videoquiz-bank-resume.mjs

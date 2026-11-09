@@ -25,7 +25,11 @@ if (app?.notifications) {
     document.dispatchEvent(new Event('assistant-open-workspace'));
     try {
       if(item.action==='notices'){openCenter();return;}
-      if(item.action==='zhihuishu'){
+      if(item.action==='welearn'){
+        const web=await app.webState();
+        const tab=web.tabs.filter(tab=>{try{return new URL(tab.url).hostname==='welearn.sflep.com';}catch{return false;}}).at(-1);
+        if(tab)await app.webCommand({action:'select',id:tab.id});else await workspace.action('openWelearn');
+      }else if(item.action==='zhihuishu'){
         const web=await app.webState();
         const isSite=tab=>{try{const u=new URL(tab.url);return u.protocol==='https:'&&(u.hostname==='zhihuishu.com'||u.hostname.endsWith('.zhihuishu.com'));}catch{return false;}};
         const existing=web.tabs.filter(isSite).find(tab=>['login.zhihuishu.com','passport.zhihuishu.com'].includes(new URL(tab.url).hostname))||web.tabs.filter(isSite).at(-1);

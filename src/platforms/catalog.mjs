@@ -11,7 +11,7 @@ export function readPlatformCatalog() {
   } catch (error) { if (error.code === 'ENOENT') return { version: 1, courses: [] }; throw Error('多平台课程清单无法读取，原数据已保留', { cause: error }); }
 }
 export function savePlatformCourses(platform, courses) {
-  if (!['zhihuishu', 'ucampus'].includes(platform) || courses.some(c => c.platform !== platform || !c.courseId?.startsWith(platform + ':'))) throw Error('平台课程标识无效');
+  if (!['zhihuishu', 'ucampus', 'welearn'].includes(platform) || courses.some(c => c.platform !== platform || !c.courseId?.startsWith(platform + ':'))) throw Error('平台课程标识无效');
   const previous = readPlatformCatalog();
   // Update only observed courses. A closed course page must not erase its saved tasks.
   const merged = new Map(previous.courses.map(c => [c.courseId, c]));

@@ -537,7 +537,7 @@ export async function askImage(args) {
     }
     throw error;
   }finally{markAsked();await annotate(false);}
-  }, { shouldStop: args.shouldStop, platform: args.platform || (args.taskKey?.startsWith('zhihuishu:') ? 'zhihuishu' : 'chaoxing'),
+  }, { shouldStop: args.shouldStop, platform: args.platform || (['zhihuishu','ucampus','welearn'].find(id=>args.taskKey?.startsWith(id+':'))||'chaoxing'),
     taskKey: args.taskKey || null, questionId: String(args.question?.questionId || args.question?.qid || args.question?.id || ''), provider: selectedProvider(loadSettings()).id });
 }
 async function askImageCore({ page, imagePath, prompt = DEFAULT_PROMPT, freshChat = true, shouldStop, question, taskKey, onSent=()=>{},resendMissingConversation=false }) {

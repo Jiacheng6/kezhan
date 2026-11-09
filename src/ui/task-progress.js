@@ -49,7 +49,7 @@ export function mainTaskStatus(status, active = activeTaskPlatforms(status)) {
 
 export function runSummaryLabel(status={}){
  const runs=Object.values(status.platforms||{}).filter(run=>run.running||run.total>0||run.error);
- if(status.reconRunning||status.zhihuishuScan?.running)return '正在扫描';
+ if(status.reconRunning||status.zhihuishuScan?.running||status.ucampusScan?.running||status.welearnScan?.running)return '正在扫描';
  if(status.running||runs.some(run=>run.running))return '进行中';
  if(status.runStats?.paused||runs.some(run=>['needs-human','failed'].includes(run.phase)||run.error))return '已暂停 · 待处理';
  if(runs.some(run=>run.phase==='awaiting-review'||run.review>0))return '待你核对';
@@ -69,6 +69,8 @@ export function taskProgressModel(status = {}) {
   let fraction = finite(p.percent) ? clamp(p.percent) : finite(current.progress) ? clamp(current.progress) : null;
   let kind = type === 'video' ? '播放进度' : ['doc', 'read'].includes(type) ? '阅读进度' : '当前任务';
   let detail = '';
+  const courseware=String(phase||'').startsWith('courseware-');
+  if(courseware)kind='WeLearn 接口任务';
   if (type === 'work' && finite(questionIndex) && questionTotal > 0) {
     const answered = Math.max(0, Math.min(questionTotal, questionIndex + (phase === 'done' ? 1 : 0)));
     fraction = answered / questionTotal; kind = '答题进度'; detail = `已处理 ${answered} / ${questionTotal} 题`;
@@ -88,8 +90,9 @@ export function taskProgressModel(status = {}) {
   const particleRate = fastParticles ? 1.65 : 1;
   const label = completed?'平台已确认完成':scanning ? '正在读取课程' : stats.paused ? '已暂停 · 需要处理' : !running ? status.outcomePhase==='awaiting-review'?'待你核对 · 尚未提交':['needs-human','failed'].includes(status.outcomePhase)?'需要处理后继续':'已停止' : stopping ? '正在停止' : resuming ? '正在恢复任务' : verifying ? '核对平台状态' : phase === 'quiz' ? '处理视频弹题' : videoPaused ? '播放已暂停' : phase === 'bank-lookup' ? '正在查询题库' : usingBank ? '正在回填题库答案' : phase === 'asking' ? '正在读取 AI 回答' : fraction === null ? '正在准备任务' : '任务进行中';
   const hint = scanning?'只读扫描，原有进度保留':completed?'以平台任务点完成标记为准':p.playbackPhase || current.playbackPhase || (verifying ? '以平台确认结果为准' : !running ? '保留当前进度，可继续学习' : fraction === null ? '页面就绪后显示实际进度' : '');
+  const coursewareLabel=phase==='courseware-read'?'读取课件内置答案':phase==='courseware-wait'?'等待并保持会话':phase==='courseware-submit'?'提交答题与学时数据':null;
   return { visible: running || scanning || !!p.current || !!stats.current, running: running || scanning, moving, verifying, fraction, particleRate, usingBank,
-    percent: fraction === null ? '—' : (fraction * 100).toFixed(1), kind, label,
+    percent: fraction === null ? '—' : (fraction * 100).toFixed(1), kind, label:running&&coursewareLabel?coursewareLabel:label,
     title: scanning ? scan.course||'正在整理课程与章节任务' : p.current || [current.courseName, current.secNo, current.name].filter(Boolean).join(' · ') || '等待当前任务页面就绪',
     detail: [detail, !scanning&&type === 'video' && rate ? `实际 ${rate}×` : '', hint].filter(Boolean).join(' · ') };
 }

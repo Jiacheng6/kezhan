@@ -1,0 +1,43 @@
+/* A course index, a task ledger, one clear run summary. Shared theme tokens
+   keep the same hierarchy across light/dark and every accent palette. */
+#panel-courses .sd-layout{grid-template-columns:218px minmax(290px,1fr) 252px;border:1px solid var(--line);border-radius:13px;min-height:550px;height:min(730px,calc(100vh - 238px));overflow:hidden;background:var(--bg2)}
+#panel-courses .sd-layout>.sd-courses{background:var(--bg2);padding:21px 15px;border-right:1px solid var(--line)}
+#panel-courses .sd-layout>.sd-tasks{padding:21px 23px;background:var(--bg2)}
+#panel-courses .sd-layout>.sd-selection{padding:21px 20px;background:color-mix(in srgb,var(--acc) 3%,var(--bg2));max-height:none;overflow:auto}
+#panel-courses .sd-column-title{margin-bottom:20px;gap:8px}#panel-courses .sd-column-title>b{display:flex;align-items:center;gap:8px;min-width:0}#panel-courses .sd-column-title>b>span{margin-left:0;font-size:13px}
+#panel-courses .sd-column-title>b:before{font:10px/21px Consolas,monospace;color:var(--fg3);width:21px;height:21px;text-align:center;border:1px solid var(--line);border-radius:6px}
+.sd-courses>.sd-column-title>b:before{content:'01'}.sd-tasks>.sd-column-title>b:before{content:'02'}.sd-selection>.sd-column-title>b:before{content:'03'}
+#panel-courses .sd-layout input[type=search]{border-radius:7px;padding:9px 11px;background:var(--bg);font-size:12px}
+#panel-courses .sd-course{padding:2px 9px;gap:9px;border:1px solid transparent;border-radius:8px;margin-bottom:7px;position:relative;min-width:0}
+#panel-courses .sd-course.active{border-color:color-mix(in srgb,var(--acc) 26%,var(--line));background:color-mix(in srgb,var(--acc) 6%,var(--bg2))}
+#panel-courses .sd-course-name{padding:11px 0 12px;min-width:0}.sd-course-name .platform-badge{margin-bottom:4px;font-size:9px;line-height:1.5;letter-spacing:.3px}
+#panel-courses .sd-course-name b{font-size:13px;line-height:1.6;font-weight:500}#panel-courses .sd-course.active .sd-course-name b{font-weight:600}
+#panel-courses .sd-course-name small{font-size:10px;line-height:1.7;margin-top:5px;color:var(--fg2)}
+#panel-courses .sd-course-progress{height:3px;width:100%;display:block;margin-top:10px;border:0;border-radius:4px;background:var(--line);appearance:none}.sd-course-progress::-webkit-progress-bar{background:var(--line);border-radius:4px}.sd-course-progress::-webkit-progress-value{background:var(--acc);border-radius:4px}
+#panel-courses .sd-active-course h3{font-size:20px;line-height:1.5;font-weight:600;letter-spacing:-.4px;margin:0 0 7px;white-space:normal;overflow-wrap:anywhere;max-width:100%}#panel-courses .sd-active-course>p{font-size:11px;line-height:1.8;margin-bottom:16px;color:var(--fg2)}
+#coursesProgressSlot #platformSessions[data-has-run=false]{display:none}
+.course-work-menu{position:relative;font-size:12px;color:var(--fg2)}.course-work-menu>summary{cursor:pointer;list-style:none;padding:8px 0}.course-work-menu .bank-work-strip{position:absolute;right:0;top:37px;z-index:25;width:min(680px,calc(100vw - 280px));margin:0;box-shadow:0 12px 35px #0002;background:var(--bg2)}
+.sd-scope-shortcuts{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 16px}.sd-scope-shortcuts>button{font-size:11px;padding:7px 10px;border-radius:6px;white-space:nowrap}.sd-scope-shortcuts>button:first-child{color:var(--acc);border-color:color-mix(in srgb,var(--acc) 32%,var(--line));background:color-mix(in srgb,var(--acc) 6%,var(--bg2))}.sd-scope-shortcuts>span{font-size:10px;color:var(--fg3)}
+#panel-courses .sd-rules{padding:10px 12px;background:var(--bg);border-radius:7px}#panel-courses .sd-rules>summary>span{display:none}
+#panel-courses .sd-task-filter{margin:16px 0 8px;gap:8px}#panel-courses .sd-task-filter>select{border-radius:7px;background:var(--bg2);padding:7px 8px;max-width:105px}
+.sd-filter-note{font-size:10px;color:var(--fg3);margin:0 0 15px;line-height:1.6}
+#panel-courses .sd-section{margin-bottom:18px}#panel-courses .sd-section-heading{padding:12px 2px 10px;gap:9px;border-bottom:1px solid var(--line)}#panel-courses .sd-section-heading>b{font-size:12px;font-weight:600}#panel-courses .sd-section-heading>small{font-variant-numeric:tabular-nums;font-size:10px}
+#panel-courses .sd-task{position:relative;margin-top:3px;padding:12px 9px;border-bottom:1px solid color-mix(in srgb,var(--line) 65%,transparent);border-radius:6px;gap:8px;transition:background-color 150ms ease,border-color 150ms ease}
+#panel-courses .sd-task.selected{background:color-mix(in srgb,var(--acc) 5%,var(--bg2))}#panel-courses .sd-task-choice{align-items:flex-start;gap:8px}#panel-courses .sd-task-choice>input{margin-top:4px;flex-shrink:0;accent-color:var(--acc)}
+#panel-courses .sd-task-name{font-size:12px;line-height:1.7}#panel-courses .sd-task-type{font-size:9px;line-height:20px;min-width:24px;color:var(--fg3)}#panel-courses .sd-task-status{font-size:10px;line-height:20px;color:var(--fg2)}
+#panel-courses .sd-only-task{font-size:10px;color:var(--fg3);padding:5px 6px;border:0;background:transparent;white-space:nowrap}
+#panel-courses .sd-total{margin-top:13px;gap:11px}#panel-courses .sd-layout .sd-total>strong{font:500 47px/1.1 "Segoe UI",sans-serif;font-variant-numeric:tabular-nums;letter-spacing:-2px;color:var(--fg)}
+#panel-courses .sd-total>span{font-size:12px;line-height:1.8}.sd-total small{display:block;color:var(--fg3)}#panel-courses #deskPendingCounts{margin:12px 0 5px;line-height:1.8;color:var(--fg2);font-size:11px}
+#panel-courses .sd-clear-batch{align-self:flex-start;font-size:11px;color:var(--fg3);padding:4px 0 14px;border:0;background:transparent}
+#panel-courses .sd-selected-details{border-top:1px solid var(--line);padding:13px 0 10px}.sd-selected-details>summary{font-size:11px;color:var(--fg2);cursor:pointer}
+#panel-courses .sd-run-actions{display:grid;gap:8px;background:transparent;padding:10px 0 0;margin-top:3px;border-top:0}#panel-courses .sd-run-actions>button{min-height:41px;font-size:12px;font-weight:600;border-radius:7px;width:100%}#panel-courses .sd-run-actions [data-action=startRun]{background:var(--acc);color:var(--bg2);border-color:var(--acc)}
+#panel-courses .sd-save{margin:14px 0 13px;padding:12px 0 0;border-top:1px solid var(--line);gap:6px}#panel-courses .sd-save>span{font-size:10px;line-height:1.7}.sd-save>div{display:flex;gap:14px}.sd-save button{padding:3px 0;font-size:11px;border:0;background:transparent}
+#panel-courses .sd-presets{margin-top:0;padding-top:14px}.sd-presets>summary{font-size:11px;color:var(--fg2)}#panel-courses .sd-feedback{min-height:0;margin:3px 0 12px;font-size:11px}.sd-feedback:empty{display:none}
+#panel-courses .sd-connection{background:var(--bg2);padding:12px;border:1px solid var(--line);border-radius:7px;font-size:11px;line-height:1.8;margin-top:11px}
+#panel-courses .course-toolbar{margin-bottom:17px;gap:12px}.course-view-switch{border-radius:7px}.course-view-switch>button{font-size:12px;padding:8px 13px}
+@media(hover:hover) and (pointer:fine){#panel-courses .sd-course:hover,#panel-courses .sd-task:hover{background:color-mix(in srgb,var(--acc) 8%,var(--bg2))}#panel-courses .sd-only-task:hover{color:var(--acc);background:color-mix(in srgb,var(--acc) 6%,var(--bg2))}}
+@media(min-width:1600px){#panel-courses .sd-layout{grid-template-columns:245px minmax(0,1fr) 275px}#panel-courses .sd-layout>.sd-tasks{padding-inline:28px}}
+@media(max-width:1180px){#panel-courses .sd-layout{grid-template-columns:180px minmax(240px,1fr) 218px}#panel-courses .sd-layout>.sd-tasks{padding-inline:15px}.sd-scope-shortcuts>span{display:none}#panel-courses .sd-task-status{white-space:normal;max-width:62px}}
+@media(max-width:1020px){#panel-courses .sd-layout{grid-template-columns:185px minmax(0,1fr);height:auto}#panel-courses .sd-layout>.sd-selection{grid-column:1/-1;display:block;border-left:0;border-top:1px solid var(--line)}#panel-courses .sd-total{margin-top:0}#panel-courses .sd-run-actions{grid-template-columns:1fr 1fr}#panel-courses .sd-task-list{max-height:480px}}
+@media(max-width:800px){#panel-courses .sd-layout{grid-template-columns:minmax(0,1fr)}#panel-courses .sd-layout>.sd-courses{border-right:0;border-bottom:1px solid var(--line)}#panel-courses .sd-course-list{max-height:220px}#panel-courses .sd-layout>.sd-tasks{padding:20px 15px}#panel-courses .sd-task-choice{flex-wrap:wrap}#panel-courses .sd-task-name{flex-basis:calc(100% - 55px)}#panel-courses .sd-task-status{margin-left:24px;max-width:none}.sd-only-task{align-self:flex-start}}
+@media(prefers-reduced-motion:reduce){#panel-courses .sd-task{transition:none!important}}

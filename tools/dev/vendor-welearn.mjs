@@ -1,0 +1,11 @@
+// Reproduce the pinned, unmodified upstream modules from a local checkout.
+import fs from 'node:fs';import path from 'node:path';import {stripTypeScriptTypes} from 'node:module';import {execFileSync} from 'node:child_process';
+const source=path.resolve(process.argv[2]||'.desktop-test/Auto-WeLearn');
+const commit=execFileSync('git',['-C',source,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
+const expected='9459bb7fafcd98868f9796d6187afd1d5fe6c049';if(commit!==expected)throw Error('Upstream revision changed; review before vendoring');
+const target=path.resolve('src/platforms/welearn/vendor/auto-welearn');
+const files=['errors','sleep','http/headers','api/endpoints','api/response','api/sco','parse/scorm-time','parse/js-escape','parse/interactions','parse/sco-parser','plan/time-plan','run/keepalive','run/payload','run/prepare'];
+for(const name of files){const text=fs.readFileSync(path.join(source,'src/core',name+'.ts'),'utf8');const original=path.join(target,'source/core',name+'.ts'),output=path.join(target,'core',name+'.mjs');fs.mkdirSync(path.dirname(original),{recursive:true});fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(original,text);const js=stripTypeScriptTypes(text,{mode:'strip'}).replace(/(from\s+['"][^'"]+)\.js(['"])/g,'$1.mjs$2');fs.writeFileSync(output,'// Auto-WeLearn; GPL-3.0; see ../../NOTICE.md and original source.\n'+js);}
+fs.copyFileSync(path.join(source,'LICENSE'),path.join(target,'LICENSE'));
+fs.writeFileSync(path.join(target,'NOTICE.md'),`# Auto-WeLearn third-party component\n\nSource: https://github.com/SubmergeDQ/Auto-WeLearn\nPinned revision: ${commit}\nLicense: GNU GPL version 3, reproduced in LICENSE.\n\nThese modules are reused directly, not independently reimplemented. Original TypeScript is retained under source/core. Runtime core/*.mjs is generated solely by stripping types and rewriting local import extensions. Reproduction: node tools/dev/vendor-welearn.mjs <checkout>.\n\nThe Kezhan adapter provides its own browser-session transport, task selection, cancellation and platform completion verification. It does not use upstream CLI completion acknowledgements as proof of platform completion.\n`);
+console.log('Vendored '+files.length+' Auto-WeLearn modules at '+commit);

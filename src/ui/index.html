@@ -50,7 +50,7 @@
     <div class="breadcrumb"><span>学习空间</span><span class="breadcrumb-slash">/</span><strong id="pageTitle">学习工作台</strong></div>
     <div class="header-right"><button id="viewWebPages" class="web-pages-entry" hidden aria-haspopup="dialog" title="查看软件内已打开的网页"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9h18M7 6.5h.1m3 0h.1"/></svg><span>查看网页</span><small id="webPageCount" aria-hidden="true">0</small></button><span id="phaseLine" class="sub">正在连接后台服务…</span><button id="modeToggle" class="mode-toggle" aria-label="切换到黑夜" aria-pressed="false" title="切换日夜模式"><span class="mode-sun" aria-hidden="true">☀</span><span class="mode-moon" aria-hidden="true">☾</span></button><details class="connection-menu"><summary>连接状态 <span aria-hidden="true">⌄</span></summary><div class="topright"><span class="pill" id="pillEdge">浏览器未连接</span><span class="pill" id="pillLogin">登录未知</span><span class="pill" id="pillRecon">提交模式未知</span><span class="pill" id="pillQuiz">答题通道未知</span></div></details></div>
   </header>
-  <div class="platform-strip" aria-label="学习平台"><span class="platform-label">课程来源</span><div id="platformFilters" role="group" aria-label="筛选课程平台"></div><div class="platform-web-actions"><div class="platform-group" data-platform="zhihuishu"><span class="group-label">智慧树</span><button id="openZhihuishu">网页 ↗</button><button id="readZhihuishu">扫描课程</button></div><div class="platform-group" data-platform="ucampus"><span class="group-label">U校园</span><button id="openUcampus">网页 ↗</button><button id="readUcampus">扫描课程</button></div></div><span id="platformMessage" role="status"></span></div>
+  <div class="platform-strip" aria-label="学习平台"><span class="platform-label">课程来源</span><div id="platformFilters" role="group" aria-label="筛选课程平台"></div><div class="platform-web-actions"><div class="platform-group" data-platform="zhihuishu"><span class="group-label">智慧树</span><button id="openZhihuishu">网页 ↗</button><button id="readZhihuishu">扫描课程</button></div><div class="platform-group" data-platform="ucampus"><span class="group-label">U校园</span><button id="openUcampus">网页 ↗</button><button id="readUcampus">扫描课程</button></div><div class="platform-group" data-platform="welearn"><span class="group-label">WeLearn</span><button id="openWelearn">网页 ↗</button><button id="readWelearn">扫描课程</button></div></div><span id="platformMessage" role="status"></span></div>
   <div id="bootError" class="banner error hidden" role="alert"></div>
   <main>
     <section class="panel active" id="panel-overview" aria-label="学习概览">
@@ -117,6 +117,7 @@
       </div>
       <div class="settings-layout">
         <div class="settings-categories" role="tablist" aria-label="设置分类" aria-orientation="vertical">
+          <button type="button" id="settingTabPlatforms" role="tab" data-settings-category="platforms" aria-selected="false" aria-controls="settingPlatforms" tabindex="-1">学习平台</button>
           <button type="button" id="settingTabAnswer" role="tab" data-settings-category="answer" aria-selected="true" aria-controls="settingAnswer">答题与题库</button>
           <button type="button" id="settingTabAI" role="tab" data-settings-category="ai" aria-selected="false" aria-controls="settingAI" tabindex="-1">AI 通道</button>
           <button type="button" id="settingTabLearning" role="tab" data-settings-category="learning" aria-selected="false" aria-controls="settingLearning" tabindex="-1">播放与学习</button>
@@ -125,6 +126,12 @@
           <button type="button" id="settingTabAdvanced" role="tab" data-settings-category="advanced" aria-selected="false" aria-controls="settingAdvanced" tabindex="-1">高级</button>
         </div>
         <div class="settings-pages">
+      <section class="settings-page" id="settingPlatforms" role="tabpanel" aria-labelledby="settingTabPlatforms" hidden>
+        <header class="settings-page-heading"><h3>你的学习平台</h3><p>只开启正在使用的平台，让选课与工作台保持清晰。</p></header>
+        <div id="platformPreferences" class="platform-choice-grid" aria-label="启用的学习平台"></div>
+        <p id="platformPreferenceMessage" class="platform-preference-note" role="status">开关即时保存。关闭后保留账号、课程、进度和选课记录。</p>
+        <section class="settings-section platform-guide-entry"><div><h4>重新走一遍使用向导</h4><p>选择平台、连接账号，按需配置答题方式。</p></div><button type="button" id="reopenOnboarding">打开使用向导 →</button></section>
+      </section>
       <section class="settings-page" id="settingAnswer" role="tabpanel" aria-labelledby="settingTabAnswer">
         <header class="settings-page-heading"><h3 id="bankSettingsTitle" tabindex="-1">答题与题库</h3><p>管理学习通题库和作业的提交方式。</p></header>
         <section class="settings-section bank-settings" id="bankSettings" aria-label="题库账户">
@@ -161,7 +168,6 @@
       <section class="settings-page" id="settingSystem" role="tabpanel" aria-labelledby="settingTabSystem" hidden>
         <header class="settings-page-heading"><h3>软件与数据</h3><p>检查更新、查看本机文件，或重新打开使用向导。</p></header>
         <section class="settings-section" id="settingsUtilities"><header class="settings-section-heading"><h4>软件管理</h4></header></section>
-        <section class="settings-section"><header class="settings-section-heading"><h4>使用向导</h4><p>重新走一遍学习通登录和 AI 通道配置。</p></header><button type="button" id="reopenOnboarding">打开使用向导</button></section>
       </section>
       <section class="settings-page" id="settingAdvanced" role="tabpanel" aria-labelledby="settingTabAdvanced" hidden>
         <header class="settings-page-heading"><h3>高级</h3><p>调整等待、重试与提问词，或查看连接诊断。</p></header>
@@ -191,6 +197,6 @@
 <script src="/close-dialog.js"></script><script type="module" src="/app.js"></script><script type="module" src="/onboarding.js"></script><script type="module" src="/embedded-browser.js"></script><script type="module" src="/desktop.js"></script><script type="module" src="/notifications.js"></script><script type="module" src="/workspace-design.js"></script><script type="module" src="/library/home.js"></script>
 <link rel="stylesheet" href="/ai-controls.css">
 <link rel="stylesheet" href="/theme.css" />
-<link rel="stylesheet" href="/workbench.css" /><link rel="stylesheet" href="/settings-layout.css" /><link rel="stylesheet" href="/learning-layout.css" /><script type="module" src="/ai-controls.js"></script><script type="module" src="/theme.js"></script><script type="module" src="/kebo.js"></script><script type="module" src="/interaction-polish.js"></script>
+<link rel="stylesheet" href="/workbench.css" /><link rel="stylesheet" href="/settings-layout.css" /><link rel="stylesheet" href="/learning-layout.css" /><link rel="stylesheet" href="/platform-preferences.css" /><link rel="stylesheet" href="/selection-polish.css" /><script type="module" src="/ai-controls.js"></script><script type="module" src="/theme.js"></script><script type="module" src="/kebo.js"></script><script type="module" src="/platform-preferences.js"></script><script type="module" src="/interaction-polish.js"></script>
 </body>
 </html>

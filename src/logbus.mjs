@@ -7,6 +7,7 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { PATHS, DEBUG_PORT } from './config.mjs';
 import { listReviewItems } from './state.mjs';
+import {platformInfo} from './ui/platforms.js';
 
 export const bus = new EventEmitter();
 bus.setMaxListeners(50);
@@ -109,8 +110,8 @@ export function getStatus() {
   }
   const platforms = { chaoxing: { running: status.running, stopping: status.running && status.progress?.stopping === true, progress: status.progress, done: status.progress?.done || 0,
     total: status.progress?.total || 0, current: status.progress?.current, phase: status.running ? 'running' : 'idle' }, ...(status.platformRuns || {}) };
-  const zhs = platforms.zhihuishu;
-  return { ...status, reviewCount, platforms, running: status.running || !!zhs?.running,
-    ...(!status.running && zhs?.running ? { progress: { ...zhs.progress, done: zhs.done, total: zhs.total, current: '【智慧树】' + (zhs.current || '准备任务') } } : {}) };
+  const active=Object.entries(platforms).find(([id,run])=>id!=='chaoxing'&&run?.running);
+  return { ...status, reviewCount, platforms, running: Object.values(platforms).some(run=>run?.running),
+    ...(!status.running && active ? { progress: { ...active[1].progress, done: active[1].done, total: active[1].total, current: '【'+platformInfo(active[0]).name+'】' + (active[1].current || '准备任务') } } : {}) };
 }
 

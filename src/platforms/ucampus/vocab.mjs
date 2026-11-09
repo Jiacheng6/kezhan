@@ -42,11 +42,13 @@ export async function clickVocabNext(page, dwellMs = 700) {
  * @param {object} o
  * @param {boolean} [o.apply] true = 真的点；false = 只读进度（安全）
  */
-export async function runUcampusVocab({ page, apply = false, shouldStop = () => false, onProgress = () => {}, readProgress = null, maxSteps = 80, dwellMs = 700 }) {
+export async function runUcampusVocab({ page, apply = false, shouldStop = () => false, onProgress = () => {}, readProgress = null, onBeforeVerify, maxSteps = 80, dwellMs = 700,verifyPollMs=8000,verifyAttempts=8 }) {
   await ensurePlayableViewport(page);
   await dismissUcampusDialog(page);
 
   let { current, total } = await readVocabProgress(page);
+  const readyUntil=Date.now()+12000;
+  while(!total&&Date.now()<readyUntil){throwIfStopped(shouldStop);await interruptibleSleep(500,shouldStop);({current,total}=await readVocabProgress(page));}
   log(`   单词卡片进度 ${current}/${total}`, 'info');
   if (!total) return { ok: false, phase: 'needs-human', error: '找不到卡片进度（可能不在 Vocabulary 页）' };
 
@@ -60,23 +62,43 @@ export async function runUcampusVocab({ page, apply = false, shouldStop = () => 
       const ok = await clickVocabNext(page, dwellMs);
       if (!ok) break;
       steps += 1;
-      onProgress({ phase: 'vocab', detail: `${current}/${total}` });
+      onProgress({ phase: 'vocab', detail: `${current}/${total}`,percent:total?current/total:null });
       const next = await readVocabProgress(page);
       if (next.current <= current) {
         // 卡住了：可能弹了提示
         await dismissUcampusDialog(page);
         const again = await readVocabProgress(page);
-        if (again.current <= current) break;
-        current = again.current;
+        if (again.current <= current) {
+          // A freshly opened courseware can ignore the first click while its
+          // slider is initializing. Retry that card once rather than replaying
+          // the entire learning node, and still require observed advancement.
+          await interruptibleSleep(500,shouldStop);
+          if(!await clickVocabNext(page,dwellMs))break;
+          steps+=1;const retried=await readVocabProgress(page);
+          if(retried.current<=current)break;
+          current=retried.current;
+        } else current = again.current;
       } else {
         current = next.current;
       }
       await interruptibleSleep(120, shouldStop);
     }
     log(`   卡片已点到 ${current}/${total}（点击 ${steps} 次）`, 'ok');
+    if(current>=total){
+      // The platform appends a native ending slide after the last word.
+      // Its Swiper reach-end handler saves completion; the visible counter is
+      // capped at total and cannot tell the last word from that ending slide.
+      const end = await page.evaluate(()=>({exists:!!document.querySelector('.swiper-vocabulary .visual-card'),active:!!document.querySelector('.swiper-vocabulary .swiper-slide-active .visual-card')}));
+      if(end.exists&&!end.active){throwIfStopped(shouldStop);if(!await clickVocabNext(page,dwellMs))return {ok:false,phase:'needs-human',error:'单词卡未能进入原生结束页，未记完成'};
+        const reached=await page.evaluate(()=>!!document.querySelector('.swiper-vocabulary .swiper-slide-active .visual-card'));
+        if(!reached)return {ok:false,phase:'needs-human',error:'尚未确认单词卡结束页，保留进度'};
+      }
+      onProgress({phase:'verifying',detail:`${total}/${total} · 等待平台确认`,percent:1});
+    }
+    if(current>=total&&onBeforeVerify){throwIfStopped(shouldStop);await onBeforeVerify();}
     if (readProgress) {
-      for (let i = 0; i < 8; i += 1) {
-        await interruptibleSleep(8000, shouldStop);
+      for (let i = 0; i < verifyAttempts; i += 1) {
+        await interruptibleSleep(verifyPollMs, shouldStop);
         after = await readProgress().catch(() => null);
         if (after && before && Number(after.finishPointNum) > Number(before.finishPointNum)) break;
       }
@@ -86,8 +108,9 @@ export async function runUcampusVocab({ page, apply = false, shouldStop = () => 
 
   const credited = !!(after && before && Number(after.finishPointNum) > Number(before.finishPointNum));
   return {
-    ok: true,
-    phase: credited ? 'submitted' : apply ? 'applied-unverified' : 'planned',
+    ok: !apply || credited,
+    phase: credited ? 'submitted' : apply ? 'needs-human' : 'planned',
+    ...(apply&&!credited?{error:'单词卡已保留，但平台尚未确认该教程进度增长，未记完成'}:{}),
     current,
     total,
     steps,

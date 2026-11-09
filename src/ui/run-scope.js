@@ -1,5 +1,11 @@
 // Shared by the UI and service: a run is bound to explicit task identities,
 // never to the course currently in focus or to whatever was saved later.
+import {platformOf} from './platforms.js';
+export function selectionReadiness(status={},courses=[]) {
+  const needsChaoxing=pendingRunTasks(courses).some(task=>platformOf(task)==='chaoxing');
+  const connected=!!status.ready&&!!status.edge?.connected&&(!needsChaoxing||!!status.login?.loggedIn);
+  return {connected,needsChaoxing,reason:!status.ready?'正在准备服务…':!status.edge?.connected?'网页引擎尚未连接':needsChaoxing&&!status.login?.loggedIn?'所选任务包含学习通，请先登录学习通':''};
+}
 export function pendingRunTasks(courses=[]) {
   return selectedRunTasks(courses).filter(t=>t.finished!==true&&t.completion?.finished!==true);
 }

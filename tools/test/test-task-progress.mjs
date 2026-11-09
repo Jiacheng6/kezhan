@@ -24,6 +24,7 @@ const bankLookup = taskProgressModel({ running: true, progress: { taskType: 'wor
 assert.equal(bankLookup.fraction, 0);
 assert.equal(bankLookup.label, '正在查询题库');
 assert.equal(bankLookup.particleRate, taskProgressModel(video).particleRate);
+assert.equal(taskProgressModel({running:true,progress:{taskType:'study',phase:'courseware-wait',currentTime:10,duration:30,percent:1/3}}).label,'等待并保持会话');
 assert.equal(taskProgressModel({}).visible, false);
 const dual = { running:true, progress:{current:'aggregate must not leak',percent:.99}, platforms:{
   chaoxing:{running:true,total:4,done:1,current:'学习通视频',progress:{taskType:'video',percent:.642,currentTime:385,duration:600}},

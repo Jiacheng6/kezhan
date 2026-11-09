@@ -3,24 +3,24 @@
 <!-- upstream-attribution -->
 ## 开源协议与上游项目
 
-| 上游仓库 | 用途 | 原协议 |
+| 上游 | 用途 | 原协议 |
 | --- | --- | --- |
-| [LBEILC / RhineLabUI](https://github.com/LBEILC/RhineLabUI) | 课程档案阵列与相关视觉实现，作者 LBEILC | MIT |
-| [SubmergeDQ / Auto-WeLearn](https://github.com/SubmergeDQ/Auto-WeLearn) | WeLearn 课件解析与接口模块，固定版本 `9459bb7fafcd98868f9796d6187afd1d5fe6c049` | GPLv3 |
+| [LBEILC / RhineLabUI](https://github.com/LBEILC/RhineLabUI) | 课程档案阵列及相关视觉实现 | MIT |
+| [SubmergeDQ / Auto-WeLearn](https://github.com/SubmergeDQ/Auto-WeLearn) | WeLearn 课件解析与接口模块 | GPLv3 |
 
-课栈 0.9.0 整体按 **GNU GPL v3** 发布，第三方组件保留原版权及许可。[完整对应源码与许可文件](https://github.com/Jiacheng6/kezhan-releases/releases/download/v0.9.0/Kezhan-0.9.0-Source.zip) · [第三方声明和构建说明](https://github.com/Jiacheng6/kezhan-releases/blob/main/THIRD-PARTY-NOTICES.md)。
+课栈整体采用 GNU GPL v3。许可和构建说明见 [第三方声明](THIRD-PARTY-NOTICES.md)。发行页提供每版完整对应源码。
 <!-- /upstream-attribution -->
 
 课栈是面向 Windows 的多平台学习工作台。你可以在一个窗口里查看各平台的课程和完成情况、选定学习范围、追踪任务进度，以及核对待审答案。
 
-**当前版本 0.8.2** · Windows 10 / 11（x64）
+**当前版本 0.9.1** · Windows 10 / 11（x64）
 
 | 下载 | 如何使用 |
 | --- | --- |
-| [Windows 安装版](https://github.com/Jiacheng6/kezhan-releases/releases/download/v0.8.2/Kezhan-0.8.2-Setup.exe) | 运行安装程序，按提示完成安装。 |
-| [Windows 免安装版](https://github.com/Jiacheng6/kezhan-releases/releases/download/v0.8.2/Kezhan-0.8.2-win-x64.zip) | 完整解压到一个文件夹，再运行其中的 `课栈.exe`。 |
+| [Windows 安装版](https://github.com/Jiacheng6/kezhan-releases/releases/download/v0.9.1/Kezhan-0.9.1-Setup.exe) | 运行安装程序，按提示完成安装。 |
+| [Windows 免安装版](https://github.com/Jiacheng6/kezhan-releases/releases/download/v0.9.1/Kezhan-0.9.1-win-x64.zip) | 完整解压到一个文件夹，再运行其中的 `课栈.exe`。 |
 
-[国内下载（CNB）](https://cnb.cool/kezhan-app/kezhan-releases/-/releases/tag/latest) · [GitHub 发布页](https://github.com/Jiacheng6/kezhan-releases/releases/latest) · [更新说明](https://github.com/Jiacheng6/kezhan-releases/releases/tag/v0.8.2) · [反馈问题](https://github.com/Jiacheng6/kezhan/issues)
+[国内下载（CNB）](https://cnb.cool/kezhan-app/kezhan-releases/-/releases/tag/latest) · [GitHub 发布页](https://github.com/Jiacheng6/kezhan-releases/releases/latest) · [更新说明](https://github.com/Jiacheng6/kezhan-releases/releases/tag/v0.9.1) · [反馈问题](https://github.com/Jiacheng6/kezhan/issues)
 
 软件自带运行环境和网页引擎。访问课程平台及 AI 服务需要联网。
 
@@ -54,3 +54,7 @@
 安装版与免安装版在同一 Windows 用户下共享 `%APPDATA%\Kebo`。升级会继续读取原有设置、课程进度和登录数据。若平台会话过期，需重新登录。反馈问题时请描述版本和复现步骤，发日志前请移除账号、课程信息和令牌。
 
 [完整使用说明](使用说明.md) · [源码仓库](https://github.com/Jiacheng6/kezhan)
+
+## 开源协议与致谢
+
+课栈整体按 GNU GPL v3 发布。课程档案基于 [RhineLabUI](https://github.com/LBEILC/RhineLabUI)（MIT），WeLearn 模块复用 [Auto-WeLearn](https://github.com/SubmergeDQ/Auto-WeLearn)（GPLv3）。完整许可、修改说明及源码构建方法见 [第三方声明](THIRD-PARTY-NOTICES.md)。每版发行附带对应完整源码。

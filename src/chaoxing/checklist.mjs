@@ -294,7 +294,7 @@ function toCourseEntry(c, sel, summary, progress) {
       if (c.platform === 'ucampus') willHandleBase = TYPE_POLICY[t.type] ? TYPE_POLICY[t.type].handle === true : true;
 
       const isExcluded = excluded.has(key);
-      const blockedReason=t.type==='discuss'&&!willHandleBase?'需开启讨论草稿':null;
+      const blockedReason=t.blockedReason||(t.type==='discuss'&&!willHandleBase?'需开启讨论草稿':null);
       const willHandle = enabled && willHandleBase && !isExcluded;
 
       counts[t.type] = (counts[t.type] || 0) + 1;
@@ -328,11 +328,13 @@ function toCourseEntry(c, sel, summary, progress) {
       tasks.push({
         key,
         platform: c.platform || 'chaoxing',
-        studyUrl: c.studyUrl || null,
+        studyUrl: t.studyUrl || c.studyUrl || null,
         platformTaskKey: t.platformTaskKey || null,
         platformNumber: t.platformNumber || null,
         platformTestName: t.platformTestName || null,
         platformTestIndex: t.platformTestIndex ?? null,
+        ...(c.platform==='welearn'?{welearn:t.welearn}:{}),
+        ...(c.platform==='ucampus'?{courseResourceId:t.courseResourceId,courseInstanceId:t.courseInstanceId,unitIndex:t.unitIndex,nodeIndex:t.nodeIndex}:{}),
         courseId: c.courseId,
         clazzId: c.clazzId,
         knowledgeId: s.knowledgeId,

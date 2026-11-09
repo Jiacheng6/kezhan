@@ -155,9 +155,9 @@ try {
   await page.unroute('**/api/selection');
   status.login.loggedIn=false;for(const ws of sockets)ws.send(JSON.stringify({type:'status',data:status}));
   await page.waitForFunction(()=>document.querySelector('#deskRunActions [data-action=startRun]').disabled);
-  await page.locator('#deskConnect').click();assert.equal(await page.locator('#panel-overview').isVisible(),true);
+  await page.locator('#deskConnect').click();assert.equal(await page.locator('.platform-manager').evaluate(e=>e.open),true);await page.keyboard.press('Escape');
   await page.locator('[data-tab=courses]').click();assert.deepEqual(errors,[]);
-  status.progress={done:0,total:0,current:null};status.runStats=null;
+  status.progress={done:0,total:0,current:null};status.runStats=null;status.settings.platforms={chaoxing:true,zhihuishu:false,ucampus:false,welearn:false};
   await page.route('**/api/checklist',route=>route.fulfill({json:{ok:true,result:null}}));
   await page.reload();await enterTestWorkspace(page);await page.locator('[data-tab=courses]').click();await page.locator('#deskScan').waitFor();assert.equal(await page.locator('#deskScan').isDisabled(),true,'首次使用先完成登录');
   status.login.loggedIn=true;for(const ws of sockets)ws.send(JSON.stringify({type:'status',data:status}));

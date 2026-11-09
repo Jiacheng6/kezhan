@@ -7,6 +7,7 @@ export function pageKind(tab) {
   let host = ''; try { host = new URL(tab.url).hostname; } catch {}
   if (/(^|\.)(qianwen\.com|tongyi\.aliyun\.com|doubao\.com|deepseek\.com)$/.test(host)) return 'AI 网页';
   if (/(^|\.)(chaoxing\.com|xueyinonline\.com)$/.test(host)) return '学习通';
+  if (host==='welearn.sflep.com'||host==='centercourseware.sflep.com') return 'WeLearn';
   return tab.url === 'about:blank' ? '正在准备' : '网页';
 }
 export function currentTaskPage(tabs) {

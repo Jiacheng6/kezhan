@@ -6,7 +6,8 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { WebSocketServer } from 'ws';
-import { PATHS, CONSOLE_PORT_START, CONSOLE_PORT_MAX_TRIES } from './config.mjs';
+import { PATHS, CONSOLE_PORT_START, CONSOLE_PORT_MAX_TRIES,loadSettings } from './config.mjs';
+import {platformEnabled,platformInfo} from './ui/platforms.js';
 import { bus, getRecentLogs, getStatus, patchStatus, log } from './logbus.mjs';
 import { buildChecklist, loadSelection, saveSelection, loadReconReport } from './chaoxing/checklist.mjs';
 import { listReviewItems, reviewStats, updateReviewAnswer, markReviewItem } from './state.mjs';
@@ -121,7 +122,7 @@ export async function startServer(hooks = {}) {
     if (pathname === '/api/onboarding') {
       try {
         if (req.method === 'GET') return json(res, 200, { ok: true, result: getOnboarding() });
-        if (req.method === 'POST') return json(res, 200, { ok: true, result: completeOnboarding(await readJson(req, 4096), getStatus()) });
+        if (req.method === 'POST') {const result=completeOnboarding(await readJson(req, 4096), getStatus());patchStatus({settings:loadSettings()});return json(res, 200, { ok: true, result });}
         return json(res, 405, { ok: false, error: '不支持的请求方式' });
       } catch (error) { return json(res, 400, { ok: false, error: error.message }); }
     }
@@ -301,6 +302,8 @@ export async function startServer(hooks = {}) {
     if (pathname.startsWith('/api/action/')) {
       if (req.method !== 'POST') return json(res, 405, { ok: false, error: '动作需要 POST 请求' });
       const name = pathname.slice('/api/action/'.length);
+      const platform=/Welearn/i.test(name)?'welearn':/Ucampus/i.test(name)?'ucampus':/Zhihuishu/i.test(name)?'zhihuishu':['openChaoxing','refreshLogin','startRecon','startStandaloneWork'].includes(name)?'chaoxing':null;
+      if(platform&&!platformEnabled(loadSettings(),platform))return json(res,400,{ok:false,error:`${platformInfo(platform).name}已关闭，请在“学习平台”设置中开启`});
       const fn = hooks[name];
       if (typeof fn !== 'function') return json(res, 404, { ok: false, error: `未知动作: ${name}` });
       try {

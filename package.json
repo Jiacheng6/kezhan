@@ -1,6 +1,6 @@
 {
   "name": "kebo",
-  "version": "0.8.2",
+  "version": "0.9.1",
   "private": true,
   "type": "module",
   "description": "课栈：软件内网页、多平台课程管理与 AI 辅助",
@@ -17,6 +17,7 @@
     "test": "node tools/test/test-offline.mjs"
   },
   "dependencies": {
+    "cheerio": "1.2.0",
     "electron-updater": "6.8.9",
     "playwright-core": "^1.63.0",
     "ws": "^8.18.0"
@@ -30,7 +31,7 @@
   },
   "build": {
     "releaseInfo": {
-      "releaseNotesFile": "docs/releases/0.8.2.md"
+      "releaseNotesFile": "docs/releases/0.9.1.md"
     },
     "publish": [
       {
@@ -59,7 +60,9 @@
       "使用说明.md",
       "package.json",
       "!**/*.map",
-      "!**/test{,s}/**"
+      "!**/test{,s}/**",
+      "LICENSE",
+      "THIRD-PARTY-NOTICES.md"
     ],
     "win": {
       "icon": "desktop/assets/icon.ico",
@@ -92,5 +95,6 @@
       "artifactName": "Kezhan-${version}-Setup.${ext}",
       "include": "desktop/installer.nsh"
     }
-  }
+  },
+  "license": "GPL-3.0-only"
 }

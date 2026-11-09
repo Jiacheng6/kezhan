@@ -59,7 +59,7 @@ export async function openUnitTest(page, unitIndex) {
  * @returns {{ok:boolean, page?:import('playwright-core').Page, note?:string}}
  */
 export async function openUcampusRequiredItem(context, name, { occurrence = 0, waitMs = 9000, courseResourceId = '20001230493', unit = null } = {}) {
-  let uai = context.pages().find((p) => !p.isClosed() && p.url().startsWith('https://uai.unipus.cn/app/cmgt/resource-detail'));
+  let uai = context.pages().find((p) => !p.isClosed() && p.url().split(/[?#]/)[0]===`https://uai.unipus.cn/app/cmgt/resource-detail/${courseResourceId}`);
   if (!uai) {
     // 教程页被关掉时自己开一个（同一登录态）
     uai = await context.newPage();
@@ -67,14 +67,16 @@ export async function openUcampusRequiredItem(context, name, { occurrence = 0, w
     await uai.waitForTimeout(5000);
   }
   if (!uai) return { ok: false, note: '打不开教程详情页' };
-  const before = new Set(context.pages().map((p) => p.url()));
+  const before = new Map(context.pages().map(p=>[p,p.url()]));
 
   // 先展开目标单元（手风琴：一次只展开一个）
   if (unit) {
-    await uai.evaluate((u) => {
+    const unitOpened = await uai.evaluate((u) => {
       const el = [...document.querySelectorAll('*')].find((n) => (n.innerText || '').trim() === `Unit ${u}` && n.getClientRects().length && n.children.length <= 2);
-      if (el) el.click();
+      if (el) { el.click(); return true; }
+      return false;
     }, Number(unit));
+    if(!unitOpened)return {ok:false,note:`教程页无法定位 Unit ${unit}，未打开其他单元`};
     await uai.waitForTimeout(2200);
   }
   const clicked = await uai.evaluate(
@@ -82,7 +84,7 @@ export async function openUcampusRequiredItem(context, name, { occurrence = 0, w
       const norm = (s) => String(s || '').replace(/\s+/g, '');
       const rows = [...document.querySelectorAll('[class*="taskNameContainer"]')].filter((el) => {
         const required = !!el.querySelector('[class*="taskRequireIcon"]');
-        return required && norm(el.innerText).startsWith(want);
+        return required && el.getClientRects().length>0 && getComputedStyle(el).visibility!=='hidden' && norm(el.innerText).startsWith(want);
       });
       const el = rows[occ];
       if (!el) return `no-item(共 ${rows.length} 个)`;
@@ -98,7 +100,7 @@ export async function openUcampusRequiredItem(context, name, { occurrence = 0, w
   const deadline = Date.now() + waitMs;
   while (Date.now() < deadline) {
     await uai.waitForTimeout(500);
-    const fresh = context.pages().filter((p) => !p.isClosed() && !before.has(p.url()));
+    const fresh = context.pages().filter((p) => !p.isClosed() && /^https:\/\/ucontent\.unipus\.(cn|com)\//.test(p.url()) && (!before.has(p)||before.get(p)!==p.url()));
     if (fresh.length) {
       const page = fresh[fresh.length - 1];
       await page.setViewportSize({ width: 1440, height: 900 }).catch(() => {});
@@ -108,8 +110,7 @@ export async function openUcampusRequiredItem(context, name, { occurrence = 0, w
     }
   }
   // 没开新页时，退回去用现有播放器页（可能是在同一页里换了节点）
-  const player = context.pages().find((p) => !p.isClosed() && p.url().startsWith('https://ucontent.unipus.cn'));
-  return player ? { ok: true, page: player, note: '复用现有播放器页' } : { ok: false, note: '没有播放器页' };
+  return { ok:false,note:'所选必修项未打开新的播放器，未使用其他任务的旧页面' };
 }
 
 /**

@@ -1,5 +1,5 @@
 import { workspace } from './app.js';
-import { platformOf, platformInfo, PLATFORMS } from './platforms.js';
+import { platformOf, platformInfo, PLATFORMS,enabledPlatformIds,platformEnabled } from './platforms.js';
 import { runScopeRequest, pendingRunTasks } from './run-scope.js';
 import { confirmBankUse } from './bank-guide.js';
 import { activeTaskPlatforms, renderProgressTrack, renderTaskProgress, platformTaskStatus, totalProgressModel } from './task-progress.js';
@@ -8,9 +8,11 @@ const message = document.querySelector('#platformMessage');
 message.setAttribute('role', 'status');
 const platformActions = document.querySelector('.platform-web-actions');
 const manager = document.createElement('details'); manager.className = 'platform-manager';
-manager.innerHTML = '<summary>管理平台</summary><div class="platform-manager-content"><div class="platform-group" data-platform="chaoxing"><span class="group-label">学习通</span><button data-action="openChaoxing">打开网页</button><button data-action="startRecon">扫描课程</button></div></div>';
+manager.innerHTML = '<summary>连接与扫描</summary><div class="platform-manager-content"><div class="platform-group" data-platform="chaoxing"><span class="group-label">学习通</span><button data-action="openChaoxing">打开网页</button><button data-action="startRecon">扫描课程</button></div></div>';
 const managerContent = manager.querySelector('.platform-manager-content');
+document.addEventListener('open-platform-connections',()=>{manager.open=true;manager.querySelector('summary').focus();});
 for (const group of [...platformActions.children]) managerContent.append(group);
+const manage=document.createElement('button');manage.className='platform-manage-link';manage.textContent='添加或关闭平台 →';manage.onclick=()=>{manager.open=false;workspace.openSettings('platforms');};managerContent.append(manage);
 platformActions.append(manager);
 for (const button of managerContent.querySelectorAll('button')) {
   if (button.id.startsWith('open')) button.textContent = '打开网页';
@@ -61,22 +63,23 @@ async function control(id, stop) {
 }
 function render(force = false) {
   const courses = model.checklist?.courses || [], status = model.status || {};
-  const ids = [...new Set([...Object.keys(PLATFORMS), ...courses.map(platformOf)])];
+  const ids = enabledPlatformIds(status.settings);
+  for(const group of managerContent.querySelectorAll('.platform-group'))group.hidden=!platformEnabled(status.settings,group.dataset.platform);
   document.body.dataset.multiPlatform = String(new Set(courses.map(platformOf)).size > 1);
   const current = model.platformFilter || 'all';
-  const key = JSON.stringify([courses.map(c => [c.courseId, pendingRunTasks([c]).length]), status.platforms, status.progress, status.runStats, status.running, status.aiQueue, status.zhihuishuScan, status.ready, current, [...pending]]);
+  const key = JSON.stringify([ids,courses.map(c => [c.courseId, pendingRunTasks([c]).length]), status.platforms, status.progress, status.runStats, status.running, status.aiQueue, status.zhihuishuScan,status.ucampusScan,status.welearnScan, status.ready, current, [...pending]]);
   if (!force && signature === key) return; signature = key;
   const focused = document.activeElement?.dataset.platformControl;
   const filterSignature = JSON.stringify([current, ids.map(id => [id, courses.filter(c => platformOf(c) === id).length])]);
   if (filters.dataset.signature !== filterSignature) {
   filters.dataset.signature = filterSignature;
-  filters.replaceChildren(...['all', ...ids].map(id => {
+  filters.replaceChildren(...(ids.length>1?['all',...ids]:ids).map(id => {
     const count = courses.filter(c => id === 'all' || platformOf(c) === id).length;
     const b = button(`${id === 'all' ? '全部平台' : platformInfo(id).name} ${count}`, () => {
       workspace.setPlatformFilter(id);
       message.textContent = id === 'all' ? '' : '这里只筛选课程展示，其他平台已勾选的任务仍然保留。';
     });
-    b.setAttribute('aria-pressed', String(current === id)); b.dataset.platformControl = 'filter:' + id; return b;
+    b.setAttribute('aria-pressed', String(current === id||ids.length===1)); b.dataset.platformControl = 'filter:' + id; return b;
   }));
   }
   let summary = sessions.querySelector('.platform-total');
@@ -85,6 +88,7 @@ function render(force = false) {
     summary.innerHTML = '<div class="platform-total-caption"><strong>本批总进度</strong><b data-total-percent></b></div><div class="tp-track" role="progressbar" aria-label="全部平台任务总进度" aria-valuemin="0" aria-valuemax="100"><div class="tp-fill"></div></div><div class="platform-total-foot"><span data-total-count></span><small data-total-detail></small></div>';
   }
   const overall = totalProgressModel(status), percent = +(overall.fraction * 100).toFixed(1);
+  sessions.dataset.hasRun=String(!!overall.total||activeTaskPlatforms(status).length>0||!!status.reconRunning||!!status.zhihuishuScan?.running||!!status.ucampusScan?.running||!!status.welearnScan?.running);
   const count = overall.total ? `完成 ${overall.done} / ${overall.total} 项` : '开始学习后统计';
   summary.querySelector('[data-total-percent]').textContent = overall.total ? `${percent}%` : '—';
   summary.querySelector('[data-total-count]').textContent = count;
@@ -109,8 +113,9 @@ function render(force = false) {
     const action = article.querySelector('.platform-action'); action.textContent = run.running ? '停止此平台' : '开始此平台'; action.onclick = () => control(id, run.running);
     const queued=(status.aiQueue?.pending||[]).filter(item=>item.platform===id).length;
     if(queued)state.textContent=`等待共用 AI · 排队 ${queued} 题 · `+state.textContent;
-    if(id==='zhihuishu'&&status.zhihuishuScan?.running){state.textContent=`正在扫描课程 ${(status.zhihuishuScan.index??0)+1}/${status.zhihuishuScan.total||'—'}`;action.textContent='停止扫描';action.onclick=()=>control(id,true);}
-    action.dataset.platformControl = 'run:' + id; action.disabled = pending.has(id) || (!run.running && !(id==='zhihuishu'&&status.zhihuishuScan?.running) && (!status.ready || !selected || !PLATFORMS[id]));
+    const scan=({zhihuishu:status.zhihuishuScan,ucampus:status.ucampusScan,welearn:status.welearnScan})[id];
+    if(scan?.running){state.textContent=`正在扫描课程 ${scan.index??'—'}/${scan.total||'—'}`;action.textContent='停止扫描';action.onclick=()=>control(id,true);}
+    action.dataset.platformControl = 'run:' + id; action.disabled = pending.has(id) || (!run.running && !scan?.running && (!status.ready || !selected || !PLATFORMS[id]));
     renderTaskProgress(article.querySelector('.platform-task-progress'), active.length > 1 && active.includes(id) ? platformTaskStatus(status, id) : {});
     return article;
   });
@@ -118,6 +123,14 @@ function render(force = false) {
   if (focused) document.querySelector(`[data-platform-control="${CSS.escape(focused)}"]`)?.focus({ preventScroll: true });
 }
 workspace.subscribe(next => { model = next; render(); });
+document.querySelector('#openWelearn')?.addEventListener('click',async()=>{
+  try{await post('openWelearn');message.textContent='登录 WeLearn 后扫描课程；采用 Auto-WeLearn 原版解析与接口流程，无需登录 AI。口语需本人处理，完成情况以平台记录为准。';}catch(error){message.textContent=error.message;}
+});
+document.querySelector('#readWelearn')?.addEventListener('click',async event=>{
+  const b=event.currentTarget;b.disabled=true;
+  try{const result=await post('readWelearn');await workspace.reload();message.textContent=`已汇入 ${result.courses} 门 WeLearn 课程、${result.nodes} 个小节。录音、口语及未开放小节单独标示。`;}
+  catch(error){message.textContent=error.message;}finally{b.disabled=false;}
+});
 /*
  * U校园：先在软件内打开站点登录，再扫描课程与必修节点。
  * 扫描只读：不进入学习、不上报进度。

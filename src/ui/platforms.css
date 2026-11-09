@@ -25,6 +25,9 @@ body[data-multi-platform=true] .task-sheet{display:none}
 .platform-total-caption{display:flex;justify-content:space-between;gap:12px;align-items:baseline;margin-bottom:12px;font-size:12px}.platform-total-caption strong{font-weight:500}.platform-total-caption span{color:var(--acc);font:13px Consolas,monospace;font-variant-numeric:tabular-nums}.platform-total>small{display:block;margin-top:9px;font-size:11px;color:var(--fg2);line-height:1.7}
 .platform-session .platform-task-progress{grid-column:1/-1;margin-top:13px;padding:13px 0 0;--tp-accent:var(--platform-chaoxing)}
 .platform-session[data-platform=zhihuishu] .platform-task-progress{--tp-accent:var(--platform-zhihuishu)}
+.platform-badge[data-platform=welearn]{color:var(--fg);background:color-mix(in srgb,#875c9d 12%,var(--bg2));border-color:color-mix(in srgb,#875c9d 40%,var(--line))}
+.platform-session[data-platform=welearn]{border-left-color:#875c9d}
+.platform-session[data-platform=welearn] .platform-task-progress{--tp-accent:#875c9d}
 .platform-task-progress .tp-reading{margin:9px 0 12px;gap:12px}.platform-task-progress .tp-percent strong{font-size:28px}.platform-task-progress .tp-foot{margin-top:9px}.platform-task-progress .tp-view{display:none}
 @media(max-width:560px){.platform-total-caption{align-items:flex-start;flex-direction:column;gap:6px}}
 @media(max-width:800px){.platform-sessions{grid-template-columns:1fr}}

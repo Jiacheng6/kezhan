@@ -1,22 +1,22 @@
 import { capturePlan, applyPlan, QUICK_RULES, planRule, applyRule } from './selection-plan.js';
-import { platformOf, platformBadge, platformInfo } from './platforms.js';
+import { platformOf, platformBadge, platformInfo,enabledPlatformIds } from './platforms.js';
 import { recalc, willSummary, matchesQuery, courseVisible } from './selection.js';
 import { completionOf, courseCompletion, sectionCompletion } from './task-status.js';
-import { selectOnlyTask, clearRunSelection, selectCourseTasks } from './run-scope.js';
+import { selectOnlyTask, clearRunSelection, selectCourseTasks,selectionReadiness } from './run-scope.js';
 import {runSummaryLabel} from './task-progress.js';
 import { animate } from './motion.js';
 
 const node = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-const types = { video: '视频', work: '测验', doc: '文档', read: '阅读',discuss:'讨论' };
+const types = { video: '视频', work: '测验', doc: '文档', read: '阅读',discuss:'讨论',study:'课内学习' };
 
-export function createSelectionDesk({ root, snapshot, change, save, navigate, action, openDiscussionSettings=()=>navigate('settings') }) {
+export function createSelectionDesk({ root, snapshot, change, save, navigate, action, openDiscussionSettings=()=>navigate('settings'),openPlatforms=()=>navigate('settings') }) {
   root.innerHTML = `
     <div class="sd-layout">
       <aside class="sd-courses" aria-label="选择课程">
         <div class="sd-column-title"><b><span>课程</span></b><span id="deskCourseCount"></span></div>
         <input id="deskCourseSearch" type="search" placeholder="搜索课程…" aria-label="筛选课程" />
         <button id="deskScan" class="text-button" hidden>扫描课程 →</button>
-        <p class="sd-micro">课程名用于浏览；勾选框决定学习范围。</p>
+        <p class="sd-micro">点课程浏览，勾选后加入本次。</p>
         <button id="deskClearSelection" class="text-button sd-clear-selection">取消全选</button>
         <div id="deskCourses" class="sd-course-list"></div>
         <button id="deskLegacy" class="text-button sd-legacy-link">树状视图 ↗</button>
@@ -24,6 +24,7 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
       <section class="sd-tasks" aria-label="章节与任务">
         <div class="sd-column-title"><b><span>章节与任务</span></b><span id="deskCourseState"></span></div>
         <div class="sd-active-course"><h3 id="deskCourseTitle">还没有课程清单</h3><p id="deskCourseMeta"></p></div>
+        <div class="sd-scope-shortcuts" role="group" aria-label="选择当前课程的任务"><button id="deskSelectPending">选本课未完成</button><button id="deskClearCourse" class="text-button">清空本课</button><span>其他课程的选择会保留</span></div>
         <details class="sd-rules" id="deskQuickRules"><summary>快捷选择 <span>按类型或章节批量选择</span></summary>
           <div id="deskRules" class="sd-rule-buttons"></div>
           <div class="sd-rule-options"><label>作用范围<select id="deskRuleScope"><option value="current">当前课程</option><option value="enabled">已勾选的课程</option><option value="all">全部课程</option></select></label>
@@ -32,11 +33,11 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
           <div class="sd-rule-preview"><p id="deskRulePreview" role="status"></p><button id="deskApplyRule">应用规则</button></div>
         </details>
         <div class="sd-task-filter"><input id="deskTaskSearch" type="search" placeholder="查找章节或任务…" aria-label="筛选章节与任务" /><select id="deskTaskStatus" aria-label="任务完成状态"><option value="pending">待完成</option><option value="all">全部状态</option><option value="done">已完成</option></select></div>
-        <p class="sd-micro">筛选只影响显示，不会取消其他勾选。只学一个任务请点「仅选此项」。</p>
+        <p class="sd-filter-note">筛选只影响显示，已选范围始终保留。</p>
         <div id="deskTasks" class="sd-task-list"></div>
       </section>
       <aside class="sd-selection" aria-label="本次已选范围与方案">
-        <div class="sd-column-title"><b><span>全部已选范围</span></b><span id="deskRunState">尚未开始</span></div>
+        <div class="sd-column-title"><b><span>本次学习</span></b><span id="deskRunState">尚未开始</span></div>
         <div class="sd-total"><strong id="deskTotal">0</strong><span>个任务 <small id="deskTotalCourses"></small></span></div>
         <p id="deskPendingCounts" class="sd-micro"></p>
         <details class="sd-selected-details"><summary>查看已选范围</summary><p id="deskTypeCounts" class="sd-micro"></p><div id="deskSelected" class="sd-selected-list"></div></details>
@@ -55,14 +56,17 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
     </div>
     <dialog id="deskConfirm" class="sd-confirm"><form method="dialog"><h3 id="deskConfirmTitle"></h3><p id="deskConfirmText"></p><div class="actions"><button value="cancel" autofocus>取消</button><button value="yes" class="primary">确认</button></div></form></dialog>`;
   const $ = id => root.querySelector('#' + id);
+  $('deskClearSelection').classList.add('sd-clear-batch');$('deskClearSelection').textContent='清空本次选择';$('deskPendingCounts').after($('deskClearSelection'));
   // Move the original buttons with their existing listeners; there remains one
   // start/stop path with the same save-before-start and backend guards.
   $('deskRunActions').append(...document.querySelectorAll('#panel-courses > .page-heading [data-action]'));
   const runActions = $('deskRunActions');
-  $('deskConnect').onclick = () => navigate('overview');
+  $('deskConnect').textContent='连接平台 →';$('deskConnect').onclick = event=>{event.stopPropagation();document.dispatchEvent(new Event('open-platform-connections'));};
   $('deskScan').onclick = async () => {
     if (!guard()) return;
-    const result = await action('startRecon', $('deskScan'));
+    const ids=enabledPlatformIds(snapshot().status?.settings),id=snapshot().platformFilter!=='all'&&ids.includes(snapshot().platformFilter)?snapshot().platformFilter:ids.length===1?ids[0]:null;
+    if(!id){openPlatforms();return;}
+    const result = await action(({chaoxing:'startRecon',zhihuishu:'readZhihuishu',ucampus:'readUcampus',welearn:'readWelearn'})[id], $('deskScan'));
     if (result?.ok === false) feedback(result.error || '未能开始扫描，请检查连接。', true);
   };
   let active = '', rule = 'unfinished', previous = null, presets = [], presetBusy = false, locked = false, account, loaded = false, requestId = 0, completedOpen = false;
@@ -136,7 +140,7 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
           row.append(title); container.append(row);
         }
       }
-      if (!$('deskCourses').children.length) $('deskCourses').append(node('p', 'sd-empty', courses.length ? '没有匹配的课程。' : '首次使用请先扫描课程。'));
+      if (!$('deskCourses').children.length) $('deskCourses').append(node('p', 'sd-empty', courses.length ? '没有匹配的课程。' : !enabledPlatformIds(snapshot().status?.settings).length?'先开启需要的学习平台。':'连接平台后，扫描你的课程。'));
     });
   }
   function drawTasks() {
@@ -144,6 +148,7 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
     $('deskCourseTitle').textContent = c?.name || '还没有课程清单';
     $('deskCourseMeta').textContent = c ? `${platformInfo(c).name} · ${c.sections.length} 个小节 · ${c.tasks.length} 个已读取任务${c.enabled === false ? ' · 当前未纳入学习范围' : ''}` : '扫描课程后，即可在这里选择章节与任务。';
     $('deskCourseState').textContent = c ? courseCompletion(c).label : '';
+    $('deskSelectPending').disabled=!c||busy()||!c.tasks.some(t=>t.policyHandle!==false&&!completionOf(t).finished);$('deskClearCourse').disabled=!c||busy();
     keepPosition($('deskTasks'), () => {
       const list = $('deskTasks'); list.replaceChildren(); if (!c) return;
       const sections = [...c.sections];
@@ -184,7 +189,8 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
   function drawSummary() {
     const courses = data(), summary = willSummary(courses);
     $('deskTotal').textContent = summary.tasks; $('deskTotalCourses').textContent = `${summary.courses} 门课`;
-    $('deskTypeCounts').textContent = Object.entries(summary.byType).filter(([, n]) => n).map(([type, n]) => `${types[type] || '其他'} ${n}`).join(' · ') || '从左侧选课程，在中间勾选任务。';
+    const counts=courses.flatMap(c=>c.tasks).filter(t=>t.willHandle).reduce((a,t)=>{a[t.type]=(a[t.type]||0)+1;return a;},{});
+    $('deskTypeCounts').textContent = Object.entries(counts).map(([type, n]) => `${types[type] || '其他'} ${n}`).join(' · ') || '从左侧选课程，在中间勾选任务。';
     const pending = courses.flatMap(c => c.tasks).filter(t => t.willHandle && !completionOf(t).finished).length;
     $('deskPendingCounts').textContent = summary.tasks ? `${pending} 个待完成${summary.tasks > pending ? ' · 已完成的会跳过' : ''}` : '勾选左侧课程，再选择需要学习的任务。';
     drawSession();
@@ -202,11 +208,12 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
   function drawSession() {
     const status = snapshot().status || {};
     $('deskRunState').textContent = runSummaryLabel(status);
-    const connected = status.ready && status.edge?.connected && status.login?.loggedIn;
+    const {connected,reason}=selectionReadiness(status,data());
     $('deskConnection').hidden = !!connected || !!status.running || !!status.reconRunning;
-    $('deskConnectionMessage').textContent = !status.ready ? '正在准备服务…' : !status.edge?.connected ? '浏览器尚未连接' : '开始前请先登录学习通';
+    $('deskConnectionMessage').textContent = reason;
     $('deskScan').hidden = data().length > 0;
-    $('deskScan').disabled = !connected || busy();
+    const ids=enabledPlatformIds(status.settings);$('deskScan').textContent=ids.length===1?`扫描${platformInfo(ids[0]).name}课程 →`:'选择平台并扫描 →';
+    $('deskScan').disabled = ids.length>0&&(!status.ready || !status.edge?.connected || busy()||ids.length===1&&ids[0]==='chaoxing'&&!status.login?.loggedIn);
   }
   function previewRule() {
     const courses = data(), scope = $('deskRuleScope').value;
@@ -270,6 +277,8 @@ export function createSelectionDesk({ root, snapshot, change, save, navigate, ac
   $('deskApplyRule').onclick = () => { try { const preview = previewRule(); edit(() => applyRule(data(), preview), `已应用「${QUICK_RULES.find(r => r.id === rule).name}」：${preview.courses} 门课、${preview.selected} 个任务。可撤销或继续微调，保存后生效。`); } catch (error) { feedback(error.message, true); } };
   for (const id of ['deskRuleScope', 'deskFrom', 'deskTo']) $(id).addEventListener('input', drawRule);
   $('deskCourseSearch').oninput = drawCourses;
+  $('deskSelectPending').onclick=()=>edit(()=>{const course=data().find(c=>c.courseId===active);if(!course)return;course.enabled=true;for(const task of course.tasks)task.excluded=task.policyHandle===false||completionOf(task).finished;recalc(course);},'已选当前课程未完成的任务，其他课程的选择保留。');
+  $('deskClearCourse').onclick=()=>edit(()=>{const course=data().find(c=>c.courseId===active);if(course)selectCourseTasks(course,false);},'已清空当前课程的选择，其他课程不变。');
   $('deskTaskSearch').oninput = drawTasks; $('deskTaskStatus').onchange = drawTasks;
   $('deskUndo').onclick = () => { if (!guard() || !previous) return; const before = previous; previous = null; applyPlan(data(), before); change(); feedback('已撤销上一次范围修改。'); };
   $('deskSave').onclick = async () => {

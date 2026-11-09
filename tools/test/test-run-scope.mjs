@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';import path from 'node:path';
-import {selectedRunTasks,runScopeRequest,assertRunScope,selectOnlyTask,clearRunSelection,selectCourseTasks} from '../../src/ui/run-scope.js';
+import {selectedRunTasks,runScopeRequest,assertRunScope,selectOnlyTask,clearRunSelection,selectCourseTasks,selectionReadiness} from '../../src/ui/run-scope.js';
+const engine={ready:true,edge:{connected:true},login:{loggedIn:false}};
+const external=[{courseId:'welearn:demo',tasks:[{key:'welearn:demo:1',willHandle:true}]}];
+assert.equal(selectionReadiness(engine,external).connected,true,'WeLearn 独立运行不依赖学习通登录');
+assert.equal(selectionReadiness(engine,[...external,{courseId:'cx',tasks:[{key:'cx:1',willHandle:true}]}]).connected,false,'混选学习通仍检查登录');
+assert.equal(selectionReadiness({...engine,edge:{connected:false}},external).connected,false);
 const make=()=>['a','b'].map(courseId=>({courseId,clazzId:`class-${courseId}`,name:'演示课程',enabled:true,tasks:Array.from({length:52},(_,i)=>({key:`${courseId}-${i}`,knowledgeId:`section-${i}`,type:'video',name:`演示视频 ${i}`,willHandle:true,excluded:false}))}));
 let courses=make();const all=runScopeRequest(courses);assert.equal(all.taskKeys.length,104);
 clearRunSelection(courses);assert.equal(selectedRunTasks(courses).length,0);

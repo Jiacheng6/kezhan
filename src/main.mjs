@@ -38,19 +38,22 @@ import { PlatformRuns, planPlatformRun } from './platforms/runs.mjs';
 import { scanZhihuishuCourses } from './platforms/zhihuishu/scan.mjs';
 import { scanUcampusCourses, ensureUcampusPage } from './platforms/ucampus/scan.mjs';
 import { readStudentCourses } from './platforms/ucampus/api.mjs';
-import { runUcampusStudyNode } from './platforms/ucampus/runner.mjs';
+import {ensureWelearnPage,scanWelearnCourses} from './platforms/welearn/scan.mjs';
+import {runWelearnSelectedTask} from './platforms/welearn/dispatch.mjs';
+import { runUcampusStudyNode, ensurePlayer as ensureUcampusPlayer } from './platforms/ucampus/runner.mjs';
 import { runUcampusQuizTab, openUnitTest, openQuizTab, openUcampusRequiredItem, openVocabularyLearning, clickByText, dismissUcampusDialog } from './platforms/ucampus/quiz.mjs';
 import { runUcampusTextQuiz } from './platforms/ucampus/textquiz.mjs';
 import { runUcampusCloze } from './platforms/ucampus/cloze.mjs';
 import { runUcampusVocab } from './platforms/ucampus/vocab.mjs';
 import { runZhihuishuVideo } from './platforms/zhihuishu/runner.mjs';
 import { runZhihuishuQuiz, restoreZhihuishuReview, submitZhihuishuReview, editZhihuishuReview, syncZhihuishuReviews } from './platforms/zhihuishu/quiz-task.mjs';
-import { platformOf } from './ui/platforms.js';
+import { platformOf,platformInfo,platformEnabled,enabledCourses,enabledPlatformIds,assertPlatformChange } from './ui/platforms.js';
 import { onAIQueueChange } from './ai/queue.mjs';
 onAIQueueChange(aiQueue => patchStatus({ aiQueue }));
 const extraRuns = new PlatformRuns({ execute: args => {
     // 按平台分派：U校园 按题型走不同执行器（学习/自评/选择题/填空/翻译/单词卡），其余沿用智慧树实现
     if (args.platform === 'ucampus' || platformOf(args.task) === 'ucampus') return runUcampusTask(args);
+    if (args.platform === 'welearn') return runWelearnSelectedTask(args);
     return args.task.type === 'work' ? runZhihuishuQuiz(args) : runZhihuishuVideo(args);
   }, changed: sessions => patchStatus({ platformRuns: sessions }),
   onRestart:({task,result,error})=>log(`【平台任务】当前任务暂停，保留进度并重启一次（1/1）：${task.name||''} · ${result?.error||error?.message||'页面暂未恢复'}`,'warn') });
@@ -58,6 +61,7 @@ const startingPlatforms = new Set();
 const retryingReviews = new Set();
 const zhsScan = { running: false, stop: false };
 const ucampusScan = { running: false, stop: false };
+const welearnScan={running:false,stop:false};
 // 同一时间只允许一个 U校园 测验任务在跑（真机踩过：两次任务交错作答）
 let ucampusQuizBusy = false;
 /** 批量执行用：按题型把 U校园 的一个必修节点分派到对应执行器 */
@@ -66,11 +70,22 @@ async function runUcampusTask(args) {
   const kind = String(task.type || 'study');
   const unit = Number(task.unitIndex || 0);
   const stop = args.shouldStop || (() => shuttingDown);
-  const player = () => ctx().pages().find((p) => !p.isClosed() && p.url().startsWith('https://ucontent.unipus.com') || false) || ctx().pages().find((p) => !p.isClosed() && p.url().startsWith('https://ucontent.unipus.cn'));
-  const playerPage = (await_ => await_)(null);
 
   // 学习节点 / 自评：沿用原来的执行器（真实鼠标勾选）
   if (kind === 'review' || kind === 'study') return runUcampusStudyNode(args);
+
+  let page;
+  if (kind === 'vocab-cards' || kind === 'video-quiz') {
+    const entered = await openUcampusRequiredItem(ctx(), kind === 'vocab-cards' ? 'Vocabulary' : 'Quiz', {unit,courseResourceId:String(task.courseResourceId||'')});
+    if(!entered.ok)return {ok:false,phase:'needs-human',error:entered.note};
+    page=entered.page;
+  } else page = await ensureUcampusPlayer(ctx(), {instanceId:String(task.courseInstanceId||''),continueUrl:task.studyUrl||''});
+  if (!/^https:\/\/ucontent\.unipus\.(cn|com)\//.test(page.url())) return { ok:false,phase:'needs-human',error:'U校园播放器未成功打开，请核对课程登录与续学入口' };
+
+  if (kind === 'vocab-cards') {
+    const r = await runUcampusVocab({ page, apply: true, shouldStop: stop, readProgress, onProgress:args.onProgress, dwellMs:1200,onBeforeVerify:()=>openUnitTest(page,unit) });
+    return r;
+  }
 
   // 其余类型都要 AI；统一构造 ask（豆包/千问走网页，api 走接口）
   const provider = selectedProvider(loadSettings());
@@ -91,7 +106,7 @@ async function runUcampusTask(args) {
     const parsed = parseAnswer(r.answer, question || { qtype: 'single' });
     return { ok: true, answer: r.answer, letters: parsed.letters || [], confidence: parsed.confidence || 'low' };
   };
-  const readProgress = async () => {
+  async function readProgress() {
     const uai = (await ensureUcampusPage(ctx(), { create: false })) || (await ensureUcampusPage(ctx()));
     const list = await readStudentCourses(uai, { shouldStop: () => shuttingDown });
     for (const course of list) {
@@ -102,20 +117,8 @@ async function runUcampusTask(args) {
     return null;
   };
 
-  const page = ctx().pages().find((p) => !p.isClosed() && p.url().startsWith('https://ucontent.unipus.cn'));
-  if (!page) return { ok: false, phase: 'needs-human', error: '没有打开播放器页' };
 
-  if (kind === 'vocab-cards') {
-    const opened = await openVocabularyLearning(page, { unitOccurrence: (unit - 1) * 2, subTab: 'Vocabulary' });
-    if (!opened.ok) return { ok: false, phase: 'needs-human', error: opened.note };
-    const r = await runUcampusVocab({ page, apply: true, shouldStop: stop, readProgress, dwellMs: 1200 });
-    // 真机：单词卡的记账要**离开页面**才落库
-    await openUnitTest(page, unit).catch(() => {});
-    return r;
-  }
   if (kind === 'video-quiz') {
-    const opened = await openVocabularyLearning(page, { unitOccurrence: (unit - 1) * 2, subTab: 'Quiz' });
-    if (!opened.ok) return { ok: false, phase: 'needs-human', error: opened.note };
     return runUcampusQuizTab({ page, tab: null, limit: 99, apply: true, ask, shouldStop: stop, readProgress });
   }
   if (kind === 'unit-cloze') {
@@ -161,6 +164,17 @@ function startUcampusTasks(tasks) {
   return { ...result, skipped: plan.skipped, selected: plan.selected };
 }
 
+function startWelearnTasks(tasks){
+  const plan=planPlatformRun(tasks,loadState().taskPoints);
+  if(!plan.tasks.length)return {started:false,platform:'welearn',count:0,skipped:plan.skipped,message:'所选 WeLearn 小节均已完成'};
+  const result=extraRuns.start('welearn',plan.tasks,ctx());
+  log(`【WeLearn】开始 ${plan.tasks.length} 个小节；真实课件运行，按平台原小节完成状态核对`,'info');
+  void extraRuns.wait('welearn').then(session=>{
+    if(session.error){log('【WeLearn】已暂停：'+session.error,'warn');notifyUser('welearn-attention',{key:'welearn:'+Date.now(),detail:session.error});}
+    else notifyUser(session.phase==='stopped'?'batch-stopped':'batch-complete',{key:'welearn:'+Date.now(),detail:`WeLearn：平台确认 ${session.done}/${session.total} 个小节`});
+  });
+  return {...result,skipped:plan.skipped,selected:plan.selected};
+}
 function startZhihuishuTasks(tasks) {
   const plan=planPlatformRun(tasks,loadState().taskPoints);
   if(plan.skipped)log(`【智慧树】保留并跳过 ${plan.skipped} 个已完成任务，本次待完成 ${plan.tasks.length} 个`, 'info');
@@ -229,6 +243,7 @@ const recon = { running: false, stopRequested: false };
 function ctx() {
   return runtime.context;
 }
+function requirePlatform(id){if(!platformEnabled(loadSettings(),id))throw Error(`${platformInfo(id).name}已关闭，请在“学习平台”设置中开启`);}
 
 function openInDefaultBrowser(url) {
   try {
@@ -373,8 +388,8 @@ async function boot() {
    * `--restore-last-session` 恢复的标签页也是异步出现的。
    * 不等就会"以为没有 → 新建一个"，于是同一个页面开两个（实测冷启动后出现两个）。
    */
-  let coursePage = embedded ? findPage(context, 'chaoxing.com') : await waitForPage(context, 'chaoxing.com', 7000);
-  if (!coursePage) {
+  let coursePage = platformEnabled(settings,'chaoxing') ? (embedded ? findPage(context, 'chaoxing.com') : await waitForPage(context, 'chaoxing.com', 7000)) : null;
+  if (!coursePage&&platformEnabled(settings,'chaoxing')) {
     coursePage = (embedded && context.pages().find(page => page.url() === 'about:blank')) || await context.newPage();
     await coursePage.goto(TARGETS.chaoxingHome, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
     log('新开学习通标签页', 'dim');
@@ -383,7 +398,7 @@ async function boot() {
 
   // 4.5) 千问标签页（P4 答题通道）—— 复用已有的，没有就开一个待用户登录
   let qianwenPage = null;
-  try { qianwenPage = await ensureProviderPage(context, selectedProvider(loadSettings()), { create: !!getOnboarding().completedAt }); }
+  try { qianwenPage = await ensureProviderPage(context, selectedProvider(loadSettings()), { create: enabledPlatformIds(loadSettings()).some(id=>id!=='welearn')&&!!getOnboarding().completedAt&&getOnboarding().aiWanted!==false }); }
   catch (err) { log(`打开${selectedProvider(loadSettings()).label}失败（不影响其他任务）：${err.message}`, 'warn'); }
   runtime.qianwenPage = qianwenPage;
 
@@ -430,7 +445,7 @@ async function boot() {
   }
 
   // 6) 进学习通 + 探测登录态
-  await bringToFront(coursePage);
+  if(coursePage)await bringToFront(coursePage);
 
   // 启动自愈：把上次崩溃遗留在 running 的任务点重置为 pending
   try {
@@ -471,7 +486,7 @@ async function boot() {
 
   patchStatus({ ready: true });
   log('——— P4 就绪（刷课 + 测验答题）———', 'ok');
-  if (!getStatus().login.loggedIn) {
+  if (platformEnabled(loadSettings(),'chaoxing')&&!getStatus().login.loggedIn) {
     log('尚未登录学习通，请在学习通网页中扫码或使用账号登录。', 'warn');
     log('登录完成后，点控制台里的「重新检测登录」即可。', 'warn');
   } else {
@@ -483,6 +498,7 @@ async function boot() {
 }
 
 async function refreshLogin() {
+  if(!platformEnabled(loadSettings(),'chaoxing')){const result={loggedIn:false,reason:'学习通已关闭'};patchStatus({login:result});return result;}
   const previouslyLoggedIn = !!getStatus().login?.loggedIn;
   const page = runtime.coursePage;
   if (!page) return { loggedIn: false, reason: '学习通页面不存在' };
@@ -670,6 +686,7 @@ function buildHooks() {
     saveSettings: async (patch = {}) => {
       const before = loadSettings();
       const r = normalizeSettings(patch, before);
+      assertPlatformChange(before,r.settings,{...getStatus(),platformRuns:extraRuns.snapshot(),startingPlatforms:[...startingPlatforms]});
       const providerChanged=selectedProvider(r.settings).id!==selectedProvider(before).id;
       if(providerChanged&&(getStatus().running||getStatus().aiQueue?.active))throw new Error('请先停止各平台任务，再切换 AI 答题通道');
       if (r.rejected.length) {
@@ -683,6 +700,7 @@ function buildHooks() {
       const sparse = toSparseSettings(r.settings, DEFAULT_SETTINGS);
       mutateState((s) => {
         s.settings = sparse;
+        if(s.onboarding&&Object.keys(patch).some(key=>key.startsWith('platforms.')))s.onboarding.platforms=enabledPlatformIds(r.settings);
       });
       const after = loadSettings();
       if (embedded) await embeddedRequest('audio-muted', { muted: after.muted !== false });
@@ -704,7 +722,7 @@ function buildHooks() {
 
     /** 恢复出厂设置（会清掉 state.json 里的 settings 段） */
     resetSettings: async () => {
-      if(batchRunner.running)throw new Error('请先停止当前任务，再恢复设置');
+      if(batchRunner.running||Object.values(extraRuns.snapshot()).some(s=>s.running)||recon.running||zhsScan.running||ucampusScan.running||welearnScan.running)throw new Error('请先停止当前任务或扫描，再恢复设置');
       mutateState((s) => {
         s.settings = {};
       });
@@ -737,6 +755,7 @@ function buildHooks() {
     },
 
     openChaoxing: async () => {
+      requirePlatform('chaoxing');
       if (process.env.KEBO_DESKTOP === '1') await setBrowserVisible(true);
       const page = runtime.coursePage && !runtime.coursePage.isClosed() ? runtime.coursePage : (await runtime.context.newPage());
       runtime.coursePage = page;
@@ -746,6 +765,7 @@ function buildHooks() {
       return { ok: true };
     },
     readZhihuishu: async () => {
+      requirePlatform('zhihuishu');
       if (!ctx()) throw Error('内置网页尚未就绪');
       if (zhsScan.running) throw Error('智慧树正在扫描');
       if (extraRuns.snapshot().zhihuishu?.running) throw Error('请先停止智慧树任务再读取课程');
@@ -760,11 +780,23 @@ function buildHooks() {
 
     /** 在软件内打开 U校园 站点（让用户在受控浏览器里登录） */
     openUcampus: async () => {
+      requirePlatform('ucampus');
       const page = await ensureUcampusPage(ctx());
       if (!page) throw Error('打不开 U校园 页面');
       await bringToFront(page);
       log('已在受控浏览器中打开 U校园，请在其中登录后再扫描', 'info');
       return { ok: true, url: 'https://uai.unipus.cn/portal' };
+    },
+    openWelearn:async()=>{requirePlatform('welearn');const page=await ensureWelearnPage(ctx());await bringToFront(page);return {ok:true};},
+    readWelearn:async()=>{
+      requirePlatform('welearn');
+      if(!ctx())throw Error('内置网页尚未就绪');
+      if(welearnScan.running||extraRuns.snapshot().welearn?.running)throw Error('请先停止 WeLearn 任务或等待扫描完成');
+      welearnScan.running=true;welearnScan.stop=false;
+      try{const result=await scanWelearnCourses(ctx(),{shouldStop:()=>welearnScan.stop||shuttingDown,onProgress:progress=>patchStatus({welearnScan:{running:true,...progress}})});
+        log(`【WeLearn】扫描完成：${result.courses} 门课程、${result.nodes} 个小节`,'ok');notifyUser('scan-complete',{key:'welearn-scan'});return result;
+      }catch(error){notifyUser(error.code==='STOPPED'?'scan-stopped':'scan-failed',{key:'welearn-scan',detail:error.message});throw error;}
+      finally{welearnScan.running=false;patchStatus({welearnScan:{running:false}});}
     },
 
     /**
@@ -772,6 +804,7 @@ function buildHooks() {
      * 与智慧树扫描分开跑，互不影响；扫描结果写进平台清单。
      */
     readUcampus: async () => {
+      requirePlatform('ucampus');
       if (!ctx()) throw Error('网页尚未就绪');
       if (ucampusScan.running) throw Error('U校园正在扫描');
       if (extraRuns.snapshot().ucampus?.running) throw Error('请先停止 U校园 任务再读取课程');
@@ -1120,6 +1153,7 @@ function buildHooks() {
 
     // —— 侦察（P1） ——
     startRecon: async () => {
+      requirePlatform('chaoxing');
       if (batchRunner.running) throw new Error('请先停止当前任务，再读取课程清单');
       if (!runtime.context || !getStatus().ready) throw new Error('浏览器尚未就绪');
       if (recon.running) {
@@ -1230,25 +1264,29 @@ function buildHooks() {
         return { ok: false, error: 'no-checklist' };
       }
       const request = await readJson(req, 2 * 1024 * 1024);
-      if (request.platform && !['chaoxing', 'zhihuishu', 'ucampus'].includes(request.platform)) throw Error('此平台暂未接入执行');
-      const selected = assertRunScope(request.platform ? cl.courses.filter(c => platformOf(c) === request.platform) : cl.courses, request);
+      if (request.platform && !['chaoxing', 'zhihuishu', 'ucampus','welearn'].includes(request.platform)) throw Error('此平台暂未接入执行');
+      if(request.platform)requirePlatform(request.platform);
+      const available=enabledCourses(cl.courses,loadSettings());
+      const selected = assertRunScope(request.platform ? available.filter(c => platformOf(c) === request.platform) : available, request);
       const zhsTasks = selected.filter(t => platformOf(t) === 'zhihuishu');
       const uaiTasks = selected.filter(t => platformOf(t) === 'ucampus');
+      const welearnTasks=selected.filter(t=>platformOf(t)==='welearn');
       const tasks = selected.filter(t => platformOf(t) === 'chaoxing');
-      if (tasks.length + zhsTasks.length + uaiTasks.length !== selected.length) throw Error('选择中包含尚未接入执行的平台');
+      if (tasks.length + zhsTasks.length + uaiTasks.length + welearnTasks.length !== selected.length) throw Error('选择中包含尚未接入执行的平台');
+      const startExtras=()=>[...(zhsTasks.length?[startZhihuishuTasks(zhsTasks)]:[]),...(uaiTasks.length?[startUcampusTasks(uaiTasks)]:[]),...(welearnTasks.length?[startWelearnTasks(welearnTasks)]:[])];
       const starting = [...new Set(selected.map(platformOf))];
       if (starting.some(id => startingPlatforms.has(id))) throw Error('此平台正在启动，请稍候');
       if (zhsTasks.length && extraRuns.snapshot().zhihuishu?.running) throw Error('智慧树已在运行，请使用独立停止按钮');
       if (zhsTasks.length && zhsScan.running) throw Error('请等待智慧树扫描完成');
       if (uaiTasks.length && extraRuns.snapshot().ucampus?.running) throw Error('U校园已在运行，请使用独立停止按钮');
       if (uaiTasks.length && ucampusScan.running) throw Error('请等待 U校园 扫描完成');
+      if(welearnTasks.length&&(extraRuns.snapshot().welearn?.running||welearnScan.running))throw Error('请先停止 WeLearn 任务或等待扫描完成');
       if (tasks.length && batchRunner.running) throw Error('学习通已在运行，请使用独立停止按钮');
       starting.forEach(id => startingPlatforms.add(id));
       try {
       if (!tasks.length) {
-        if (uaiTasks.length) return startUcampusTasks(uaiTasks);
-        if (!zhsTasks.length) throw Error('没有可执行任务');
-        return startZhihuishuTasks(zhsTasks);
+        const runs=startExtras();if(!runs.length)throw Error('没有可执行任务');
+        return {started:runs.some(r=>r.started),count:runs.reduce((n,r)=>n+(r.count||0),0),platforms:runs};
       }
 
       /*
@@ -1268,6 +1306,7 @@ function buildHooks() {
       }
       const runnable = tasks.filter((t) => t.willHandle);
       if (!runnable.length) {
+        if(zhsTasks.length||uaiTasks.length||welearnTasks.length){const runs=startExtras();return {started:runs.some(r=>r.started),count:runs.reduce((n,r)=>n+(r.count||0),0),platforms:runs};}
         log('没有可执行的任务点（可能全部已完成或被排除）', 'warn');
         return { ok: false, error: 'nothing-to-run' };
       }
@@ -1302,7 +1341,7 @@ function buildHooks() {
         log(`    · ${c.name}  (${n} 个)`, 'info');
       }
       log(`类型分布 ${JSON.stringify(byType)}`, 'info');
-      if (zhsTasks.length) startZhihuishuTasks(zhsTasks);
+      startExtras();
 
       (async () => {
         try {
@@ -1355,10 +1394,9 @@ function buildHooks() {
 
     stopRun: async (req) => {
       const { platform } = req ? await readJson(req, 4096) : {};
-      if (platform && !['chaoxing', 'zhihuishu'].includes(platform)) throw Error('平台标识无效');
-      if (!platform || platform === 'zhihuishu') extraRuns.stop('zhihuishu');
-      if (!platform || platform === 'zhihuishu') zhsScan.stop = true;
-      if (platform === 'zhihuishu') return { stopping: true, platform };
+      if (platform && !['chaoxing', 'zhihuishu','ucampus','welearn'].includes(platform)) throw Error('平台标识无效');
+      for(const [id,scan]of [['zhihuishu',zhsScan],['ucampus',ucampusScan],['welearn',welearnScan]])if(!platform||platform===id){extraRuns.stop(id);scan.stop=true;}
+      if (platform && platform!=='chaoxing') return { stopping: true, platform };
       if (recon.running) {
         recon.stopRequested = true;
         log('收到停止请求，当前页面读取结束后停止；原有课程清单保留', 'warn');
@@ -1530,8 +1568,9 @@ async function gracefulShutdown(signal) {
   batchRunner.requestStop();
   extraRuns.stopAll();
   zhsScan.stop = true;
+  ucampusScan.stop=true;welearnScan.stop=true;
   const stopDeadline = Date.now() + 6000;
-  while ((batchRunner.running || extraRuns.snapshot().zhihuishu?.running) && Date.now() < stopDeadline) {
+  while ((batchRunner.running || Object.values(extraRuns.snapshot()).some(s=>s.running)) && Date.now() < stopDeadline) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   log(`收到 ${signal}，正在收摊（关闭刷课临时页，保留待人工页面）…`, 'warn');

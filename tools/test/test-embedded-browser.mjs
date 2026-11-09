@@ -107,7 +107,7 @@ try {
   assert.equal(status.browserMode, 'embedded'); assert.equal(status.edge.launched, false); assert.equal(status.login.loggedIn, false);
   assert.equal((await page.evaluate(() => window.desktopApp.webState())).tabs.some(tab => tab.url === 'about:blank'), false, '启动复用初始页，不留下多余空白标签');
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(window=>window.getOpacity()>0).length), 1);
-  await page.locator('#onboardingPanel[open]').waitFor(); await page.locator('#onboardingOpenLogin').click();
+  await page.locator('#onboardingPanel[open]').waitFor();await page.locator('input[name=onboardingPlatform][value=chaoxing]').check();await page.locator('#onboardingNext').click();await page.locator('[data-open-platform=chaoxing]').click();
   await page.locator('#embeddedBrowser').waitFor({ state: 'visible' }); await page.locator('#onboardingPanel').waitFor({ state: 'hidden' });
   let learning = await poll(() => browser.contexts().flatMap(c => c.pages()).find(p => p.url().startsWith(home)), p => !!p);
   assert.ok(learning); assert.equal(await learning.evaluate(() => typeof window.desktopApp), 'undefined');
@@ -115,7 +115,7 @@ try {
   await capture('01-login.png');
   await learning.locator('#fixtureLogin').click(); await learning.getByText('演示账号已连接。', { exact: false }).waitFor();
   await page.locator('#webReturn').click(); await page.locator('#onboardingPanel[open]').waitFor(); await page.locator('#onboardingCheckLogin').click();
-  await page.waitForFunction(() => !document.getElementById('onboardingNext').disabled); await page.locator('#onboardingNext').click();
+  await page.waitForFunction(() => !document.getElementById('onboardingNext').disabled); await page.locator('#onboardingNext').click();await page.locator('#onboardingAIWanted').check();
   const raw = browser.contexts()[0];
   const png = fs.readFileSync(await shootQuestion(learning.mainFrame(), 0, output)); const imagePath = path.join(output, 'question.png'); fs.writeFileSync(imagePath, png);
   // Electron's persistent partition has its own network session. Install the
@@ -147,7 +147,7 @@ try {
       assert.equal((await checkLogin(ai)).loggedIn, true, '隐藏登录按钮不应覆盖真实登录态');
     }
     await page.locator('#webReturn').click(); await page.locator('#onboardingPanel[open]').waitFor(); await page.locator('#onboardingCheckAI').click();
-    await page.locator('#onboardingAIStatus').filter({ hasText: '已登录' }).waitFor();
+    await page.locator('#onboardingAIStatus').filter({ hasText: '已就绪' }).waitFor();
     if (id === 'qianwen') assert.equal(await ai.evaluate(() => new Promise(resolve => { const image = new Image(); image.onload = () => resolve(true); image.onerror = () => resolve(false); image.src = 'https://workspace-zb-cdn.qianwen.com/preflight.png'; setTimeout(() => resolve(false), 5000); })), true, '合成图片路由必须可解码');
     const result = await askImage({ page: ai, imagePath, prompt: '只回答方块颜色', freshChat: false });
     if (!result.ok) console.log('AI fixture state:', await ai.evaluate(() => ({ images: [...document.images].map(i => ({ src: i.src, width: i.naturalWidth, complete: i.complete })), paste: typeof document.querySelector('[contenteditable]')?.onpaste, attachment: document.querySelector('#attachment')?.innerHTML })));

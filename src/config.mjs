@@ -170,6 +170,8 @@ export const DEFAULT_SETTINGS = {
    */
   homeworkModule: false,
   answerBank: { source: 'bank', fallback: 'ai', aboveLimit: 'ai', remind: true },
+  welearn: { waitSec: 300 },
+  platforms: {chaoxing:true,zhihuishu:true,ucampus:true,welearn:true},
   progressStyle: 'particles',
   /** 问千问时使用的提问词 */
   quizPrompt:
@@ -328,5 +330,7 @@ export function mergeSettings(overrides = {}) {
     progressStyle: saved.progressStyle === 'classic' ? 'classic' : defaults.progressStyle,
     ai: { ...defaults.ai, ...(saved.ai || {}) },
     answerBank: { ...defaults.answerBank, ...(saved.answerBank || {}) },
+    welearn: { ...defaults.welearn, ...(saved.welearn || {}) },
+    platforms: { ...defaults.platforms, ...(saved.platforms || {}) },
   };
 }

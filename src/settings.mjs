@@ -18,8 +18,9 @@ import { DEFAULT_SETTINGS } from './config.mjs';
  *   advanced: 是否折叠到"高级"里
  */
 export const SETTING_SPEC = [
+  ...['chaoxing','zhihuishu','ucampus','welearn'].map((id,i)=>({path:'platforms.'+id,label:['学习通','智慧树','U校园','WeLearn'][i],kind:'bool',help:'关闭后隐藏课程与入口，登录和进度保留。'})),
   { path: 'progressStyle', label: '进度条样式', kind: 'select', options: [['particles', '粒子流'], ['classic', '经典刻度']], help: '即时预览，保存后下次继续使用。' },
-  { path: 'answerBank.source', label: '学习通答题来源', kind: 'select', options: [['bank', 'AXE 题库优先'], ['ai', '只用现有 AI']], help: '适用于学习通章节测验和独立作业。题库未能答出时，按下方设置处理。' },
+  { path: 'answerBank.source', label: '学习通答题来源', kind: 'select', options: [['bank', 'AXE 题库优先'], ['ai', '只用现有 AI']], help: '适用于学习通视频弹题、章节测验和独立作业。题库未能答出时，按下方设置处理。' },
   { path: 'answerBank.fallback', label: '题库没有可用答案时', kind: 'select', options: [['ai', '用现有 AI 补答'], ['review', '留到待审'], ['random', '未命中不超过 20% 时随机补填']], help: '不想调用 AI 可选“留到待审”。随机仅处理明确查过但没命中的选择题和判断题。' },
   { path: 'answerBank.aboveLimit', label: '随机补填条件不满足时', kind: 'select', options: [['ai', '用现有 AI 补答'], ['review', '留到待审']], help: '包括未命中超过 20%、题面无法读取、题库故障或题数无法核对。' },
   { path: 'answerBank.remind', label: '未开通时提醒', kind: 'bool', help: '仅在准备处理学习通作业且选了题库优先时提醒。也可随时手动打开向导。' },
@@ -32,7 +33,7 @@ export const SETTING_SPEC = [
       ['manual', '人工确认（答案进待审队列，你点提交）'],
       ['auto', '自动提交（逐题回读且覆盖完整）'],
     ],
-    help: '简答与低可靠答案需要人工确认。学习通随机补填只有在主动选择该模式且满足 20% 条件时，才可随作业自动提交。',
+    help: '简答与低可靠答案需要人工确认。学习通随机补填须主动选择且满足 20% 条件。WeLearn 接口模式也遵守此开关；人工模式只准备答案记录，不自动上报学时或完成。',
   },
   { path: 'essayAutoFill', label: '简答题自动填写草稿', kind: 'bool', help: '填写后回读验证，进入待审队列；不会自动交卷。已有答案不覆盖。' },
   { path: 'discussionDrafts', label: '生成讨论草稿', kind: 'bool', help: '优先复制出现最多的相同或近似回答；没有可用重复回答时请所选 AI 简短作答。只生成待审草稿，讨论须逐条确认发布。保存后已有讨论即可勾选；旧清单尚无讨论时需重新扫描。' },
@@ -40,6 +41,7 @@ export const SETTING_SPEC = [
   { path: 'playbackSpeed', label: '优先播放速度', kind: 'select', options: [['1', '1× 正常播放'], ['1.5', '优先 1.5×'], ['2', '优先 2×']], help: '只使用课程播放器自带的倍速；不支持或设置失败时回到 1×。运行中显示实际速度。' },
   { path: 'videoCompletionMode', label: '视频完成检查', kind: 'select', options: [['full', '播到片尾后核对'], ['check90', '90% 时先核对，未完成继续播放']], help: '以学习通实际完成状态为准。90% 检查不会拖动进度；未确认就从当前位置继续播到片尾。' },
   { path: 'muted', label: '播放时静音', kind: 'bool', help: '控制软件内网页的声音输出；默认静音，保存后立即生效。' },
+  { path: 'welearn.waitSec', label: 'WeLearn 每小节等待时长', kind: 'int', min: 30, max: 900, help: '使用 Auto-WeLearn 原版解析与接口流程，无需 AI、无需播放视频；等待期间保活，结束后提交学时和答题数据。只有平台确认已完成才计入进度。仍遵守自动提交设置。', unit: '秒' },
   { path: 'maxRetries', label: '单个任务点失败重试次数', kind: 'int', min: 1, max: 10 },
   {
     path: 'batch.pauseAfterFailures',

@@ -14,12 +14,17 @@ function truth(value) {
   return null;
 }
 
+// Only a terminal answer placeholder and statement punctuation are equivalent.
+// Do not NFKC the formula content (x² must not compare equal to x2).
+export const videoJudgeStem=value=>String(value??'').replace(/\s+/gu,' ').trim().replace(/[（(]\s*[）)]\s*[。.]?$/u,'').replace(/[。.]$/u,'').trim();
+
 export function bankAnswer(reply, question) {
   if (reply.kind !== 'candidate') return reply;
   // Formula spelling is significant: NFKC would turn x² into x2. Keep the
   // exact provider-compatible representation, never use a similarity score
   // to approve a different formula or a different resource URL.
-  const compare = question.bankFormat === 'legacy-math' ? value => String(value ?? '').trim() : clean;
+  const compare = question.bankFormat === 'legacy-math' ? value => String(value ?? '').trim() :
+    question.bankFormat==='video-judge-text'&&question.qtype==='judge'?videoJudgeStem:clean;
   if (!compare(reply.stem) || compare(reply.stem) !== compare(question.bankStem ?? question.stemTextRaw)) return { kind: 'unusable' };
   if (question.qtype === 'fill') {
     const blanks = reply.answer.split('#!#').map(part => part.trim());

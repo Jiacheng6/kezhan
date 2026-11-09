@@ -28,7 +28,7 @@ import { activeTaskPlatforms, mainTaskStatus, renderTaskProgress } from './task-
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 
-import { runScopeRequest, pendingRunTasks } from './run-scope.js';
+import { runScopeRequest, pendingRunTasks,selectionReadiness } from './run-scope.js';
 import { confirmBankUse } from './bank-guide.js';
 import { selectSettingsSection } from './settings-navigation.js';
 
@@ -38,11 +38,12 @@ const state = {
   autoScroll: true,
   filter: '',
 };
-import { platformOf, platformBadge } from './platforms.js';
+import { platformOf, platformBadge,platformInfo,enabledCourses,enabledPlatformIds,platformEnabled } from './platforms.js';
+function learningCourses(){return enabledCourses(tree.data?.courses||[],state.status?.settings);}
 const workspaceListeners = new Set();
 let platformFilter = 'all';
 let checklistLoading = true;
-const workspaceSnapshot = () => ({ status: state.status, checklist: tree.data, dirty: tree.dirty, loading: checklistLoading, platformFilter });
+const workspaceSnapshot = () => ({ status: state.status, checklist: tree.data?{...tree.data,courses:learningCourses()}:null,allCourses:tree.data?.courses||[],dirty: tree.dirty, loading: checklistLoading, platformFilter });
 function emitWorkspace() {
   for (const callback of workspaceListeners) {
     try { callback(workspaceSnapshot()); } catch (error) { console.warn('首页更新失败', error); }
@@ -62,20 +63,20 @@ export const workspace = Object.freeze({
   save: saveSelection,
   refresh: refreshTreeProgress,
   selectCourse(courseId, enabled) {
-    const course = tree.data?.courses.find(c => c.courseId === courseId);
+    const course = learningCourses().find(c => c.courseId === courseId);
     if (!course || state.status?.running || state.status?.reconRunning) return;
     course.enabled = enabled; recalc(course); tree.dirty = true; renderTree();
   },
   selectTask(courseId, key, selected) {
-    const course = tree.data?.courses.find(c => c.courseId === courseId);
+    const course = learningCourses().find(c => c.courseId === courseId);
     const task = course?.tasks.find(t => t.key === key);
     if (!task || task.policyHandle === false || state.status?.running || state.status?.reconRunning) return;
     if (selected) course.enabled = true;
     task.excluded = !selected; recalc(course); tree.dirty = true; renderTree();
   },
   onlyUnfinished(courseId) {
-    if (!tree.data?.courses.some(course => course.courseId === courseId) || state.status?.running || state.status?.reconRunning) return;
-    for (const course of tree.data.courses) {
+    if (!learningCourses().some(course => course.courseId === courseId) || state.status?.running || state.status?.reconRunning) return;
+    for (const course of learningCourses()) {
       course.enabled = course.courseId === courseId;
       if (course.enabled) for (const task of course.tasks) task.excluded = completionOf(task).finished;
       recalc(course);
@@ -84,7 +85,7 @@ export const workspace = Object.freeze({
   },
   openCourse(courseId) {
     selectionDesk.focusCourse(courseId);
-    if(courseCompletion(tree.data?.courses.find(c=>c.courseId===courseId)||{}).finished)tree.completedOpen=true;
+    if(courseCompletion(learningCourses().find(c=>c.courseId===courseId)||{}).finished)tree.completedOpen=true;
     tree.expanded.add(courseId); tree.query = ''; $('#treeSearch').value = '';
     switchTab('courses'); if (tree.data) renderTree();
   },
@@ -94,7 +95,7 @@ let readinessLayoutState = '';
 compactLayout.addEventListener('change', () => { if (state.status) renderReadinessLayout(state.status); });
 
 // 原生展开菜单可用键盘操作；点击外部或 Escape 时收起。
-const menuSelector = '.connection-menu[open], .inline-menu[open], .course-info[open], .selection-tools[open], .course-actions[open], .sidebar .desktop-more[open], .sidebar .workspace-utilities[open]';
+const menuSelector = '.connection-menu[open], .inline-menu[open], .course-info[open], .course-work-menu[open], .selection-tools[open], .course-actions[open], .sidebar .desktop-more[open], .sidebar .workspace-utilities[open]';
 document.addEventListener('click', (event) => {
   for (const menu of $$(menuSelector)) if (!menu.contains(event.target)) menu.open = false;
 });
@@ -160,7 +161,9 @@ function setCheck(id, pass, text) {
 
 function renderStatus(s) {
   const reconJustFinished = state.status?.reconRunning && !s.reconRunning;
+  const platformsChanged=JSON.stringify(state.status?.settings?.platforms)!==JSON.stringify(s.settings?.platforms);
   state.status = s;
+  if(platformFilter!=='all'&&!platformEnabled(s.settings,platformFilter))platformFilter='all';
 
   // 顶栏
   const edgeOk = !!s.edge?.connected;
@@ -271,6 +274,9 @@ function renderStatus(s) {
 
   // 设置页
   renderSettings(s);
+  if(platformsChanged&&tree.data)renderTree();
+  $('#readyLogin').hidden=!platformEnabled(s.settings,'chaoxing');
+  $('#readyQianwen').hidden=!enabledPlatformIds(s.settings).some(id=>id!=='welearn');
 
   // 执行状态条
   const currentTask = mainTaskStatus(s, activePlatforms);
@@ -285,9 +291,11 @@ function renderStatus(s) {
   selectionDesk.updateStatus();
   emitWorkspace();
 }
+document.addEventListener('platform-preferences-saved',event=>renderStatus(event.detail));
 
 function renderReadinessLayout(s) {
-  const ready = !!s.edge?.connected && !!s.login?.loggedIn && !!s.qianwen?.loggedIn;
+  const ids=enabledPlatformIds(s.settings),hasCx=ids.includes('chaoxing'),hasAI=ids.some(id=>id!=='welearn');
+  const ready = !!s.edge?.connected && (!hasCx||!!s.login?.loggedIn) && (!hasAI||!!s.qianwen?.loggedIn);
   const key = `${compactLayout.matches}:${ready}`;
   if (key !== readinessLayoutState) {
     $('#readinessDetails').open = !ready;
@@ -295,7 +303,7 @@ function renderReadinessLayout(s) {
   }
   $('.overview-rail').classList.toggle('all-ready', ready);
   $('#readinessTitle').textContent = ready ? '连接已就绪' : '连接与登录';
-  $('#readinessIndex').textContent = ready ? '3 项已就绪' : '3 项连接';
+  $('#readinessIndex').textContent = `${1+Number(hasCx)+Number(hasAI)} 项${ready?'已就绪':'连接'}`;
 }
 
 /** 执行中/停止状态条 */
@@ -304,15 +312,16 @@ function renderRunBar(s) {
   const st = s.runStats;
   const running = !!s.running || !!s.reconRunning;
   const anyRunning = running || Object.values(s.platforms || {}).some(run => run.running);
-  const hasSelectedTasks = !!tree.data && willSummary(tree.data.courses).tasks > 0;
+  const hasSelectedTasks = !!tree.data && willSummary(learningCourses()).tasks > 0;
+  const readiness=selectionReadiness(s,learningCourses()||[]);
 
   /*
    * 按钮可用性必须无条件更新 —— 之前放在"状态条显示"的早退之后，
    * 结果空闲时「开始」按钮保持 HTML 里的 disabled，"停止"反而可用，正好反了。
    */
   $$('[data-action="startRun"]').forEach((runBtn) => {
-    runBtn.disabled = anyRunning || !s.ready || !s.edge?.connected || !s.login?.loggedIn || !hasSelectedTasks;
-    const count = tree.data ? pendingRunTasks(tree.data.courses).length : 0;
+    runBtn.disabled = anyRunning || !readiness.connected || !hasSelectedTasks;
+    const count = tree.data ? pendingRunTasks(learningCourses()).length : 0;
     if(!count)runBtn.disabled=true;
     runBtn.textContent = s.reconRunning ? '正在扫描课程…' : anyRunning ? '学习进行中…' : `开始学习（${count} 项）↗`;
   });
@@ -337,7 +346,7 @@ function renderRunBar(s) {
 const settingsForm = { rows: [], readonly: [], changed: [], dirty: false };
 const isAnswerStrategy = path => path.startsWith('answerBank.') || path === 'submitMode';
 const draftSettings = new Set(['essayAutoFill', 'discussionDrafts', 'homeworkModule']);
-const learningSettings = new Set(['playbackSpeed', 'videoCompletionMode', 'muted', 'docDwellSec']);
+const learningSettings = new Set(['playbackSpeed', 'videoCompletionMode', 'muted', 'docDwellSec','welearn.waitSec']);
 
 async function loadSettingsForm() {
   const box = $('#settingsForm');
@@ -364,6 +373,7 @@ function renderSettingsForm() {
 
   for (const row of settingsForm.rows) {
     const path = row.path;
+    if(path.startsWith('platforms.'))continue;
     const host = path === 'progressStyle' ? hosts.appearance : isAnswerStrategy(path) ? hosts.bank : draftSettings.has(path) ? hosts.drafts
       : path === 'ai.provider' ? hosts.ai : learningSettings.has(path) ? hosts.learning : hosts.advanced;
     host.appendChild(renderSettingRow({ ...row, value: settingsForm.pending?.[row.path] ?? row.value }));
@@ -568,7 +578,7 @@ function logLine(entry) {
   div.className = `logline ${entry.level}`;
   const t = new Date(entry.t).toLocaleTimeString('zh-CN', { hour12: false });
   div.innerHTML = `<span class="ts">${t}</span><span class="msg"></span>`;
-  div.querySelector('.msg').textContent = (entry.platform ? `【${entry.platform === 'zhihuishu' ? '智慧树' : '学习通'}】` : '') + entry.message;
+  div.querySelector('.msg').textContent = (entry.platform ? `【${platformInfo(entry.platform).name}】` : '') + entry.message;
   div.dataset.raw = entry.message.toLowerCase();
   return div;
 }
@@ -617,6 +627,7 @@ $('#clearLogs').addEventListener('click', () => {
 
 /* ---------------- 动作 ---------------- */
 async function runAction(name, btn) {
+  if(name==='managePlatforms'){openSettingsSection('platforms');return {ok:true};}
   const label = btn ? btn.textContent : name;
   let runRequest = null;
   if (name === 'startStandaloneWork' && !await confirmBankUse(state.status?.settings?.answerBank)) {
@@ -633,16 +644,16 @@ async function runAction(name, btn) {
    */
   if (name === 'startRun') {
     if (!tree.data) return {ok:false,error:'请先读取清单并选择任务'};
-    runRequest = runScopeRequest(tree.data.courses);
+    runRequest = runScopeRequest(learningCourses());
     if (!runRequest.taskKeys.length) return {ok:false,error:'请先选择至少一个任务'};
-    const pendingTasks = pendingRunTasks(tree.data.courses);
+    const pendingTasks = pendingRunTasks(learningCourses());
     if (!pendingTasks.length) return {ok:false,error:'所选任务均已完成，无需重复执行'};
     if (pendingTasks.some(task => task.type === 'work' && platformOf(task) === 'chaoxing') &&
         !await confirmBankUse(state.status?.settings?.answerBank)) return { ok: false, cancelled: true };
     try {
       const r = await saveSelection();
       if (r && r.ok) {
-        if (tree.dirty || runScopeRequest(tree.data.courses).selection !== runRequest.selection) {
+        if (tree.dirty || runScopeRequest(learningCourses()).selection !== runRequest.selection) {
           throw Error('保存期间选课范围发生变化，已取消开始，请核对任务数量后重试');
         }
         appendLog({ t: Date.now(), level: 'ok', message: `本次明确选择 ${runRequest.taskKeys.length} 项任务，已保存并核对范围` });
@@ -674,6 +685,7 @@ async function runAction(name, btn) {
     if (!body.ok) {
       appendLog({ t: Date.now(), level: 'error', message: `动作 ${name} 失败：${body.error || res.status}` });
     }
+    if(body.ok&&['readZhihuishu','readUcampus','readWelearn'].includes(name))await loadChecklist();
     return body;
   } catch (err) {
     appendLog({ t: Date.now(), level: 'error', message: `动作 ${name} 请求失败：${err.message}` });
@@ -764,7 +776,7 @@ const tree = {
   completedSectionsOpen: new Map(),
 };
 const selectionDesk = createSelectionDesk({ root: $('#selectionDesk'), snapshot: workspaceSnapshot,
-  change() { tree.dirty = true; renderTree(); }, save: saveSelection, navigate: switchTab, action: runAction,openDiscussionSettings });
+  change() { tree.dirty = true; renderTree(); }, save: saveSelection, navigate: switchTab, action: runAction,openDiscussionSettings,openPlatforms:()=>openSettingsSection('platforms') });
 
 async function openDiscussionSettings(){
   openSettingsSection('answer');await loadSettingsForm();
@@ -830,25 +842,34 @@ setInterval(() => {
 }, 5000);
 
 function renderOverviewSelection() {
-  const selection = willSummary(tree.data?.courses || []);
+  const selection = willSummary(learningCourses());
   const s = state.status || {};
   const names = selection.list.map((c) => c.name);
-  const hasCourses = (tree.data?.courses || []).some((c) => !c.empty);
+  const hasCourses = (learningCourses()).some((c) => !c.empty);
   const primary = $('#overviewStart');
-  primary.dataset.action = hasCourses ? 'startRun' : 'startRecon';
-  if (!hasCourses) primary.textContent = s.reconRunning ? '正在扫描课程…' : '扫描课程 ↗';
+  const ids=enabledPlatformIds(s.settings),scanActions={chaoxing:'startRecon',zhihuishu:'readZhihuishu',ucampus:'readUcampus',welearn:'readWelearn'};
+  primary.dataset.action = hasCourses ? 'startRun' : ids.length===1?scanActions[ids[0]]:'managePlatforms';
+  if (!hasCourses){primary.textContent=ids.length===1?`扫描${platformInfo(ids[0]).name}课程 ↗`:ids.length?'连接平台，扫描课程 →':'选择学习平台 →';primary.disabled=ids.length===1&&!s.ready;}
   $('#overviewSelectedNames').textContent = names.join(' / ');
   $('#overviewSelectedNames').title = names.join('、');
-  if (s.login?.loggedIn && !s.running && !s.reconRunning && !s.runStats?.paused) {
+  const readiness=selectionReadiness(s,learningCourses()||[]);
+  const learning=activeTaskPlatforms(s).length>0;
+  if (!learning && !s.reconRunning && !s.runStats?.paused && !readiness.needsChaoxing && hasCourses) {
+    $('#overviewHeadline').textContent=readiness.connected?'准备开始学习':'连接课程网页';
+    $('#overviewActivity').textContent=readiness.connected?'已就绪':'等待连接';
+    $('#overviewSubtitle').textContent=readiness.reason||'各平台独立登录，运行时会核对对应账号。';
+  }
+  if (readiness.connected && !learning && !s.reconRunning && !s.runStats?.paused) {
     $('#overviewSubtitle').textContent = selection.tasks
       ? `已选 ${selection.courses} 门课 · ${selection.tasks} 个任务，已完成的内容会自动跳过。`
       : hasCourses ? '课程清单已保留，可在课程树中查看待完成与已完成内容。' : '先扫描课程，再选择这次要学习的范围。';
   }
+  if(!ids.length&&!learning){$('#overviewHeadline').textContent='先选择你的学习平台';$('#overviewSubtitle').textContent='按需开启平台，再连接账号和扫描课程。';$('#overviewActivity').textContent='尚未启用平台';}
 }
 
 function renderOverviewCourses() {
   renderOverviewSelection();
-  const courses = tree.data?.courses || [];
+  const courses = learningCourses();
   const progress = completionCounts(courses.flatMap((c) => c.tasks || []));
   $('#overviewTaskCount').textContent = progress.total;
   $('#overviewDoneCount').textContent = progress.done;
@@ -917,8 +938,8 @@ function renderTree() {
   renderOverviewCourses();
 
   const s = tree.data.summary;
-  const progress = completionCounts(tree.data.courses.flatMap((c) => c.tasks || []));
-  const completedCount=tree.data.courses.filter(course=>courseCompletion(course).finished).length;
+  const progress = completionCounts(learningCourses().flatMap((c) => c.tasks || []));
+  const completedCount=learningCourses().filter(course=>courseCompletion(course).finished).length;
   summary.innerHTML =
     `共 <b>${s.totalCourses}</b> 门课 · 已完成 <b>${completedCount}</b> 门 · 待完成 <b>${s.totalCourses-completedCount}</b> 门 · 已读取任务点 <b>${s.totalTasks}</b> 个 · ` +
     `已完成 <b>${progress.done}</b> · 未完成 <b>${progress.remaining}</b>`;
@@ -926,7 +947,7 @@ function renderTree() {
   const q = tree.query || '';
   preserveTreeFocus(body, () => {
   const grouped={pending:[],completed:[]};
-  for (const c of tree.data.courses) {
+  for (const c of learningCourses()) {
     if (platformFilter !== 'all' && platformOf(c) !== platformFilter) continue;
     if (!courseVisible(c, q)) continue;
     const signature = JSON.stringify([q, c, tree.expanded.has(c.courseId),tree.completedSectionsOpen.get(c.courseId)]);
@@ -938,7 +959,7 @@ function renderTree() {
     grouped[courseCompletion(c).finished?'completed':'pending'].push(cached.node);
   }
   const nodes=[];
-  for(const [id,label,total]of [['pending','待完成',tree.data.courses.length-completedCount],['completed','已完成',completedCount]]){
+  for(const [id,label,total]of [['pending','待完成',learningCourses().length-completedCount],['completed','已完成',completedCount]]){
     const group=completionGroup(id,label,total,grouped[id].length,q);
     syncChildren(group.content,grouped[id].length?grouped[id]:[el('p','placeholder',q?'本组没有匹配的课程。':id==='completed'?'暂无已完成课程。':'暂无待完成课程。')]);
     nodes.push(group.node);
@@ -987,7 +1008,7 @@ function renderWillSummary() {
   if (state.status) renderRunBar(state.status);
   const box = $('#treeWillSummary');
   if (!box || !tree.data) return;
-  const s = willSummary(tree.data.courses);
+  const s = willSummary(learningCourses());
   const by = s.byType;
   const parts = [];
   if (by.video) parts.push(`视频 ${by.video}`);
@@ -1023,7 +1044,7 @@ function renderPreview() {
     box.innerHTML = '';
     return;
   }
-  const list = willList(tree.data.courses);
+  const list = willList(learningCourses());
   const rows = list
     .slice(0, 300)
     .map(
@@ -1090,7 +1111,7 @@ function bindTreeTools() {
       const plainOpts = { scope, query: q };
 
       if (act === 'select' || act === 'deselect' || act === 'invert') {
-        const r = batchSelect(tree.data.courses, act, plainOpts);
+        const r = batchSelect(learningCourses(), act, plainOpts);
         afterChange(
           act === 'select'
             ? `已勾选 ${r.changed} 个任务点`
@@ -1099,11 +1120,11 @@ function bindTreeTools() {
               : `反选完成，变动 ${r.changed} 个任务点`,
         );
       } else if (act === 'unfinished') {
-        const r = batchSelect(tree.data.courses, 'select', { ...plainOpts, finishedOnly: true });
+        const r = batchSelect(learningCourses(), 'select', { ...plainOpts, finishedOnly: true });
         afterChange(`已勾选 ${r.changed} 个「未完成」任务点（已完成的保持原样）`);
       } else if (act === 'scopeSelect' || act === 'scopeDeselect') {
         const action = act === 'scopeSelect' ? 'select' : 'deselect';
-        const r = batchSelect(tree.data.courses, action, plainOpts);
+        const r = batchSelect(learningCourses(), action, plainOpts);
         afterChange(`按类型范围${action === 'select' ? '勾选' : '取消'}了 ${r.changed} 个任务点`);
       } else if (act === 'rangeSelect' || act === 'rangeDeselect') {
         if (!from && !to) {
@@ -1111,7 +1132,7 @@ function bindTreeTools() {
           return;
         }
         const action = act === 'rangeSelect' ? 'select' : 'deselect';
-        const r = batchSelect(tree.data.courses, action, rangeOpts);
+        const r = batchSelect(learningCourses(), action, rangeOpts);
         afterChange(`节号 ${from || '*'} ~ ${to || '*'}：${action === 'select' ? '勾选' : '取消'} ${r.changed} 个`);
       } else if (act === 'clearRange') {
         const f = $('#secFrom');
@@ -1125,7 +1146,7 @@ function bindTreeTools() {
         renderPreview();
       } else if (act === 'expandAll' || act === 'collapseAll') {
         tree.completedOpen=act==='expandAll';
-        for(const course of tree.data.courses)tree.completedSectionsOpen.set(course.courseId,act==='expandAll');
+        for(const course of learningCourses())tree.completedSectionsOpen.set(course.courseId,act==='expandAll');
         const all = $$('#treeBody .treecourse');
         for (const w of all) {
           const open = act === 'expandAll';
@@ -1202,7 +1223,7 @@ function renderCourse(c, q = '') {
     only.addEventListener('click', async (e) => {
       e.stopPropagation();
       menu.open = false;
-      for (const x of tree.data.courses) {
+      for (const x of learningCourses()) {
         if (x.empty) continue;
         x.enabled = x.courseId === c.courseId;
         recalc(x);

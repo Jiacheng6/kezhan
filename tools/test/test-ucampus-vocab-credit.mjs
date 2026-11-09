@@ -1,0 +1,22 @@
+import fs from 'node:fs';import path from 'node:path';import assert from 'node:assert/strict';import {chromium} from 'playwright-core';
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/vocab-credit-'));
+const {runUcampusVocab}=await import('../../src/platforms/ucampus/vocab.mjs');
+const {openUcampusRequiredItem}=await import('../../src/platforms/ucampus/quiz.mjs');
+const browser=await chromium.launch({channel:'msedge',headless:true});
+try{const page=await browser.newPage({viewport:{width:1440,height:900}});
+await page.setContent('<p>2/2</p>');let left=false;const order=[];
+const result=await runUcampusVocab({page,apply:true,verifyPollMs:1,verifyAttempts:1,onBeforeVerify:async()=>{left=true;order.push('leave');},readProgress:async()=>{order.push('read');return {finishPointNum:left?2:1};}});
+assert.equal(result.credited,true);assert.equal(result.ok,true);assert.deepEqual(order,['read','leave','read']);
+const pending=await runUcampusVocab({page,apply:true,verifyPollMs:1,verifyAttempts:1,readProgress:async()=>({finishPointNum:1})});assert.equal(pending.ok,false);assert.equal(pending.phase,'needs-human');
+await page.setContent('<p>1/2</p>');left=false;const partial=await runUcampusVocab({page,apply:true,maxSteps:0,verifyPollMs:1,verifyAttempts:1,onBeforeVerify:async()=>{left=true;},readProgress:async()=>({finishPointNum:1})});assert.equal(left,false);assert.equal(partial.ok,false);
+await page.setContent(`<p>2/2</p><div class="swiper-vocabulary"><div id="word" class="swiper-slide-active">word</div><div id="end"><div class="visual-card">结束页</div></div></div><div class="action next" style="width:80px;height:30px" onclick="document.getElementById('word').className='';document.getElementById('end').className='swiper-slide-active';document.body.dataset.ended='yes'">下一个</div>`);
+const ending=await runUcampusVocab({page,apply:true,dwellMs:200,verifyPollMs:1,verifyAttempts:1,readProgress:async()=>({finishPointNum:await page.evaluate(()=>document.body.dataset.ended==='yes'?2:1)})});assert.equal(ending.credited,true,'必须先通过原生下一张进入结束页再确认平台完成');
+const context=await browser.newContext({viewport:{width:1440,height:900}});
+await page.setContent(`<p id="count">1/2</p><div class="action next" style="width:80px;height:30px" onclick="document.body.dataset.clicks=String(Number(document.body.dataset.clicks||0)+1);if(Number(document.body.dataset.clicks)>1)document.getElementById('count').innerText='2/2'">下一个</div>`);
+const retried=await runUcampusVocab({page,apply:true,dwellMs:200,verifyPollMs:1,verifyAttempts:1,readProgress:async()=>({finishPointNum:await page.evaluate(()=>document.getElementById('count').innerText==='2/2'?2:1)})});assert.equal(retried.credited,true);assert.equal(retried.steps,2,'首次点击未生效时仅重试当前卡片');
+await context.route('**/*',route=>route.fulfill({contentType:'text/html',body:route.request().url().includes('resource-detail')?`<button onclick="document.getElementById('one').hidden=true;document.getElementById('three').hidden=false">Unit 3</button><div id="one"><div class="taskNameContainer" onclick="location.href='https://ucontent.unipus.cn/pc.html#/wrong-unit'"><span class="taskRequireIcon"></span>Vocabulary</div></div><div id="three" hidden><div class="taskNameContainer" onclick="location.href='https://ucontent.unipus.cn/pc.html#/unit-three'"><span class="taskRequireIcon"></span>Vocabulary</div></div>`:'<p>课件</p>'}));
+const wrong=await context.newPage();await wrong.goto('https://uai.unipus.cn/app/cmgt/resource-detail/other-resource');
+const opened=await openUcampusRequiredItem(context,'Vocabulary',{unit:3,courseResourceId:'demo-resource'});
+assert.equal(opened.ok,true);assert.ok(opened.page.url().endsWith('#/unit-three'),'同页跳转且只选可见目标单元');assert.ok(wrong.url().endsWith('/other-resource'),'不可复用其他教程');await context.close();
+console.log('✓ 单词卡先离开触发保存再回查；无平台进度不记完成；未学完不离开；原生入口同页跳转与隐藏单元隔离');
+}finally{await browser.close();}

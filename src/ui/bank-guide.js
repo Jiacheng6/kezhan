@@ -1,6 +1,7 @@
 const desktop = window.desktopApp;
 const $ = id => document.getElementById(id);
 let openGuide;
+export const openBankSetup=()=>openGuide?openGuide({forRun:false}):Promise.resolve(false);
 
 export async function confirmBankUse(policy) {
   if (!openGuide || policy?.source !== 'bank' || policy.remind === false) return true;
@@ -16,7 +17,7 @@ if (desktop?.bankQuota && desktop?.openBankPortal) {
   dialog.innerHTML = `
     <p class="eyebrow">AXE 题库 · 学习通</p>
     <h2 id="bankGuideTitle" tabindex="-1">开通题库</h2>
-    <p id="bankGuideIntro">题库可加快学习通章节测验和独立作业的答题。你可以按需开通。</p>
+    <p id="bankGuideIntro">题库可加快学习通视频弹题、章节测验和独立作业的答题。你可以按需开通。</p>
     <ol class="bank-guide-steps">
       <li><div><b>用微信登录题库官网</b><p>课栈会打开独立的 Edge 窗口供你扫码。新用户可领取 100 次免费调用额度。</p></div><button type="button" id="bankGuidePortal">用 Edge 微信扫码 ↗</button></li>
       <li><div><b>课栈自动导入令牌</b><p>登录后会自动保存令牌并返回这里，可查看剩余额度。</p></div>

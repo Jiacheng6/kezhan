@@ -22,11 +22,14 @@ const PLAYER_HOST = 'https://ucontent.unipus.cn';
 const treeCache = new Map();
 
 /** 打开（或复用）某教程的播放器页面 */
-async function ensurePlayer(context, { instanceId, continueUrl }) {
-  const pages = context.pages().filter((p) => !p.isClosed() && p.url().startsWith(PLAYER_HOST));
+export async function ensurePlayer(context, { instanceId, continueUrl }) {
+  const isPlayer = value => {try{return /^https:$/.test(new URL(value).protocol)&&['ucontent.unipus.cn','ucontent.unipus.com'].includes(new URL(value).hostname);}catch{return false;}};
+  if(continueUrl&&!isPlayer(continueUrl))throw Error('U校园续学地址不属于受支持的播放器，未打开');
+  const pages = context.pages().filter((p) => !p.isClosed() && isPlayer(p.url()));
   const hit = pages.find((p) => instanceId && p.url().includes(instanceId));
   if (hit) return hit;
-  const page = pages[0] || (await context.newPage());
+  if(!continueUrl&&!instanceId)throw Error('U校园任务缺少续学入口，请重新扫描课程');
+  const page = await context.newPage();
   if (continueUrl) {
     await page.goto(continueUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
   } else if (instanceId) {
@@ -189,7 +192,7 @@ export async function runUcampusStudyNode({ task, context, shouldStop = () => fa
 
   const page = await ensurePlayer(context(), {
     instanceId: String(task.courseInstanceId || ''),
-    continueUrl,
+    continueUrl: continueUrl || task.studyUrl || '',
   });
   await ensureDirectoryOpen(page);
 
@@ -221,7 +224,7 @@ export async function runUcampusStudyNode({ task, context, shouldStop = () => fa
     delta === 'advanced' ? 'ok' : 'warn',
   );
   const outcome = classifyNodeOutcome({ delta, stopped: shouldStop() });
-  return { ...outcome, delta, before: before.finishPointNum, after: after?.finishPointNum, loaded: hits.length > 0 };
+  return { ...outcome, delta, before: before.finishPointNum, after: after?.finishPointNum, loaded: index >= 0 };
 }
 
 export function resetUcampusCaches() {
