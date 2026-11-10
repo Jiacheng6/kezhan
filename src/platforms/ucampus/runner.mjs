@@ -17,6 +17,7 @@ import { throwIfStopped, interruptibleSleep } from '../../control.mjs';
 import { loadSettings } from '../../config.mjs';
 import { classifyNodeOutcome, progressDelta } from './policy.mjs';
 import { readTutorialProgress } from './scan.mjs';
+import {ucampusContext} from './context.mjs';
 
 const PLAYER_HOST = 'https://ucontent.unipus.cn';
 const treeCache = new Map();
@@ -219,6 +220,8 @@ export async function runUcampusStudyNode({ task, context, shouldStop = () => fa
   const nodeId = String(task.platformTaskKey || '');
   const courseResourceId = String(task.courseResourceId || '');
   if (!nodeId || !courseResourceId) return { ok: false, phase: 'failed', error: '任务缺少节点或教程标识' };
+  throwIfStopped(shouldStop);
+  context=ucampusContext(context);
 
   const before = await readTutorialProgress({ context, courseResourceId, shouldStop });
   if (!before) return { ok: false, phase: 'failed', error: '读不到该教程的进度，可能登录已失效' };
@@ -226,7 +229,7 @@ export async function runUcampusStudyNode({ task, context, shouldStop = () => fa
     return { ok: true, phase: 'already-finished' };
   }
 
-  const page = await ensurePlayer(context(), {
+  const page = await ensurePlayer(context, {
     instanceId: String(task.courseInstanceId || ''),
     continueUrl: continueUrl || task.studyUrl || '',
     courseResourceId,

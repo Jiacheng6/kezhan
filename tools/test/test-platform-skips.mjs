@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';import {platformSkipReason} from '../../src/platforms/task-skip.mjs';
+import {PlatformRuns} from '../../src/platforms/runs.mjs';import {canRestartTask} from '../../src/task-recovery.mjs';
+import {runWelearnSelectedTask} from '../../src/platforms/welearn/dispatch.mjs';
+assert.ok(platformSkipReason({platform:'ucampus',tutorialName:'新四级强化辅导 听力（新版）'}));
+assert.ok(platformSkipReason({platform:'ucampus',courseInstanceId:'course-v2:cet4_listening_ucloud'}));
+assert.equal(platformSkipReason({platform:'ucampus',tutorialName:'读写教程',type:'video-quiz'}),null);
+assert.equal(platformSkipReason({platform:'welearn',name:'Listening Skill',type:'study'}),null,'WeLearn不一概跳过听力内容');
+assert.ok(platformSkipReason({platform:'welearn',type:'welearn-manual',blockedReason:'需本人录音或口语作答'}));
+const calls=[];const runs=new PlatformRuns({execute:async({task})=>{calls.push(task.key);return task.key==='oral-detected'?{ok:false,phase:'skipped',skipReason:'需本人作答'}:{ok:true};},restartDelayMs:0});
+runs.start('welearn',[{key:'known-oral',platform:'welearn',type:'welearn-manual'},{key:'oral-detected',platform:'welearn',type:'study'},{key:'normal',platform:'welearn',type:'study'}]);
+const result=await runs.wait('welearn');assert.deepEqual(calls,['oral-detected','normal']);assert.equal(result.done,1);assert.equal(result.skipped,2);assert.equal(result.error,null);assert.equal(result.phase,'completed');
+assert.equal(canRestartTask({}, {phase:'skipped'}),false,'跳过不重开，不阻断下一项');
+const skip=await runWelearnSelectedTask({task:{platform:'welearn',type:'welearn-manual'}},{native:async()=>{throw Error('not called');},protocol:async()=>{throw Error('not called');}});
+assert.equal(skip.phase,'skipped');assert.equal(skip.ok,false,'跳过不能报完成');
+console.log('✓ U校园听力按教程跳过；WeLearn本人任务跳过且队列继续，不记完成、不重试');

@@ -7,7 +7,7 @@ export function canRestartTask(task,outcome,{thrown=false}={}){
   if(phase==='stopped'||code==='STOPPED'||outcome.stopped)return false;
   if(outcome.submitted||outcome.submissionPending||outcome.pendingConfirmation||outcome.submissionAttempted)return false;
   if(/submit|publish/.test(phase))return false;
-  if(['awaiting-review','submitted','done','already-finished','no-tracking'].includes(phase))return false;
+  if(['awaiting-review','submitted','done','already-finished','no-tracking','skipped'].includes(phase))return false;
   if(outcome.ok&&!outcome.needsHuman&&!phase.startsWith('blocked-'))return false;
   if(outcome.retryable===false||['USER_CONSENT_REQUIRED','TASK_IDENTITY_CHANGED'].includes(code)||hardAI.has(outcome.aiErrorCode||code))return false;
   // The user explicitly requested ONE native task re-entry for Zhihuishu

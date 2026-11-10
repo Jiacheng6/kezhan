@@ -7,7 +7,6 @@ import {registerKeptPage,getKeptPage,dropKeptPage} from './quizrun.mjs';
 import {cardsUrl} from './section.mjs';
 import {selectedProvider,ensureProviderPage} from '../ai/providers.mjs';
 import {askImage} from '../ai/ai.mjs';
-import {embedded,captureEmbeddedPage} from '../browser/embedded.mjs';
 import {captureArea} from './shot.mjs';
 import {readDiscussionPage,readDiscussionComments,discussionIdentity,validateDiscussionIdentity,fillDiscussionEditor,publishDiscussionPage} from './discussion-page.mjs';
 import {repeatedDiscussionAnswer,discussionText,MAX_DISCUSSION_ANSWER} from './discussion-consensus.mjs';
@@ -38,14 +37,15 @@ async function openTopic(ctx,task,personId,shouldStop){
   return page;
  }catch(error){await page.close().catch(()=>{});releasePage(page);throw error;}
 }
-async function topicImage(page,key){
+export async function topicImage(page,key){
  const element=page.locator('#bbsTopicDetail .replyContent').first();
- await element.scrollIntoViewIfNeeded();
+ await element.scrollIntoViewIfNeeded({timeout:3000}).catch(()=>{});
  const folder=path.join(PATHS.answers,`discussion-${Date.now()}`);fs.mkdirSync(folder,{recursive:true});
  const file=path.join(folder,'topic.png');
- if(embedded){const box=await element.boundingBox(),viewport=await page.evaluate(()=>({width:innerWidth,height:innerHeight}));if(!box)throw new Error('讨论题面不可见');const rect={x:Math.max(0,Math.floor(box.x)),y:Math.max(0,Math.floor(box.y)),width:Math.min(Math.ceil(box.width),viewport.width-Math.max(0,Math.floor(box.x))),height:Math.min(Math.ceil(box.height),viewport.height-Math.max(0,Math.floor(box.y)))};if(rect.width<20||rect.height<20)throw new Error('讨论题面无法成像');const image=await captureEmbeddedPage(page,rect);fs.writeFileSync(file,Buffer.from(image.data,'base64'));}
- else {const shot=await captureArea(page,element,file);return shot.file;}
- return file;
+ // Short one-line topics can be less than 20px high. Share the bounded
+ // native/CDP/page fallback with other question screenshots instead of failing
+ // before any screenshot is attempted. The AI also receives the exact text.
+ return (await captureArea(page,element,file)).file;
 }
 function finishDiscussion(key,taskFinished,note){
  clearReviewByTask(key,'submitted');setTaskStatus(key,{status:taskFinished?'done':'manual',progress:taskFinished?1:null,note,submittedAt:new Date().toISOString()});dropKeptPage(key);

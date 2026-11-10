@@ -36,11 +36,12 @@ import {askImage, readAnswer, checkLogin} from './ai/ai.mjs';
 import {parseAnswer} from './ai/parse.mjs';
 import { PlatformRuns, planPlatformRun } from './platforms/runs.mjs';
 import { scanZhihuishuCourses } from './platforms/zhihuishu/scan.mjs';
-import { scanUcampusCourses, ensureUcampusPage } from './platforms/ucampus/scan.mjs';
+import { scanUcampusCourses, ensureUcampusPage, readRequiredNodeStatus } from './platforms/ucampus/scan.mjs';
 import { readStudentCourses } from './platforms/ucampus/api.mjs';
 import {ensureWelearnPage,scanWelearnCourses} from './platforms/welearn/scan.mjs';
 import {runWelearnSelectedTask} from './platforms/welearn/dispatch.mjs';
 import { runUcampusStudyNode, ensurePlayer as ensureUcampusPlayer } from './platforms/ucampus/runner.mjs';
+import {ucampusContext} from './platforms/ucampus/context.mjs';
 import {confirmedUcampusOutcome} from './platforms/ucampus/policy.mjs';
 import { runUcampusQuizTab, openUnitTest, openQuizTab, openUcampusRequiredItem, openVocabularyLearning, clickByText, dismissUcampusDialog, requireUcampusReady } from './platforms/ucampus/quiz.mjs';
 import { runUcampusTextQuiz } from './platforms/ucampus/textquiz.mjs';
@@ -70,7 +71,18 @@ async function runUcampusTask(args) {
   const task=args.task||{};
   setTaskStatus(task.key,{status:'running',platform:'ucampus'});
   try{
-    const result=confirmedUcampusOutcome(await executeUcampusTask(args));
+    const readNode=()=>readRequiredNodeStatus({context:args.context,task,shouldStop:args.shouldStop}).catch(error=>{if(error.code==='STOPPED')throw error;return null;});
+    const before=await readNode();
+    if(args.shouldStop?.())throw Object.assign(new Error('被用户中止'),{code:'STOPPED'});
+    let result;
+    if(before?.finished){log('【U校园】平台该必修节点已完成，跳过，不重复作答','ok');result={ok:true,phase:'already-finished',nodeEvidence:before};}
+    else{
+      result=confirmedUcampusOutcome(await executeUcampusTask(args));
+      if(!result?.ok&&result?.phase!=='stopped'){
+        const after=await readNode();
+        if(after?.finished)result={...result,ok:true,phase:'already-finished',error:null,nodeEvidence:after};
+      }
+    }
     if(result?.nativeReceipt?.accepted)mutateState(s=>{s.ucampusSubmissions||={};s.ucampusSubmissions[task.key]={at:new Date().toISOString(),accepted:true,workUrl:result.workUrl,questions:result.nativeReceipt.answerCount,credited:result.credited===true};});
     setTaskStatus(task.key,{status:result?.ok?'done':result?.phase==='stopped'?'pending':'manual',platform:'ucampus',
       progress:result?.ok?1:undefined,note:result?.ok?'U校园平台已确认完成':result?.error||'任务已停止，保留进度'});
@@ -87,13 +99,14 @@ async function executeUcampusTask(args) {
 
   // 学习节点 / 自评：沿用原来的执行器（真实鼠标勾选）
   if (kind === 'review' || kind === 'study') return runUcampusStudyNode(args);
+  const browserContext=ucampusContext(args.context);
 
   let page;
   if (kind === 'vocab-cards' || kind === 'video-quiz') {
-    const entered = await openUcampusRequiredItem(ctx(), kind === 'vocab-cards' ? 'Vocabulary' : 'Quiz', {unit,courseResourceId:String(task.courseResourceId||'')});
+    const entered = await openUcampusRequiredItem(browserContext, kind === 'vocab-cards' ? 'Vocabulary' : 'Quiz', {unit,courseResourceId:String(task.courseResourceId||'')});
     if(!entered.ok)return {ok:false,phase:'needs-human',error:entered.note};
     page=entered.page;
-  } else page = await ensureUcampusPlayer(ctx(), {instanceId:String(task.courseInstanceId||''),continueUrl:task.studyUrl||'',courseResourceId:String(task.courseResourceId||''),shouldStop:stop});
+  } else page = await ensureUcampusPlayer(browserContext, {instanceId:String(task.courseInstanceId||''),continueUrl:task.studyUrl||'',courseResourceId:String(task.courseResourceId||''),shouldStop:stop});
   if (!/^https:\/\/ucontent\.unipus\.(cn|com)\//.test(page.url())) return { ok:false,phase:'needs-human',error:'U校园播放器未成功打开，请核对课程登录与续学入口' };
   await requireUcampusReady(page);
 
@@ -104,7 +117,7 @@ async function executeUcampusTask(args) {
 
   // 其余类型都要 AI；统一构造 ask（豆包/千问走网页，api 走接口）
   const provider = selectedProvider(loadSettings());
-  const aiPage = provider?.id === 'api' ? null : await ensureProviderPage(ctx(), provider);
+  const aiPage = provider?.id === 'api' ? null : await ensureProviderPage(browserContext, provider);
   if (provider?.id !== 'api') {
     const login = await checkLogin(aiPage).catch(() => ({ loggedIn: false }));
     if (!login?.loggedIn) return { ok: false, phase: 'blocked-ai', error: `${provider.label}未登录，先登录再跑测验` };
@@ -122,7 +135,7 @@ async function executeUcampusTask(args) {
     return { ok: true, answer: r.answer, letters: parsed.letters || [], confidence: parsed.confidence || 'low' };
   };
   async function readProgress() {
-    const uai = (await ensureUcampusPage(ctx(), { create: false })) || (await ensureUcampusPage(ctx()));
+    const uai = await ensureUcampusPage(browserContext);
     const list = await readStudentCourses(uai, { shouldStop: stop });
     for (const course of list) {
       for (const tutorial of course.courseResourceList || []) {
@@ -163,7 +176,7 @@ function startUcampusTasks(tasks) {
   if (plan.skipped) log(`【U校园】保留并跳过 ${plan.skipped} 个已完成节点，本次待完成 ${plan.tasks.length} 个`, 'info');
   if (!plan.tasks.length) return { started: false, platform: 'ucampus', count: 0, skipped: plan.skipped, message: '所选节点均已完成，无需重复执行' };
   const result = extraRuns.start('ucampus', plan.tasks, ctx());
-  log(`【U校园】开始 ${plan.tasks.length} 个必修节点；以平台 finishPointNum 增长为验收标准`, 'info');
+  log(`【U校园】开始 ${plan.tasks.length} 个必修节点；逐项核对平台完成标记和教程进度`, 'info');
   void extraRuns.wait('ucampus').then((session) => {
     if (session.error) {
       const attention = session.phase === 'needs-human';

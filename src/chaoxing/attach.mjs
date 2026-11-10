@@ -6,6 +6,7 @@
  * 这些函数是纯粹"读页面"的，没有任何执行器依赖，放这里两边都能干净地用。
  */
 import { waitForAttachments } from './section.mjs';
+import {findTaskVideoFrame} from './video-frame.mjs';
 
 /**
  * 预检查：这个视频到底有没有"任务点追踪"？
@@ -33,7 +34,8 @@ import { waitForAttachments } from './section.mjs';
  *        传视频 iframe 也行 —— 会自动向上找父 frame
  * @returns {{hasTracking:boolean|null, aria, jobid, alreadyFinished, via, reason?}}
  */
-export async function checkTaskTracking(frame, taskName) {
+export async function checkTaskTracking(frame, taskOrName) {
+  const task=typeof taskOrName==='string'?{name:taskOrName}:taskOrName||{};
   // 若传进来的是视频子帧，往上找到真正含附件列表的父 frame
   let host = frame;
   for (let i = 0; i < 3 && host; i += 1) {
@@ -44,12 +46,13 @@ export async function checkTaskTracking(frame, taskName) {
   if (!host) return { hasTracking: null, reason: '找不到含附件列表的 frame', via: 'no-host' };
 
   return host
-    .evaluate((name) => {
+    .evaluate((task) => {
       const list = Array.from(document.querySelectorAll('.ans-attach-ct'));
 
       const metaOf = (ct) => {
         try {
-          return JSON.parse(ct.querySelector('iframe')?.getAttribute('data') || '{}');
+          const data=JSON.parse(ct.querySelector('iframe')?.getAttribute('data') || '{}');
+          return {...data,...data.property};
         } catch {
           return {};
         }
@@ -73,17 +76,21 @@ export async function checkTaskTracking(frame, taskName) {
         return { hasTracking: null, reason: '任务点列表尚未渲染', via: 'pending' };
       }
 
-      // 按文件名精确匹配（同一小节可能有多个任务点）
-      if (name) {
-        for (const ct of list) {
-          if (metaOf(ct).name === name) {
-            return { ...judge(ct), via: 'name-match', sectionAttachCount: list.length };
-          }
-        }
+      // Prefer attachment identity, then an unambiguous exact name. Never
+      // borrow a same-name neighbour's completion marker.
+      const matches=list.filter(ct=>{
+        const data=metaOf(ct);
+        if(task.objectId)return String(data.objectid||'')===String(task.objectId);
+        if(task.jobid)return String(data.jobid||'')===String(task.jobid);
+        return !!task.name&&data.name===task.name;
+      });
+      if(matches.length===1){
+        return {...judge(matches[0]),via:task.objectId||task.jobid?'id-match':'name-match',sectionAttachCount:list.length};
       }
+      if(matches.length>1)return {hasTracking:null,via:'ambiguous',reason:'同名附件无法唯一定位，未采用其他任务的完成标记'};
 
       // 只有一个附件时直接判定
-      if (list.length === 1) {
+      if (list.length === 1&&!task.name&&!task.objectId&&!task.jobid) {
         return { ...judge(list[0]), via: 'single-attach', sectionAttachCount: 1 };
       }
 
@@ -98,7 +105,7 @@ export async function checkTaskTracking(frame, taskName) {
         via: 'no-match',
         sectionAttachCount: list.length,
       };
-    }, taskName)
+    }, task)
     .catch((e) => ({ hasTracking: null, reason: `预检查异常: ${e.message}`, via: 'error' }));
 }
 
@@ -152,7 +159,25 @@ export function videoPassedVerdict({ found, isPassed, playTime, attDuration } = 
  * 读当前页面上视频模块的记录（在 cards 父帧或视频子帧里找 `mArg`）。
  * @returns {Promise<{found:boolean, isPassed?:boolean, playTime?:number, attDuration?:number, headOffset?:number, name?:string}>}
  */
-export async function readVideoModuleRecord(page) {
+export async function readVideoModuleRecord(page,taskOrName) {
+  if(taskOrName){
+    const task=typeof taskOrName==='string'?{name:taskOrName}:taskOrName;
+    const selected=await findTaskVideoFrame(page,task);
+    if(!selected)return {found:false};
+    for(let host=selected;host;host=host.parentFrame()){
+      const record=await host.evaluate(({task,ownFrame})=>{
+        const records=(window.mArg||window.__mArg)?.attachments||[];
+        const matching=records.filter(a=>task.objectId
+          ?String(a.objectId||a.objectid||a.property?.objectid||'')===String(task.objectId)
+          :(a.name||a.property?.name)===task.name);
+        const a=matching.length===1?matching[0]:ownFrame&&records.length===1?records[0]:null;
+        if(!a)return {found:false};
+        return {found:true,isPassed:a.isPassed,playTime:a.playTime,attDuration:a.attDuration,headOffset:a.headOffset,name:a.name||a.property?.name||task.name};
+      },{task,ownFrame:host===selected}).catch(()=>({found:false}));
+      if(record.found)return record;
+    }
+    return {found:false};
+  }
   const readFn = () => {
     const m = window.mArg || window.__mArg || null;
     if (!m) return { found: false };
@@ -192,11 +217,11 @@ export async function readVideoModuleRecord(page) {
  *
  * @returns {Promise<{finished:boolean|null, via:string, aria?:string, attachCount?:number, error?:string}>}
  */
-export async function readPointStatusFromPage(page, taskName, { isVideo = false } = {}) {
+export async function readPointStatusFromPage(page, taskOrName, { isVideo = false } = {}) {
   await waitForAttachments(page);
   let last = null;
   for (let i = 0; i < 6; i += 1) {
-    last = await checkTaskTracking(page, taskName);
+    last = await checkTaskTracking(page, taskOrName);
     if (last.hasTracking !== null) break;
     await page.waitForTimeout(500);
   }
@@ -211,7 +236,7 @@ export async function readPointStatusFromPage(page, taskName, { isVideo = false 
    */
   let videoNote = null;
   if (isVideo) {
-    const rec = await readVideoModuleRecord(page).catch(() => ({ found: false }));
+    const rec = await readVideoModuleRecord(page,taskOrName).catch(() => ({ found: false }));
     const v = videoPassedVerdict(rec);
     videoNote = v.note;
     if (v.finished === true) {

@@ -46,6 +46,7 @@ import { throwIfStopped } from '../control.mjs';
 import { shootQuestion } from './quiz.mjs';
 import { AI_BLOCK_CODES } from './quiz-outcome.mjs';
 import {bankConfigured,prepareBankAnswers} from './answer-bank.mjs';
+import {selectedVideoFrame} from './video-frame.mjs';
 
 export function prepareVideoQuizQuestion(raw){
   const q={...raw,qtype:normQtype(raw.qtypeRaw),domIndex:0,index:1,options:raw.options.map(o=>({...o}))};
@@ -111,7 +112,8 @@ const PROBE_FN = (sel) => {
 
 /** 探测当前页面的弹窗题状态（含"存在但不可见"的诊断信息） */
 export async function probeVideoQuiz(page) {
-  for (const f of page.frames()) {
+  const selected=selectedVideoFrame(page);
+  for (const f of selected===undefined?page.frames():selected?[selected]:[]) {
     const u = f.url();
     if (!u || u === 'about:blank') continue;
     const r = await f.evaluate(PROBE_FN, QUIZ_SELECTOR).catch(() => null);

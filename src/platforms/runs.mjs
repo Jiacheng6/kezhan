@@ -1,5 +1,6 @@
 // Separate controllers: stopping/failing one platform cannot cancel another.
 import {runWithTaskRestart} from '../task-recovery.mjs';
+import {platformSkipReason} from './task-skip.mjs';
 export function planPlatformRun(tasks, progress={}) {
   const pending=tasks.filter(t=>t.finished!==true&&t.completion?.finished!==true&&progress[t.key]?.status!=='done');
   return {tasks:pending,skipped:tasks.length-pending.length,selected:tasks.length};
@@ -24,11 +25,13 @@ export class PlatformRuns {
           if (s.stop) break;
           if (task !== tasks[0]) s.progress = null;
           s.taskKey = task.key; s.current = task.name; this.changed(this.snapshot());
+          if(platformSkipReason(task)){s.skipped++;this.changed(this.snapshot());continue;}
           const result = await runWithTaskRestart(recovery=>this.execute({ platform: id, task, context, ...recovery,shouldStop: () => s.stop,
             onProgress: progress => { s.progress = progress; this.changed(this.snapshot()); } }),{
               task,shouldStop:()=>s.stop,delayMs:this.restartDelayMs,maxAttempts:this.restartMaxAttempts,onRestart:info=>{s.progress=null;this.changed(this.snapshot());return this.onRestart({...info,platform:id});}
             });
           if (result?.phase === 'stopped') {s.stop=true;break;}
+          if (result?.phase === 'skipped') {s.skipped++;this.changed(this.snapshot());continue;}
           if (result?.phase === 'awaiting-review') { s.review++; this.changed(this.snapshot()); continue; }
           if (!result?.ok) { s.error = result?.error || '任务未完成，请查看原网页'; s.phase = 'needs-human'; break; }
           s.done++;if(result?.phase==='already-finished')s.skipped++;this.changed(this.snapshot());

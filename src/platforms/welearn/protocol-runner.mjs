@@ -31,7 +31,8 @@ export async function runWelearnProtocolTask({task,context,shouldStop=()=>false,
     progress('courseware-read');
     const prepared=await prepareWelearnLesson(session,sco,{signal:abort.signal,skipOralQuestion:true});
     if(prepared.contentOnly)return finish('native-content',null,{nativeContent:true,retryable:false});
-    if(!prepared.questions.length)return finish('needs-human',prepared.oral?'WeLearn 该小节需要本人录音或口语作答，未调用 AI、未上报完成':'WeLearn 原版解析器未取得可提交答案，未调用 AI、未上报完成',{retryable:false});
+    if(prepared.oral)return finish('skipped',null,{retryable:false,skipReason:'需本人录音或口语作答，已跳过，未上报完成'});
+    if(!prepared.questions.length)return finish('needs-human','WeLearn 原版解析器未取得可提交答案，未调用 AI、未上报完成',{retryable:false});
     const bundle=generateInteractions(prepared.questions,{crate:100});
     const waitSec=Math.max(30,Math.min(900,Math.round(Number(settings().welearn?.waitSec)||300)));
     const record={strategy:prepared.strategy,questions:prepared.questions.length,answered:bundle.interactions.length,answers:prepared.questions,submissionPending:false,waitSec};
@@ -65,7 +66,7 @@ export async function runWelearnProtocolTask({task,context,shouldStop=()=>false,
     return finish('needs-human',error.message,{retryable:false,errorCode:error.code});
   }finally{
     clearInterval(watch);
-    if(!result?.nativeContent)setTaskStatus(task.key,{status:completed?'done':result?.phase==='stopped'?'pending':'manual',platform:'welearn',progress:completed?1:undefined,note:completed?'WeLearn 原小节已确认完成':result?.error||'已停止，保留已确认进度',...(completed?{submissionPending:false}:{})});
+    if(!result?.nativeContent)setTaskStatus(task.key,{status:completed?'done':result?.phase==='skipped'?'skipped':result?.phase==='stopped'?'pending':'manual',platform:'welearn',progress:completed?1:undefined,note:completed?'WeLearn 原小节已确认完成':result?.skipReason||result?.error||'已停止，保留已确认进度',...(completed?{submissionPending:false}:{})});
     if(completed)mutateState(s=>{if(s.welearnProtocol?.[task.key])s.welearnProtocol[task.key].submissionPending=false;});
     releasePage(page);await page.close().catch(()=>{});
   }

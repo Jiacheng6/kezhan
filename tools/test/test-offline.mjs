@@ -33,6 +33,9 @@ if (!process.env.KEBO_DATA_DIR) {
 }
 
 const suite = [
+  ['多视频任务定位 / 讨论截图 / U校园同名节点', 'tools/test/test-multi-task-recovery.mjs'],
+  ['U校园听力 / WeLearn本人任务跳过与续队', 'tools/test/test-platform-skips.mjs'],
+  ['U校园批量/单节点连接与学习通并发', 'tools/test/test-ucampus-context.mjs'],
   ['任务单次重启 / 验证限次 / 草稿与提交保护', 'tools/test/test-task-recovery.mjs'],
   ['Windows 短暂文件占用 / 原文件保护', 'tools/test/test-atomic-file.mjs'],
   ['API 加密 / 图片请求 / 取消与错误隔离', 'tools/test/test-ai-api.mjs'],

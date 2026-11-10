@@ -41,6 +41,9 @@ try{
  reset();loseAck=true;const ambiguous=await runWelearnProtocolTask({task,context},opts);assert.equal(ambiguous.ok,false);assert.equal(loadState().welearnProtocol[task.key].submissionPending,true);const written=calls.filter(c=>c.action==='setscoinfo').length;
  await runWelearnProtocolTask({task,context},opts);assert.equal(calls.filter(c=>c.action==='setscoinfo').length,written,'回执丢失不重交');loseAck=false;
  const empty={...task,key:task.key+'-empty'};template='<h1>Read</h1>';calls.length=0;assert.equal((await runWelearnProtocolTask({task:empty,context},opts)).ok,false);assert.deepEqual(calls.map(c=>c.action),['scoAddr'],'无答案不冒充完成');
+ template='<et-recorder></et-recorder>';calls.length=0;
+ const oralTask={...task,key:task.key+'-oral'},oral=await runWelearnProtocolTask({task:oralTask,context},opts);
+ assert.equal(oral.phase,'skipped');assert.equal(loadState().taskPoints[oralTask.key].status,'skipped');assert.deepEqual(calls.map(c=>c.action),['scoAddr'],'需本人录音不写学习或成绩数据');
  template=modern;calls.length=0;const stopped=await runWelearnProtocolTask({task:{...task,key:task.key+'-stop'},context,shouldStop:()=>stop},{...opts,keepaliveDeps:{sleep:async()=>{stop=true;throw Object.assign(Error('stop'),{code:'STOPPED'});}}});assert.equal(stopped.phase,'stopped');assert.equal(calls.some(c=>['setscoinfo','savescoinfo160928'].includes(c.action)),false,'停止不补交');stop=false;
  calls.length=0;keepIncomplete=true;const pending=await runWelearnProtocolTask({task:{...task,key:task.key+'-pending'},context},opts);assert.equal(pending.ok,false,'两个 ret:0 不等于完成');assert.equal(pending.submissionPending,true);
  const p=await context.newPage();await p.goto('https://welearn.sflep.com/student/course_info.aspx');const session=createWelearnSession(p,task);await assert.rejects(session.postForm('/Ajax/SCO.aspx',{action:'setscoinfo',cid:'other',scoid:'one'}),/超出/);await assert.rejects(session.get('https://example.com/private'),/不属于/);

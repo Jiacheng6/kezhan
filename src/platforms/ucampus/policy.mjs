@@ -89,6 +89,7 @@ export function buildTaskPoints({ tutorial, units, progress = {} }) {
       points.push({
         platform: 'ucampus',
         courseResourceId: String(tutorial.id),
+        tutorialName:String(tutorial.name||''),
         courseInstanceId: String(tutorial.instanceId || ''),
         knowledgeId: String(nodeId),
         secNo: `U${unitIndex + 1}.${nodeIndex + 1}`,

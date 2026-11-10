@@ -1,0 +1,60 @@
+// Synthetic pages only: two video attachments must never stand in for each other.
+import assert from 'node:assert/strict';
+import fs from 'node:fs';import path from 'node:path';import {chromium} from 'playwright-core';
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/multi-task-'));
+const {ensureDirs}=await import('../../src/config.mjs');ensureDirs();
+const {findEdge}=await import('../../src/browser/launch.mjs');
+const {findTaskVideoFrame}=await import('../../src/chaoxing/video-frame.mjs');
+const {findVideoFrame,bindVideoFrame}=await import('../../src/chaoxing/player.mjs');
+const {readVideoModuleRecord,checkTaskTracking}=await import('../../src/chaoxing/attach.mjs');
+const {topicImage}=await import('../../src/chaoxing/discussion.mjs');
+const {findVideoQuiz}=await import('../../src/chaoxing/videoquiz.mjs');
+const {readRequiredRows,requiredNodeVerdict,applyRequiredStatuses}=await import('../../src/platforms/ucampus/scan.mjs');
+const browser=await chromium.launch({executablePath:findEdge(),headless:true});
+try{
+ const context=await browser.newContext();
+ await context.route('https://fixture.test/**',r=>r.fulfill({contentType:'text/html',body:r.request().url().includes('/ananas/modules/video/')?'<video></video>':'<body></body>'}));
+ const page=await context.newPage();await page.goto('https://fixture.test/cards');
+ await page.evaluate(()=>{for(const [objectid,name] of [['a','first.mp4'],['b','second.mp4']]){const f=document.createElement('iframe');f.src='https://fixture.test/ananas/modules/video/'+objectid;f.setAttribute('data',JSON.stringify({objectid,name,jobid:objectid}));document.body.append(f);}window.mArg={attachments:[{objectid:'a',name:'first.mp4',isPassed:true},{objectid:'b',name:'second.mp4',isPassed:false}]};});
+ await page.waitForFunction(()=>document.querySelectorAll('iframe').length===2);
+ for(const f of page.frames().slice(1))await f.waitForLoadState();
+ const second=await findTaskVideoFrame(page,{name:'second.mp4',objectId:'b'});
+ assert.ok(second?.url().endsWith('/b'));assert.equal(findVideoFrame(page),null,'多视频未绑定时不能默取第一项');
+ bindVideoFrame(page,second);assert.equal(findVideoFrame(page),second);
+ assert.equal((await readVideoModuleRecord(page,{name:'second.mp4',objectId:'b'})).isPassed,false,'第一项已完成不能替第二项报完成');
+ await page.evaluate(()=>window.mArg.attachments[1].isPassed=true);
+ assert.equal((await readVideoModuleRecord(page,{name:'second.mp4',objectId:'b'})).isPassed,true,'从父卡片读取准确的第二项记录');
+ await page.evaluate(()=>window.mArg.attachments.splice(1));
+ assert.equal((await readVideoModuleRecord(page,{name:'second.mp4',objectId:'b'})).found,false,'父卡片仅剩邻项时不能走单记录兜底');
+ await page.evaluate(()=>document.querySelectorAll('iframe')[0].setAttribute('data',JSON.stringify({objectid:'a',name:'second.mp4'})));
+ assert.equal(await findTaskVideoFrame(page,{name:'second.mp4'}),null,'同名视频不唯一时停止定位');
+ assert.ok((await findTaskVideoFrame(page,{objectId:'b'})).url().endsWith('/b'));
+ await second.evaluate(()=>window.mArg={attachments:[{isPassed:false}]});
+ assert.equal((await readVideoModuleRecord(page,{objectId:'b'})).isPassed,false,'目标子帧自身的单记录仍兼容');
+ const popup='<div class="ans-videoquiz"><li class="ans-videoquiz-opt" style="width:100px">选项</li></div>';
+ await page.frames().find(f=>f.url().endsWith('/a')).setContent(popup);
+ assert.equal(await findVideoQuiz(page),null,'邻视频的弹题不能干扰所选任务');
+ await second.setContent(popup);assert.equal((await findVideoQuiz(page)).frame,second,'弹题与播放监控绑定同一视频');
+ await page.evaluate(()=>{const frames=[...document.querySelectorAll('iframe')];frames.forEach((f,i)=>{const ct=document.createElement('div');ct.className='ans-attach-ct'+(i===0?' ans-job-finished':'');f.before(ct);ct.append(f);f.insertAdjacentHTML('beforebegin','<span class="ans-job-icon" aria-label="'+(i===0?'任务点已完成':'任务点未完成')+'"></span>');});});
+ assert.equal((await checkTaskTracking(second,{objectId:'b'})).alreadyFinished,false,'附件自身标记也要按ID定位');
+ assert.equal((await checkTaskTracking(second,{name:'second.mp4'})).hasTracking,null,'同名项不能借用前一项绿点');
+
+ await page.setContent('<div id="bbsTopicDetail"><div class="replyContent" style="font:12px/14px sans-serif">短讨论</div></div>');
+ const small=await page.locator('.replyContent').boundingBox();assert.ok(small.height<20);
+ assert.ok(fs.statSync(await topicImage(page,'short')).size>100,'不足20px的题面仍可成像');
+ await page.setContent('<div id="bbsTopicDetail"><div class="replyContent" style="height:0"><img style="height:50px;width:50px" src="data:image/svg+xml,%3Csvg xmlns=\"http://www.w3.org/2000/svg\"/%3E"></div></div>');
+ assert.ok(fs.statSync(await topicImage(page,'zero-height')).size>100,'零高容器降级整页，保留图片而非丢掉题面');
+
+ const names=['Vocabulary','Quiz','Review & check','Vocabulary','Banked cloze','Reading','Translation'];
+ await page.setContent(names.map((name,i)=>`<div class="taskItemInnerLayout"><div class="taskNameContainer">${name}<span class="taskRequireIcon">必修</span></div><div class="nodePassStateTip">${[0,2,3,5,6].includes(i)?'已完成':'未开始'}</div></div>`).join(''));
+ const rows=await readRequiredRows(page);assert.equal(rows.length,7,'相同名称状态的Vocabulary不能合并');
+ assert.equal(requiredNodeVerdict({nodeIndex:2,type:'video-quiz'},rows).finished,false);
+ assert.equal(requiredNodeVerdict({nodeIndex:4,type:'unit-vocab'},rows).finished,true);
+ assert.equal(requiredNodeVerdict({nodeIndex:5,type:'unit-cloze'},rows).finished,false);
+ assert.equal(requiredNodeVerdict({nodeIndex:7,type:'unit-translation'},rows.slice(1)),null,'漏读节点时不按错位序号记完成');
+ const points=names.map((_,i)=>({courseResourceId:'1',unitIndex:1,nodeIndex:i+1,type:['vocab-cards','video-quiz','review','unit-vocab','unit-cloze','unit-reading','unit-translation'][i],finished:false}));
+ applyRequiredStatuses(points,{'Unit 1':rows});assert.deepEqual(points.map(p=>p.finished),[true,false,true,true,false,true,true]);
+ await page.locator('.nodePassStateTip').nth(1).evaluate(e=>e.remove());
+ assert.equal(requiredNodeVerdict({nodeIndex:2,type:'video-quiz'},await readRequiredRows(page)),null,'邻居已完成不能补缺失状态');
+ console.log('✓ 双视频定位/监控绑定/独立完成记录；短讨论截图降级；U校园同名节点与缺失状态核对');
+}finally{await browser.close();}

@@ -11,6 +11,7 @@ import { throwIfStopped, interruptibleSleep } from '../../control.mjs';
 import { savePlatformCourses } from '../catalog.mjs';
 import { readStudentCourses, readStrategy, readTutorialDetail } from './api.mjs';
 import { buildTaskPoints, summarizeTutorial, ucampusTaskKey } from './policy.mjs';
+import {ucampusContext} from './context.mjs';
 
 const UAI_URL = 'https://uai.unipus.cn/portal';
 const PLAYER_HOST = 'https://ucontent.unipus.cn';
@@ -20,6 +21,7 @@ const PLAYER_HOST = 'https://ucontent.unipus.cn';
  * 注意：不用嵌入式视图，直接走 context 里的普通标签页（与其它平台一致）。
  */
 export async function ensureUcampusPage(context, { create = true } = {}) {
+  context=ucampusContext(context);
   let page = context.pages().find((p) => !p.isClosed() && /^https:\/\/uai\.unipus\.cn\//.test(p.url()));
   if (!page && create) {
     page = await context.newPage();
@@ -35,7 +37,7 @@ export async function ensureUcampusPage(context, { create = true } = {}) {
  */
 export async function scanUcampusCourses({ context, shouldStop = () => false, onProgress = () => {} } = {}) {
   throwIfStopped(shouldStop);
-  const page = await ensureUcampusPage(context());
+  const page = await ensureUcampusPage(context);
   if (!page) throw new Error('打不开 U校园 页面');
   if (!/uai\.unipus\.cn/.test(page.url())) {
     await page.goto(UAI_URL, { waitUntil: 'domcontentloaded', timeout: 45000 });
@@ -144,58 +146,41 @@ export async function scanUcampusCourses({ context, shouldStop = () => false, on
  * 手风琴式：一次只展开一个单元，所以要逐单元点开再读。
  * 返回 { 'Unit 1': ['已完成', '未开始', ...] }，顺序与 unit.requiredTask 一致。
  */
-export async function readRequiredStatuses({ context, units = [], shouldStop = () => false, courseResourceId = '' }) {
+export async function readRequiredStatuses({ context, units = [], shouldStop = () => false, courseResourceId = '', unitIndex=null }) {
   /*
    * 状态必须从**这门教程自己的目录树**读（不同教程的必修项完全不同）。
    * 所以这里单开一个教程详情页，读完就关，不影响主页面。
    */
-  const browserContext = typeof context === 'function' ? context() : context;
+  const browserContext = ucampusContext(context);
   let page = null;
   let temp = null;
+  try {
   if (courseResourceId) {
+    if(!/^\d+$/.test(String(courseResourceId)))throw new Error('U校园教程标识无效');
     temp = await browserContext.newPage();
     await temp.goto(`https://uai.unipus.cn/app/cmgt/resource-detail/${courseResourceId}`, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
-    await temp.waitForTimeout(6000);
+    await interruptibleSleep(6000,shouldStop);
     page = temp;
   } else {
     page = await ensureUcampusPage(browserContext);
   }
-  try {
   const out = {};
   const unitNames = [];
-  for (const [i] of (units || []).entries()) unitNames.push(`Unit ${i + 1}`);
+  if(Number.isInteger(unitIndex)&&unitIndex>0&&unitIndex<=200)unitNames.push(`Unit ${unitIndex}`);
+  else for (const [i] of (units || []).entries()) unitNames.push(`Unit ${i + 1}`);
 
   for (const unitName of unitNames) {
-    if (shouldStop()) break;
-    await page.evaluate((name) => {
-      const el = [...document.querySelectorAll('*')].find(
+    throwIfStopped(shouldStop);
+    const selected=await page.evaluate((name) => {
+      const el = [...document.querySelectorAll('[class*="unitTabItemContainer"], [class*="unitName"]')].find(
         (n) => (n.innerText || '').trim() === name && n.getClientRects().length && n.children.length <= 2,
       );
-      if (el) el.click();
+      if (!el)return false;
+      el.click();return true;
     }, unitName);
-    await page.waitForTimeout(1800);
-    const rows = await page.evaluate(() => {
-      const containers = [...document.querySelectorAll('[class*="taskNameContainer"]')].filter((el) => el.getClientRects().length);
-      const out = [];
-      for (const el of containers) {
-        const required = !!el.querySelector('[class*="taskRequireIcon"]') || /必修/.test(el.innerText || '');
-        if (!required) continue;
-        let status = '';
-        let cur = el;
-        for (let i = 0; i < 4 && cur && !status; i += 1, cur = cur.parentElement) {
-          const m = (cur.innerText || '').replace(/\s+/g, ' ').match(/(未开始|已完成|进行中|学习中|待完成)/);
-          if (m) status = m[1];
-        }
-        out.push({ name: (el.innerText || '').replace(/必修|选修/g, '').trim(), status });
-      }
-      const seen = new Set();
-      return out.filter((r) => {
-        const k = `${r.name}|${r.status}`;
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      });
-    });
+    if(!selected)continue;
+    await interruptibleSleep(1800,shouldStop);
+    const rows = await readRequiredRows(page);
     out[unitName] = rows;
   }
   return out;
@@ -204,18 +189,50 @@ export async function readRequiredStatuses({ context, units = [], shouldStop = (
   }
 }
 
+export async function readRequiredRows(page){
+  return page.evaluate(() => {
+      const containers = [...document.querySelectorAll('[class*="taskNameContainer"]')].filter((el) => el.getClientRects().length&&!el.querySelector('[class*="taskNameContainer"]'));
+      const out = [];
+      for (const el of containers) {
+        const required = !!el.querySelector('[class*="taskRequireIcon"]') || /必修/.test(el.innerText || '');
+        if (!required) continue;
+        // Only the same task row can supply its status; an ancestor can also
+        // contain neighbouring completed tasks. Same-name rows are distinct.
+        const row=el.closest('[class*="taskItemInnerLayout"]')||el.parentElement;
+        const status=(row?.querySelector('[class*="nodePassStateTip"]')?.innerText||'').trim();
+        out.push({ name: (el.innerText || '').replace(/必修|选修/g, '').trim(), status });
+      }
+      return out;
+    });
+}
+
 /** 把状态映射回 taskPoints（按单元内顺序） */
 export function applyRequiredStatuses(taskPoints = [], statuses = {}) {
   for (const point of taskPoints) {
     const rows = statuses[`Unit ${point.unitIndex || 1}`] || [];
-    const row = rows[(point.nodeIndex || 1) - 1];
-    if (row && row.status === '已完成') point.finished = true;
+    const expectedCount=taskPoints.filter(p=>p.unitIndex===point.unitIndex&&p.courseResourceId===point.courseResourceId).length;
+    const verdict=requiredNodeVerdict(point,rows,{expectedCount});
+    if(verdict)point.finished=verdict.finished;
   }
   return taskPoints;
 }
 
+export async function readRequiredNodeStatus({context,task,shouldStop=()=>false}){
+ if(!requiredNodeNames[task.type]||!task.courseResourceId||!task.unitIndex||!task.nodeIndex)return null;
+ const statuses=await readRequiredStatuses({context,courseResourceId:String(task.courseResourceId),unitIndex:Number(task.unitIndex),shouldStop});
+ return requiredNodeVerdict(task,statuses[`Unit ${task.unitIndex}`]||[]);
+}
+
+const requiredNodeNames={'vocab-cards':'Vocabulary','video-quiz':'Quiz',review:'Review & check','unit-vocab':'Vocabulary','unit-cloze':'Banked cloze','unit-reading':'Reading','unit-translation':'Translation'};
+export function requiredNodeVerdict(task,rows,{expectedCount=7}={}){
+ const row=rows[Number(task.nodeIndex)-1],name=requiredNodeNames[task.type];
+ if(rows.length!==expectedCount||!row||name&&String(row.name||'').replace(/\s/g,'')!==name.replace(/\s/g,''))return null;
+ if(!['已完成','未开始','进行中','学习中','待完成'].includes(row.status))return null;
+ return {finished:row.status==='已完成',source:'native-required-node'};
+}
+
 export async function readTutorialProgress({ context, courseResourceId, shouldStop = () => false }) {
-  const page = await ensureUcampusPage(context());
+  const page = await ensureUcampusPage(context);
   const courseList = await readStudentCourses(page, { shouldStop });
   for (const course of courseList) {
     for (const tutorial of course.courseResourceList || []) {

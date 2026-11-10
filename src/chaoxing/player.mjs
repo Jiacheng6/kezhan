@@ -16,6 +16,8 @@ import { installDefence } from '../browser/inject.mjs';
 import { log } from '../logbus.mjs';
 import { capturePause } from './capture.mjs';
 import { findVideoQuiz } from './videoquiz.mjs';
+import {selectedVideoFrame} from './video-frame.mjs';
+export {bindVideoFrame} from './video-frame.mjs';
 
 /** 默认设置（后续由 settings 覆盖） */
 const DEFAULTS = {
@@ -64,7 +66,9 @@ const DEFAULTS = {
 
 /** 找到视频 iframe */
 export function findVideoFrame(page) {
-  return page.frames().find((f) => f.url().includes('/ananas/modules/video/')) || null;
+  const selected=selectedVideoFrame(page);if(selected!==undefined)return selected;
+  const frames=page.frames().filter(f=>f.url().includes('/ananas/modules/video/'));
+  return frames.length===1?frames[0]:null;
 }
 
 /** 等待视频 iframe 出现（懒加载，可能要几秒） */

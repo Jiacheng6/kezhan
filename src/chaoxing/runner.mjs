@@ -11,7 +11,7 @@
  */
 import { applyNativeSpeed, watchWithCheckpoint } from './playback-policy.mjs';
 import { PATHS, loadSettings } from '../config.mjs';
-import { waitForRead } from '../control.mjs';
+import { waitForRead, throwIfStopped } from '../control.mjs';
 import { log } from '../logbus.mjs';
 import { setTaskStatus, getTaskStatus, isTaskDone, addHandbook } from '../state.mjs';
 import { installDefence, checkDefence } from '../browser/inject.mjs';
@@ -23,6 +23,8 @@ import { cardsUrl, openSectionCard, waitForAttachments } from './section.mjs';
 import { checkTaskTracking, readPointStatusFromPage } from './attach.mjs';
 import { skipDecision, describeSkip } from './skip.mjs';
 import {readDocumentAttachment,openDocumentViewer} from './document.mjs';
+import {findTaskVideoFrame} from './video-frame.mjs';
+import {bindVideoFrame} from './player.mjs';
 
 /*
  * 转发导出：这两个函数搬去了 `attach.mjs`（为了让 quizrun 也能用而不形成循环依赖），
@@ -30,8 +32,6 @@ import {readDocumentAttachment,openDocumentViewer} from './document.mjs';
  */
 export { checkTaskTracking, readPointStatusFromPage };
 import {
-  findVideoFrame,
-  waitVideoFrame,
   getPlayerState,
   prepare,
   play,
@@ -162,7 +162,7 @@ export async function checkPointFinished(ctx, task, personId) {
       quiet: true,
     });
     if (card.notFound) return { finished: null, via: 'no-attach', error: '该小节没读到任务点列表' };
-    return await readPointStatusFromPage(page, task.name, { isVideo: task.type === 'video' });
+    return await readPointStatusFromPage(page, task, { isVideo: task.type === 'video' });
   } catch (err) {
     return { finished: null, via: 'error', error: err.message };
   } finally {
@@ -541,15 +541,17 @@ export async function runVideoTask({ ctx, task, personId, onProgress, shouldStop
 
     // —— 3) 准备视频 ——
     result.phase = 'prepare-video';
-    const frame = await waitVideoFrame(page, 25000);
-    if (!frame) throw new Error('视频 iframe 未出现（该任务点可能不是视频，或页面改版）');
+    let frame=null;const frameDeadline=Date.now()+25000;
+    do{throwIfStopped(shouldStop);frame=await findTaskVideoFrame(page,task);if(frame)break;await page.waitForTimeout(400);}while(Date.now()<frameDeadline);
+    if (!frame) throw new Error('没有找到与本任务唯一对应的视频，请重新扫描课程；未播放其他任务的视频');
+    bindVideoFrame(page,frame);
 
     // —— 3.5) 预检查：有没有任务点追踪 ——
     // 放在 prepare() 之前：不是任务点就不必 load、更不必播几十分钟。
     // hasTracking 为 null 表示页面还没渲染好，轮询等一下再判。
     let track = null;
     for (let i = 0; i < 12; i += 1) {
-      track = await checkTaskTracking(frame, task.name);
+      track = await checkTaskTracking(frame, task);
       if (track.hasTracking !== null) break;
       await page.waitForTimeout(500);
     }
@@ -574,7 +576,7 @@ export async function runVideoTask({ ctx, task, personId, onProgress, shouldStop
      * 服务端记录才是权威。`readPointStatusFromPage(isVideo:true)` 两层都读，
      * 冲突时以服务端记录为准。
      */
-    const pointStatus = await readPointStatusFromPage(page, task.name, { isVideo: true });
+    const pointStatus = await readPointStatusFromPage(page, task, { isVideo: true });
     result.pointStatus = pointStatus;
     const d = skipDecision({
       task,

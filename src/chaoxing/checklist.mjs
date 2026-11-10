@@ -21,6 +21,7 @@ import { taskCompletion } from '../ui/task-status.js';
 import {reconMetadata} from './recon-metadata.mjs';
 import { readSelectionDocument, writeSelectionDocument } from './selection-presets.mjs';
 import { readPlatformCatalog, mergeCourseReports } from '../platforms/catalog.mjs';
+import {platformSkipReason} from '../platforms/task-skip.mjs';
 
 /** 执行清单的输入：侦察报告（路径由 config 唯一决定） */
 const REPORT_FILE = PATHS.taskReport;
@@ -292,9 +293,11 @@ function toCourseEntry(c, sel, summary, progress) {
       if (c.platform === 'zhihuishu' && !['video','work'].includes(t.type)) willHandleBase = false;
       // U校园：题型都已在 TYPE_POLICY 里声明；表里没有的也不拦，避免被误标成「待人工」
       if (c.platform === 'ucampus') willHandleBase = TYPE_POLICY[t.type] ? TYPE_POLICY[t.type].handle === true : true;
+      const skipReason=platformSkipReason({...t,platform:c.platform});
+      if(skipReason)willHandleBase=false;
 
       const isExcluded = excluded.has(key);
-      const blockedReason=t.blockedReason||(t.type==='discuss'&&!willHandleBase?'需开启讨论草稿':null);
+      const blockedReason=skipReason||t.blockedReason||(t.type==='discuss'&&!willHandleBase?'需开启讨论草稿':null);
       const willHandle = enabled && willHandleBase && !isExcluded;
 
       counts[t.type] = (counts[t.type] || 0) + 1;
@@ -316,12 +319,12 @@ function toCourseEntry(c, sel, summary, progress) {
           type: t.type,
           typeName: t.typeName,
           name: t.name,
-          reason:
+          reason: skipReason || (
             policy.handle === 'quiz-only'
               ? workKind === 'homework'
                 ? '独立作业：默认不碰（只有 1 次提交机会）'
                 : '未识别的作业类任务点：默认不碰'
-              : policy.action,
+              : policy.action),
         });
       }
 
@@ -334,7 +337,7 @@ function toCourseEntry(c, sel, summary, progress) {
         platformTestName: t.platformTestName || null,
         platformTestIndex: t.platformTestIndex ?? null,
         ...(c.platform==='welearn'?{welearn:t.welearn}:{}),
-        ...(c.platform==='ucampus'?{courseResourceId:t.courseResourceId,courseInstanceId:t.courseInstanceId,unitIndex:t.unitIndex,nodeIndex:t.nodeIndex}:{}),
+        ...(c.platform==='ucampus'?{courseResourceId:t.courseResourceId,courseInstanceId:t.courseInstanceId,tutorialName:t.tutorialName,unitIndex:t.unitIndex,nodeIndex:t.nodeIndex}:{}),
         courseId: c.courseId,
         clazzId: c.clazzId,
         knowledgeId: s.knowledgeId,

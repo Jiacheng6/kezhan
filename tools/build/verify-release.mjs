@@ -8,6 +8,9 @@ import { loadLearningTerms, containsLearningTerms } from '../test/privacy-learni
 import { isPublicNumericAsset } from '../test/privacy-public-assets.mjs';
 const dist = process.env.KEBO_RELEASE_DIR ? path.resolve(process.env.KEBO_RELEASE_DIR) : path.join(ROOT, 'dist');
 const app = path.join(dist, 'win-unpacked', 'resources', 'app');
+for(const relative of ['src/chaoxing/video-frame.mjs','src/chaoxing/attach.mjs','src/chaoxing/player.mjs','src/chaoxing/videoquiz.mjs','src/platforms/task-skip.mjs','src/platforms/ucampus/context.mjs','src/platforms/ucampus/runner.mjs','src/platforms/ucampus/scan.mjs','src/platforms/ucampus/policy.mjs','src/platforms/welearn/dispatch.mjs','src/platforms/welearn/protocol-runner.mjs']){
+  assert.equal(fs.readFileSync(path.join(app,relative)).equals(fs.readFileSync(path.join(ROOT,relative))),true,'本次多任务点与平台执行修复缺失或版本不一致：'+relative);
+}
 for (const relative of ['src/chaoxing/answer-bank.mjs','src/chaoxing/answer-bank-font.mjs','src/chaoxing/answer-bank-math.mjs','src/chaoxing/quiz.mjs','src/chaoxing/quizrun.mjs','src/chaoxing/review-recovery.mjs','src/chaoxing/submission-state.mjs','src/chaoxing/vendor/cx-font/typr.mjs','src/chaoxing/vendor/cx-font/glyph-table.json','src/chaoxing/vendor/cx-font/THIRD-PARTY-LICENSES.txt','src/settings.mjs','src/ui/ai-controls.js']) {
   assert.equal(fs.readFileSync(path.join(app,relative)).equals(fs.readFileSync(path.join(ROOT,relative))),true,'题库与提交修复缺失或版本不一致：'+relative);
 }
