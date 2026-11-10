@@ -71,6 +71,7 @@ async function runUcampusTask(args) {
   setTaskStatus(task.key,{status:'running',platform:'ucampus'});
   try{
     const result=confirmedUcampusOutcome(await executeUcampusTask(args));
+    if(result?.nativeReceipt?.accepted)mutateState(s=>{s.ucampusSubmissions||={};s.ucampusSubmissions[task.key]={at:new Date().toISOString(),accepted:true,workUrl:result.workUrl,questions:result.nativeReceipt.answerCount,credited:result.credited===true};});
     setTaskStatus(task.key,{status:result?.ok?'done':result?.phase==='stopped'?'pending':'manual',platform:'ucampus',
       progress:result?.ok?1:undefined,note:result?.ok?'U校园平台已确认完成':result?.error||'任务已停止，保留进度'});
     return result;
@@ -133,7 +134,7 @@ async function executeUcampusTask(args) {
 
 
   if (kind === 'video-quiz') {
-    return runUcampusQuizTab({ page, tab: null, limit: 99, apply: true, ask, shouldStop: stop, readProgress });
+    return runUcampusQuizTab({ page, tab: null, limit: 99, apply: true, ask, shouldStop: stop, readProgress, onProgress:args.onProgress });
   }
   if (kind === 'unit-cloze') {
     const opened = await openUnitTest(page, unit);
@@ -142,7 +143,7 @@ async function executeUcampusTask(args) {
     if (!tabOk) return { ok: false, phase: 'needs-human', error: '找不到 Banked cloze 标签' };
     await page.waitForTimeout(3000);
     await dismissUcampusDialog(page);
-    return runUcampusCloze({ page, ask, apply: true, shouldStop: stop, readProgress });
+    return runUcampusCloze({ page, ask, apply: true, shouldStop: stop, readProgress, onProgress:args.onProgress });
   }
   const tabName = kind === 'unit-vocab' ? 'Vocabulary' : kind === 'unit-reading' ? 'Reading' : kind === 'unit-translation' ? 'Translation' : '';
   const opened = await openUnitTest(page, unit);
@@ -150,11 +151,11 @@ async function executeUcampusTask(args) {
   if (kind === 'unit-translation') {
     const tabbed = await openQuizTab(page, tabName);
     if (!tabbed) return { ok: false, phase: 'needs-human', error: `找不到标签「${tabName}」` };
-    return runUcampusTextQuiz({ page, ask, apply: true, limit: 99, shouldStop: stop, readProgress });
+    return runUcampusTextQuiz({ page, ask, apply: true, limit: 99, shouldStop: stop, readProgress, onProgress:args.onProgress });
   }
   const tabbed = await openQuizTab(page, tabName);
   if (!tabbed) return { ok: false, phase: 'needs-human', error: `找不到标签「${tabName}」` };
-  return runUcampusQuizTab({ page, tab: null, limit: 99, apply: true, ask, shouldStop: stop, readProgress });
+  return runUcampusQuizTab({ page, tab: null, limit: 99, apply: true, ask, shouldStop: stop, readProgress, onProgress:args.onProgress });
 }
 
 function startUcampusTasks(tasks) {

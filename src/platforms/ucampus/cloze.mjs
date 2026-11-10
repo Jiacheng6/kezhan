@@ -63,7 +63,7 @@ export async function runUcampusCloze({ page, ask, apply = false, shouldStop = (
     return { ok: false, phase: 'needs-human', error: '空格或词库为空' };
   }
 
-  onProgress({ phase: 'cloze', detail: `${data.blankCount} 个空` });
+  onProgress({taskType:'work',phase:'asking',questionIndex:0,questionTotal:data.blankCount,detail:`${data.blankCount} 个空：等待 AI 回答（含请求间隔等待）`});
   const card = await renderTextCard(
     page,
     `文章（[n] 处是空）：\n${data.passage}`,

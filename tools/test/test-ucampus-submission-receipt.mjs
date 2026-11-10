@@ -1,0 +1,31 @@
+import fs from 'node:fs';import path from 'node:path';import assert from 'node:assert/strict';import {chromium} from 'playwright-core';
+fs.mkdirSync('.desktop-test',{recursive:true});process.env.KEBO_DATA_DIR=fs.mkdtempSync(path.resolve('.desktop-test/ucampus-receipt-'));
+const {findEdge}=await import('../../src/browser/launch.mjs');
+const {readUcampusSubmission}=await import('../../src/platforms/ucampus/submission.mjs');
+const {clickSubmitButton}=await import('../../src/platforms/ucampus/quiz.mjs');
+const {runUcampusTextQuiz}=await import('../../src/platforms/ucampus/textquiz.mjs');
+const {PlatformRuns}=await import('../../src/platforms/runs.mjs');
+const {taskProgressModel}=await import('../../src/ui/task-progress.js');
+const summary='<div class="analysis-item"><div class="analysis-item-title">你的答案：</div><div class="analysis-item-content">Saved answer</div></div><footer id="pc-foot"><div class="question-common-course-page"><a class="btn">查看答题小结</a></div></footer>';
+const browser=await chromium.launch({executablePath:findEdge(),headless:true});
+try{
+ const c=await browser.newContext({viewport:{width:1440,height:900}}),p=await c.newPage();await p.setContent(summary);const expectedUrl=p.url();
+ assert.equal((await readUcampusSubmission(p,{expectedUrl,expectedQuestions:1})).accepted,true);
+ assert.equal((await readUcampusSubmission(p,{expectedUrl,expectedQuestions:2})).accepted,false);
+ assert.equal((await readUcampusSubmission(p,{expectedUrl:'https://wrong.test/'})).accepted,false);
+ const accepted=await runUcampusTextQuiz({page:p,apply:true,ask:async()=>{throw Error('已提交结果不能再问 AI');}});
+ assert.equal(accepted.phase,'awaiting-review');assert.equal(accepted.submitted,true);assert.equal(accepted.ok,false,'提交回执不冒充任务点完成');
+ const tasks=[{key:'u:1',platform:'ucampus',name:'one'},{key:'u:2',platform:'ucampus',name:'two'}];let executed=0;
+ const runs=new PlatformRuns({execute:async()=>++executed===1?accepted:{ok:true,phase:'already-finished'}});runs.start('ucampus',tasks,c);const run=await runs.wait('ucampus');assert.equal(executed,2);assert.equal(run.review,1);assert.equal(run.done,1,'待核对题不计完成，但不阻塞下一项');
+ await p.setContent(summary+'<textarea></textarea>');assert.equal((await readUcampusSubmission(p,{expectedUrl})).accepted,false);
+ await p.setContent('<footer id="pc-foot"><div class="question-common-course-page"><a class="btn">查看答题小结</a></div></footer>');assert.equal((await readUcampusSubmission(p,{expectedUrl})).accepted,false);
+ await p.setContent('<a style="cursor:pointer" onclick="window.clicks=(window.clicks||0)+1;setTimeout(()=>document.body.innerHTML='+JSON.stringify(summary).replaceAll('"','&quot;')+',7200)">提 交</a>');
+ const delayed=await clickSubmitButton(p,{waitMs:10000});assert.equal(delayed.ok,true);assert.equal(delayed.accepted,true);assert.equal(await p.evaluate(()=>window.clicks),1,'迟到的结果只点一次');
+ await p.setContent('<a style="cursor:pointer" onclick="window.clicks=(window.clicks||0)+1">提 交</a>');await p.evaluate(()=>window.clicks=0);
+ const unknown=await clickSubmitButton(p,{waitMs:50});assert.equal(unknown.pendingConfirmation,true);assert.equal(await p.evaluate(()=>window.clicks),1);
+ const events=[];await p.setContent('<p>1. Translate this English sentence.</p><textarea></textarea>');
+ await runUcampusTextQuiz({page:p,ask:async()=>({ok:true,answer:'A full answer for this test.'}),onProgress:event=>events.push(event)});
+ assert.equal(events[0].phase,'asking');assert.equal(events[0].taskType,'work');assert.equal(events.at(-1).phase,'done');
+ const model=taskProgressModel({running:true,progress:events[0]});assert.equal(model.label,'正在读取 AI 回答');assert.equal(model.percent,'0.0');assert.match(model.detail,/第 1\/1 题/);
+ console.log('✓ U校园原生回执、7秒以上迟到结果、单击防重交、结果页不重复问AI、待确认不中断后项与答题进度');
+}finally{await browser.close();}

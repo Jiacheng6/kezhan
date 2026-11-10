@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { activeTaskPlatforms, mainTaskStatus, taskProgressModel, platformTaskStatus, totalProgressModel,runSummaryLabel } from '../../src/ui/task-progress.js';
 import { currentTaskPage, pageKind, sortedPages } from '../../src/ui/web-pages.js';
 const video = { running: true, progress: { total: 8, done: 2, current: '演示课程 · 视频', taskType: 'video', percent: .642, currentTime: 385, duration: 600, playbackRate: 2 } };
+assert.equal(taskProgressModel({running:false,outcomePhase:'awaiting-review',progress:{taskType:'work',submissionAccepted:true,percent:1}}).label,'已提交 · 待平台确认');
 let model = taskProgressModel(video);
 assert.equal(model.percent, '64.2');assert.match(model.detail, /06:25 \/ 10:00 · 实际 2×/);
 assert.equal(taskProgressModel({ ...video, progress: { ...video.progress, percent: 1.5 } }).fraction, 1);

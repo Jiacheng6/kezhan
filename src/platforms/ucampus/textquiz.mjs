@@ -13,6 +13,7 @@ import path from 'node:path';
 import { log } from '../../logbus.mjs';
 import { throwIfStopped, interruptibleSleep } from '../../control.mjs';
 import { ensurePlayableViewport, clickSubmitButton, requireUcampusReady } from './quiz.mjs';
+import {readUcampusSubmission} from './submission.mjs';
 
 /** 读页面上的所有文本框 + 题干 + 材料上下文 */
 export async function readTextQuestions(page) {
@@ -120,6 +121,12 @@ export async function fillTextAnswer(page, index, text) {
 export async function runUcampusTextQuiz({ page, ask, apply = false, limit = 99, shouldStop = () => false, onProgress = () => {}, outDir, readProgress = null }) {
   await ensurePlayableViewport(page);
   await requireUcampusReady(page);
+  const expectedUrl=page.url();
+  const previous=await readUcampusSubmission(page,{expectedUrl});
+  if(previous.accepted){
+    onProgress({taskType:'work',phase:'verifying',percent:1,submissionAccepted:true,detail:'原网页已确认提交，任务点仍待平台核对'});
+    return {ok:false,phase:'awaiting-review',submitted:true,nativeReceipt:previous,workUrl:expectedUrl,error:'U校园原网页已确认提交，任务点仍待平台核对；未重复答题或提交'};
+  }
   const { rows, material } = await readTextQuestions(page);
   log(`   读到 ${rows.length} 个文本框`, 'info');
   if (!rows.length) return { ok: false, phase: 'needs-human', error: '页面上没有可作答的文本框' };
@@ -128,7 +135,7 @@ export async function runUcampusTextQuiz({ page, ask, apply = false, limit = 99,
   const plan = [];
   for (const row of rows.slice(0, limit)) {
     throwIfStopped(shouldStop);
-    onProgress({ phase: 'text-quiz', detail: `第 ${row.index + 1}/${rows.length} 题` });
+    onProgress({ taskType:'work', phase:'asking', questionIndex:row.index, questionTotal:rows.length, detail:`第 ${row.index+1}/${rows.length} 题：等待 AI 回答（含请求间隔等待）` });
     if (!row.prompt || row.prompt.length < 6) {
       plan.push({ index: row.index, ok: false, error: '找不到题干' });
       continue;
@@ -160,6 +167,7 @@ export async function runUcampusTextQuiz({ page, ask, apply = false, limit = 99,
     const usable = answer?.ok && text.length >= 8 && !/看不清|无法判断/.test(text);
     plan.push({ index: row.index, prompt: row.prompt.slice(0, 60), text, usable:usable&&text.length<=10000, error: answer?.ok ? '' : String(answer?.error || '').slice(0, 80) });
     log(`   第 ${row.index + 1} 题：${usable ? '答案 ' + text.slice(0, 60) : '不可用（' + (answer?.answer || answer?.error || '').slice(0, 40) + '）'}`, usable ? 'info' : 'warn');
+    onProgress({taskType:'work',phase:'done',questionIndex:row.index,questionTotal:rows.length,detail:`第 ${row.index+1} 题已处理，待统一回填核对`});
     await interruptibleSleep(300, shouldStop);
   }
 
@@ -168,35 +176,45 @@ export async function runUcampusTextQuiz({ page, ask, apply = false, limit = 99,
   let submitted = false;
   let before = null;
   let after = null;
+  let receipt=null;
   if (apply && allUsable) {
+    onProgress({taskType:'work',phase:'filling',percent:1,detail:'全部回答已取得，正在回填核对'});
     if (readProgress) before = await readProgress().catch(() => null);
     for (const p of plan) {
       if (!p.usable) continue;
       if (await fillTextAnswer(page, p.index, p.text)) filled += 1;
       await page.waitForTimeout(250);
     }
-    const click = await clickSubmitButton(page);
+    onProgress({taskType:'work',phase:'submitting',percent:1,detail:'已填写，正在提交原网页答案'});
+    const click = await clickSubmitButton(page,{shouldStop});
     submitted = !!click.ok;
     log(`   已填写 ${filled} 处；提交：${click.note}`, submitted ? 'ok' : 'warn');
     if (readProgress) {
+      onProgress({taskType:'work',phase:'verifying',percent:1,detail:'正在等待 U校园确认进度，尚不计完成'});
       for (let i = 0; i < 8; i += 1) {
         await interruptibleSleep(8000, shouldStop);
         after = await readProgress().catch(() => null);
         if (after && before && Number(after.finishPointNum) > Number(before.finishPointNum)) break;
+        receipt=await readUcampusSubmission(page,{expectedUrl,expectedQuestions:rows.length});
+        if(receipt.accepted)break;
       }
       log(`   平台进度：${before?.finishPointNum ?? '?'} → ${after?.finishPointNum ?? '?'}`, after && before && Number(after.finishPointNum) > Number(before.finishPointNum) ? 'ok' : 'warn');
     }
   }
 
   const credited = !!(after && before && Number(after.finishPointNum) > Number(before.finishPointNum));
+  if(apply&&!credited)receipt=await readUcampusSubmission(page,{expectedUrl,expectedQuestions:rows.length});
+  const accepted=receipt?.accepted===true;
+  if(accepted&&!credited)onProgress({taskType:'work',phase:'verifying',percent:1,submissionAccepted:true,detail:'原网页已确认提交，任务点仍待平台核对'});
   return {
     ok: !apply || credited,
-    phase: credited ? 'submitted' : apply ? 'applied-unverified' : 'planned',
-    ...(apply&&!credited?{error:allUsable?'U校园已尝试填写，但平台尚未确认完成，请核对原网页':'U校园仍有未取得可靠答案的题，未提交'}:{}),
+    phase: credited ? 'submitted' : accepted?'awaiting-review':apply ? 'applied-unverified' : 'planned',
+    ...(apply&&!credited?{error:accepted?'U校园原网页已确认提交，任务点仍待平台核对；未重复答题或提交':allUsable?'U校园已尝试填写，但平台尚未确认完成，请核对原网页':'U校园仍有未取得可靠答案的题，未提交'}:{}),
+    ...(accepted?{nativeReceipt:receipt,workUrl:expectedUrl}:{}),
     questions: plan.length,
     allUsable,
     filled,
-    submitted,
+    submitted:submitted||accepted,
     credited,
     before: before?.finishPointNum ?? null,
     after: after?.finishPointNum ?? null,

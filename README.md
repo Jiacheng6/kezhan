@@ -13,14 +13,14 @@
 
 课栈是面向 Windows 的多平台学习工作台。你可以在一个窗口里查看各平台的课程和完成情况、选定学习范围、追踪任务进度，以及核对待审答案。
 
-**当前版本 0.9.2** · Windows 10 / 11（x64）
+**当前版本 0.9.3** · Windows 10 / 11（x64）
 
 | 下载 | 如何使用 |
 | --- | --- |
-| [Windows 安装版](https://github.com/Jiacheng6/kezhan-releases/releases/download/v0.9.2/Kezhan-0.9.2-Setup.exe) | 运行安装程序，按提示完成安装。 |
-| [Windows 免安装版](https://github.com/Jiacheng6/kezhan-releases/releases/download/v0.9.2/Kezhan-0.9.2-win-x64.zip) | 完整解压到一个文件夹，再运行其中的 `课栈.exe`。 |
+| [Windows 安装版](https://github.com/Jiacheng6/kezhan-releases/releases/download/v0.9.3/Kezhan-0.9.3-Setup.exe) | 运行安装程序，按提示完成安装。 |
+| [Windows 免安装版](https://github.com/Jiacheng6/kezhan-releases/releases/download/v0.9.3/Kezhan-0.9.3-win-x64.zip) | 完整解压到一个文件夹，再运行其中的 `课栈.exe`。 |
 
-[国内下载（CNB）](https://cnb.cool/kezhan-app/kezhan-releases/-/releases/tag/latest) · [GitHub 发布页](https://github.com/Jiacheng6/kezhan-releases/releases/latest) · [更新说明](https://github.com/Jiacheng6/kezhan-releases/releases/tag/v0.9.2) · [反馈问题](https://github.com/Jiacheng6/kezhan/issues)
+[国内下载（CNB）](https://cnb.cool/kezhan-app/kezhan-releases/-/releases/tag/latest) · [GitHub 发布页](https://github.com/Jiacheng6/kezhan-releases/releases/latest) · [更新说明](https://github.com/Jiacheng6/kezhan-releases/releases/tag/v0.9.3) · [反馈问题](https://github.com/Jiacheng6/kezhan/issues)
 
 软件自带运行环境和网页引擎。访问课程平台及 AI 服务需要联网。
 

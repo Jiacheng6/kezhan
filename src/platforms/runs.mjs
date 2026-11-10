@@ -6,7 +6,7 @@ export function planPlatformRun(tasks, progress={}) {
 }
 export class PlatformRuns {
   constructor({ execute, changed = () => {}, onRestart=()=>{},restartDelayMs=1500, restartMaxAttempts=3 }) { this.execute = execute; this.changed = changed; this.onRestart=onRestart;this.restartDelayMs=restartDelayMs;this.sessions = new Map(); }
-  snapshot() { return Object.fromEntries([...this.sessions].map(([id, s]) => [id, { running: s.running, stopping: s.stop,
+  snapshot() { return Object.fromEntries([...this.sessions].map(([id, s]) => [id, { startedAt:s.startedAt,running: s.running, stopping: s.stop,
     done: s.done, skipped:s.skipped,review: s.review, total: s.total, current: s.current, progress: s.progress, error: s.error, phase: s.phase }])); }
   stop(id) { const s = this.sessions.get(id); if (s?.running) { s.stop = true; this.changed(this.snapshot()); } }
   stopAll() { for (const id of this.sessions.keys()) this.stop(id); }
@@ -15,7 +15,7 @@ export class PlatformRuns {
     if (previous?.running) throw Error('该平台的任务已在运行');
     if (!tasks.length || tasks.some(t => t.platform !== id || typeof t.key !== 'string' || !t.key) || new Set(tasks.map(t => t.key)).size !== tasks.length) throw Error('平台任务范围无效');
     const resuming = ['stopped', 'needs-human', 'failed'].includes(previous?.phase) && previous.taskKey === tasks[0].key;
-    const s = { running: true, stop: false, done: 0, skipped:0,review: 0, total: tasks.length, current: resuming ? tasks[0].name : null,
+    const s = { startedAt:Date.now(),running: true, stop: false, done: 0, skipped:0,review: 0, total: tasks.length, current: resuming ? tasks[0].name : null,
       progress: resuming && previous.progress ? { ...previous.progress, resuming: true } : null, error: null, phase: 'running' };
     this.sessions.set(id, s); this.changed(this.snapshot());
     s.finished = (async () => {

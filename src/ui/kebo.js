@@ -2,7 +2,7 @@ import { workspace } from './app.js';
 import { platformOf, platformInfo, PLATFORMS,enabledPlatformIds,platformEnabled } from './platforms.js';
 import { runScopeRequest, pendingRunTasks } from './run-scope.js';
 import { confirmBankUse } from './bank-guide.js';
-import { activeTaskPlatforms, renderProgressTrack, renderTaskProgress, platformTaskStatus, totalProgressModel } from './task-progress.js';
+import { activeTaskPlatforms, renderProgressTrack, renderTaskProgress, platformTaskStatus, totalProgressModel, batchProgressForecast } from './task-progress.js';
 const message = document.querySelector('#platformMessage');
 // One place to open and scan every platform. Existing action handlers stay intact.
 message.setAttribute('role', 'status');
@@ -92,7 +92,8 @@ function render(force = false) {
   const count = overall.total ? `完成 ${overall.done} / ${overall.total} 项` : '开始学习后统计';
   summary.querySelector('[data-total-percent]').textContent = overall.total ? `${percent}%` : '—';
   summary.querySelector('[data-total-count]').textContent = count;
-  renderProgressTrack(summary.querySelector('[role=progressbar]'), overall.total ? overall.fraction : null, count, overall.running);
+  renderProgressTrack(summary.querySelector('[role=progressbar]'), overall.total ? overall.fraction : null, count, overall.running,1,false,
+    {...batchProgressForecast(status),onDisplay:value=>{summary.querySelector('[data-total-percent]').textContent=overall.total?`${(value*100).toFixed(1)}%`:'—';}});
   summary.querySelector('[data-total-detail]').textContent = overall.review ? `待审 ${overall.review} 份` : !overall.total ? '' : overall.running ? '进行中' : overall.done === overall.total ? '已完成' : '进度已保存';
   const active = activeTaskPlatforms(status);
   const cards = ids.map(id => {
@@ -109,7 +110,7 @@ function render(force = false) {
     state.title = state.textContent;
     const progress = article.querySelector('.platform-track');
     progress.setAttribute('aria-label', `${info.name}本批进度`); progress.hidden = !run.total;
-    renderProgressTrack(progress, run.total ? (run.done || 0) / run.total : null, `完成 ${run.done || 0} / ${run.total || 0} 项`, run.running && !run.stopping);
+    renderProgressTrack(progress, run.total ? (run.done || 0) / run.total : null, `完成 ${run.done || 0} / ${run.total || 0} 项`, run.running && !run.stopping,1,false,batchProgressForecast(status,id));
     const action = article.querySelector('.platform-action'); action.textContent = run.running ? '停止此平台' : '开始此平台'; action.onclick = () => control(id, run.running);
     const queued=(status.aiQueue?.pending||[]).filter(item=>item.platform===id).length;
     if(queued)state.textContent=`等待共用 AI · 排队 ${queued} 题 · `+state.textContent;

@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { log } from '../../logbus.mjs';
 import { throwIfStopped, interruptibleSleep } from '../../control.mjs';
+import {readUcampusSubmission} from './submission.mjs';
 
 /** 给异步步骤加硬超时，避免整轮挂死（真机踩过 600 秒无响应） */
 function withTimeout(promise, ms, message) {
@@ -561,8 +562,9 @@ export async function ensurePlayableViewport(page) {
  *   · 点击后平台会 POST `/course/api/v3/newExploration/submit`，
  *     body 里 `quesDatas[].answer` 就是选中的字母。
  */
-export async function clickSubmitButton(page) {
+export async function clickSubmitButton(page,{shouldStop=()=>false,waitMs=30000}={}) {
   await requireUcampusReady(page);
+  const expectedUrl=page.url();
   /*
    * 真机踩到：页面上有 3 个文字是"提交"的元素，点错那个不会触发保存
    * （作答完整、AI 全 high，但平台就是不记账 —— Unit 4/5 Reading 卡在这）。
@@ -637,11 +639,19 @@ export async function clickSubmitButton(page) {
     page.on('request', onRequest);
     try {
       await page.mouse.click(pt.x, pt.y);
-      for (let k = 0; k < 12 && !fired; k += 1) await page.waitForTimeout(500);
+      const deadline=Date.now()+waitMs;
+      do{
+        throwIfStopped(shouldStop);
+        const receipt=await readUcampusSubmission(page,{expectedUrl});
+        if(receipt.accepted)return {ok:true,accepted:true,receipt,note:'原网页已显示答题小结与已提交答案'};
+        if(fired)break;
+        await page.waitForTimeout(250);
+      }while(Date.now()<deadline);
     } finally {
       page.off('request', onRequest);
     }
     if (fired) return { ok: true, note: `点击「${pt.text}」@(${pt.x},${pt.y}) 已触发提交接口` };
+    return {ok:false,attempted:true,pendingConfirmation:true,note:'提交已触发一次操作，但结果尚未确认，未再次点击'};
   }
   return { ok: false, note: `点了 ${candidates.length} 个候选，都没有触发提交接口` };
 }
@@ -690,7 +700,7 @@ export async function runUcampusQuizTab({ page, tab, limit = 99, apply = false, 
   const plan = [];
   for (const [i, q] of questions.slice(0, limit).entries()) {
     throwIfStopped(shouldStop);
-    onProgress({ phase: 'quiz', detail: `${tab} 第 ${i + 1}/${Math.min(limit, questions.length)} 题` });
+    onProgress({taskType:'work',phase:'asking',questionIndex:i,questionTotal:Math.min(limit,questions.length),detail:`${tab||'选择题'} 第 ${i+1} 题：等待 AI 回答（含请求间隔等待）`});
     log(`   【${tab}】第 ${i + 1} 题：开始截图`, 'info');
     const imagePath = await withTimeout(renderQuestionImage(page, q, path.join(dir, `uai-q${String(i + 1).padStart(2, '0')}-${Date.now()}.png`)), 20000, '题目出图超时');
     if (!imagePath) {
@@ -727,6 +737,7 @@ export async function runUcampusQuizTab({ page, tab, limit = 99, apply = false, 
       confidence: answer?.confidence || 'none',
       error: answer?.ok === false ? String(answer.error || '').slice(0, 80) : '',
     });
+    onProgress({taskType:'work',phase:'done',questionIndex:i,questionTotal:Math.min(limit,questions.length),detail:`第 ${i+1} 题已处理，待统一回填核对`});
     await interruptibleSleep(300, shouldStop);
   }
 

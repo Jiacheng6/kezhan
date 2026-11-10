@@ -59,7 +59,7 @@
   background: var(--acc);
   transform: scaleX(0);
   transform-origin: left center;
-  transition: transform 230ms var(--ease-out);
+  transition: transform 230ms linear;
   overflow: hidden;
 }
 :root:not([data-progress-style="classic"]) .tp-track .tp-fill {
