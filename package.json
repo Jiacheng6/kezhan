@@ -1,6 +1,6 @@
 {
   "name": "kebo",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "private": true,
   "type": "module",
   "description": "课栈：软件内网页、多平台课程管理与 AI 辅助",
@@ -31,7 +31,7 @@
   },
   "build": {
     "releaseInfo": {
-      "releaseNotesFile": "docs/releases/0.9.1.md"
+      "releaseNotesFile": "docs/releases/0.9.2.md"
     },
     "publish": [
       {

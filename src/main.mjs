@@ -41,7 +41,8 @@ import { readStudentCourses } from './platforms/ucampus/api.mjs';
 import {ensureWelearnPage,scanWelearnCourses} from './platforms/welearn/scan.mjs';
 import {runWelearnSelectedTask} from './platforms/welearn/dispatch.mjs';
 import { runUcampusStudyNode, ensurePlayer as ensureUcampusPlayer } from './platforms/ucampus/runner.mjs';
-import { runUcampusQuizTab, openUnitTest, openQuizTab, openUcampusRequiredItem, openVocabularyLearning, clickByText, dismissUcampusDialog } from './platforms/ucampus/quiz.mjs';
+import {confirmedUcampusOutcome} from './platforms/ucampus/policy.mjs';
+import { runUcampusQuizTab, openUnitTest, openQuizTab, openUcampusRequiredItem, openVocabularyLearning, clickByText, dismissUcampusDialog, requireUcampusReady } from './platforms/ucampus/quiz.mjs';
 import { runUcampusTextQuiz } from './platforms/ucampus/textquiz.mjs';
 import { runUcampusCloze } from './platforms/ucampus/cloze.mjs';
 import { runUcampusVocab } from './platforms/ucampus/vocab.mjs';
@@ -66,6 +67,18 @@ const welearnScan={running:false,stop:false};
 let ucampusQuizBusy = false;
 /** 批量执行用：按题型把 U校园 的一个必修节点分派到对应执行器 */
 async function runUcampusTask(args) {
+  const task=args.task||{};
+  setTaskStatus(task.key,{status:'running',platform:'ucampus'});
+  try{
+    const result=confirmedUcampusOutcome(await executeUcampusTask(args));
+    setTaskStatus(task.key,{status:result?.ok?'done':result?.phase==='stopped'?'pending':'manual',platform:'ucampus',
+      progress:result?.ok?1:undefined,note:result?.ok?'U校园平台已确认完成':result?.error||'任务已停止，保留进度'});
+    return result;
+  }catch(error){
+    setTaskStatus(task.key,{status:error.code==='STOPPED'?'pending':'manual',platform:'ucampus',note:error.message});throw error;
+  }
+}
+async function executeUcampusTask(args) {
   const task = args.task || {};
   const kind = String(task.type || 'study');
   const unit = Number(task.unitIndex || 0);
@@ -79,8 +92,9 @@ async function runUcampusTask(args) {
     const entered = await openUcampusRequiredItem(ctx(), kind === 'vocab-cards' ? 'Vocabulary' : 'Quiz', {unit,courseResourceId:String(task.courseResourceId||'')});
     if(!entered.ok)return {ok:false,phase:'needs-human',error:entered.note};
     page=entered.page;
-  } else page = await ensureUcampusPlayer(ctx(), {instanceId:String(task.courseInstanceId||''),continueUrl:task.studyUrl||''});
+  } else page = await ensureUcampusPlayer(ctx(), {instanceId:String(task.courseInstanceId||''),continueUrl:task.studyUrl||'',courseResourceId:String(task.courseResourceId||''),shouldStop:stop});
   if (!/^https:\/\/ucontent\.unipus\.(cn|com)\//.test(page.url())) return { ok:false,phase:'needs-human',error:'U校园播放器未成功打开，请核对课程登录与续学入口' };
+  await requireUcampusReady(page);
 
   if (kind === 'vocab-cards') {
     const r = await runUcampusVocab({ page, apply: true, shouldStop: stop, readProgress, onProgress:args.onProgress, dwellMs:1200,onBeforeVerify:()=>openUnitTest(page,unit) });
@@ -96,19 +110,19 @@ async function runUcampusTask(args) {
   }
   const ask = async ({ imagePath, prompt, question }) => {
     if (provider?.id === 'api') {
-      const r = await askApiImage({ imagePath, prompt, shouldStop: () => shuttingDown });
+      const r = await askApiImage({ imagePath, prompt, shouldStop: stop });
       if (!r?.ok) return { ok: false, letters: [], confidence: 'none', error: r?.error };
       const parsed = parseAnswer(r.answer, question || { qtype: 'single' });
       return { ok: true, answer: r.answer, letters: parsed.letters || [], confidence: parsed.confidence || 'low' };
     }
-    const r = await askImage({ page: aiPage, imagePath, prompt, shouldStop: () => shuttingDown, freshChat: false });
+    const r = await askImage({ page: aiPage, imagePath, prompt, shouldStop: stop, freshChat: false });
     if (!r?.ok) return { ok: false, letters: [], confidence: 'none', error: r?.error };
     const parsed = parseAnswer(r.answer, question || { qtype: 'single' });
     return { ok: true, answer: r.answer, letters: parsed.letters || [], confidence: parsed.confidence || 'low' };
   };
   async function readProgress() {
     const uai = (await ensureUcampusPage(ctx(), { create: false })) || (await ensureUcampusPage(ctx()));
-    const list = await readStudentCourses(uai, { shouldStop: () => shuttingDown });
+    const list = await readStudentCourses(uai, { shouldStop: stop });
     for (const course of list) {
       for (const tutorial of course.courseResourceList || []) {
         if (String(tutorial.id) === String(task.courseResourceId)) return tutorial;

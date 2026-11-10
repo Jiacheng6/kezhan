@@ -22,12 +22,48 @@ const PLAYER_HOST = 'https://ucontent.unipus.cn';
 const treeCache = new Map();
 
 /** 打开（或复用）某教程的播放器页面 */
-export async function ensurePlayer(context, { instanceId, continueUrl }) {
+export async function ensurePlayer(context, { instanceId, continueUrl, courseResourceId, shouldStop=()=>false, entryWaitMs=30000 }) {
   const isPlayer = value => {try{return /^https:$/.test(new URL(value).protocol)&&['ucontent.unipus.cn','ucontent.unipus.com'].includes(new URL(value).hostname);}catch{return false;}};
+  const matches = page => {
+    if(page.isClosed() || !isPlayer(page.url()))return false;
+    if(!instanceId)return continueUrl && page.url()===continueUrl;
+    try{return decodeURIComponent(new URL(page.url()).hash).split('/')[1]===instanceId;}catch{return false;}
+  };
   if(continueUrl&&!isPlayer(continueUrl))throw Error('U校园续学地址不属于受支持的播放器，未打开');
   const pages = context.pages().filter((p) => !p.isClosed() && isPlayer(p.url()));
-  const hit = pages.find((p) => instanceId && p.url().includes(instanceId));
-  if (hit) return hit;
+  const ready=async page=>matches(page)&&await page.evaluate(()=>!!document.querySelector('span.pc-menu-node-name,[class*="pc-header"]')).catch(()=>false);
+  const hit = pages.find(matches);
+  if (hit && (!courseResourceId || await ready(hit))) return hit;
+  // The tutorial's real Continue button prepares its cross-origin player
+  // session. Replaying a saved player URL can redirect to the portal even
+  // though the account itself is logged in.
+  if(courseResourceId){
+    if(!/^\d+$/.test(String(courseResourceId)))throw Error('U校园教程标识无效');
+    const detailUrl=`https://uai.unipus.cn/app/cmgt/resource-detail/${courseResourceId}`;
+    let detail=context.pages().find(p=>!p.isClosed()&&p.url().split(/[?#]/)[0]===detailUrl);
+    const owned=!detail;
+    if(!detail){detail=await context.newPage();await detail.goto(detailUrl,{waitUntil:'domcontentloaded',timeout:60000});}
+    const button=detail.getByRole('button',{name:/^(继续学习|开始学习)$/}).filter({visible:true});
+    await button.waitFor({state:'visible',timeout:15000});throwIfStopped(shouldStop);
+    if(await button.count()!==1)throw Error('U校园原生续学入口无法唯一定位，请在教程页核对');
+    const before=new Map(context.pages().map(p=>[p,p.url()]));
+    await button.click({timeout:10000});
+    const deadline=Date.now()+entryWaitMs;
+    do{
+      throwIfStopped(shouldStop);
+      const opened=context.pages().find(matches);
+      if(opened && await ready(opened)){
+        // Embedded contexts can wrap the same page in different objects. The
+        // tutorial may navigate in-place; never close it by object inequality.
+        if(owned&&detail.url().split(/[?#]/)[0]===detailUrl)await detail.close().catch(()=>{});
+        return opened;
+      }
+      const login=context.pages().find(p=>!p.isClosed()&&(!before.has(p)||before.get(p)!==p.url())&&/^https:\/\/sso\.unipus\.cn\/sso\/login(?:[?#]|$)/.test(p.url()));
+      if(login)throw Object.assign(Error('U校园教程账号仍登录，但播放器需要恢复登录，请在软件内网页登录后继续'),{code:'AUTH_EXPIRED',retryable:false});
+      await detail.waitForTimeout(250);
+    }while(Date.now()<deadline);
+    throw Error('U校园原生续学入口未打开所选教程的播放器，请核对登录或网页提示');
+  }
   if(!continueUrl&&!instanceId)throw Error('U校园任务缺少续学入口，请重新扫描课程');
   const page = await context.newPage();
   if (continueUrl) {
@@ -193,6 +229,8 @@ export async function runUcampusStudyNode({ task, context, shouldStop = () => fa
   const page = await ensurePlayer(context(), {
     instanceId: String(task.courseInstanceId || ''),
     continueUrl: continueUrl || task.studyUrl || '',
+    courseResourceId,
+    shouldStop,
   });
   await ensureDirectoryOpen(page);
 

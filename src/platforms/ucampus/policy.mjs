@@ -17,6 +17,14 @@ export function ucampusTaskKey(courseResourceId, nodeId) {
   return `ucampus:${courseResourceId}:${nodeId}`;
 }
 
+/** Completion is durable only after the platform confirms credit, not a click. */
+export function confirmedUcampusOutcome(result) {
+  if(!result?.ok)return result;
+  const advanced=result.before!=null&&result.after!=null&&Number.isFinite(Number(result.before))&&Number.isFinite(Number(result.after))&&Number(result.after)>Number(result.before);
+  if(result.phase==='already-finished'||advanced&&(result.credited===true||result.delta==='advanced'))return result;
+  return {...result,ok:false,phase:'needs-human',error:'U校园平台尚未确认此节点完成，未记完成'};
+}
+
 /** 从任务 key 里取回课程与节点 */
 export function parseUcampusTaskKey(key) {
   const parts = String(key || '').split(':');

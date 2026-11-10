@@ -341,6 +341,8 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
         .map(([kind,label]) => [answers.filter(answer => answer.kind === kind).length,label]);
       if (reusable.size) counts.push([reusable.size,'复用已保存答案']);
       log(`    题库处理结果：${counts.filter(([count]) => count > 0).map(([count,label]) => `${label} ${count} 题`).join('；') || '无新题可查询'}`, 'info');
+      const unresolved=questions.filter(q=>bankAnswers.has(q.index)&&bankAnswers.get(q.index).kind!=='hit');
+      if(unresolved.length)log(`    题库待补答的原卷题号：${unresolved.map(q=>`第 ${q.index} 题`).join('、')}；其余命中题会先填入，处理顺序可能与题号不同`, 'info');
     }
     let aiReady = false;
     let aiRequests = 0;
@@ -380,7 +382,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
         break;
       }
       const q = ordered[i];
-      log(`    [${q.index}/${questions.length}] ${q.qtypeRaw} ${q.optionCount} 选项`, 'info');
+      log(`    原卷第 ${q.index}/${questions.length} 题 · 本次处理 ${i+1}/${questions.length} · ${q.qtypeRaw} ${q.optionCount} 选项`, 'info');
 
       let previous=reusable.get(q.index);
       const bankAnswer = bankAnswers.get(q.index);
@@ -671,6 +673,7 @@ export async function runQuizTask({ ctx, qianwenPage, task, personId, onProgress
         result.score = submission.score;
         result.phase = 'submitted';
         dropKeptPage(task.key);
+        log(`    测验「${task.name||task.secNo||''}」${result.answered}/${questions.length} 题已回填核对，平台已确认提交；本份待审记录已归档`, 'ok');
         if (!task.standalone) { await page.close().catch(() => {}); releasePage(page); }
       }else{
         result.submissionPending=!!submission.pendingConfirmation;

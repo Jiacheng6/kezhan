@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { log } from '../../logbus.mjs';
 import { throwIfStopped, interruptibleSleep } from '../../control.mjs';
-import { ensurePlayableViewport, clickSubmitButton } from './quiz.mjs';
+import { ensurePlayableViewport, clickSubmitButton, requireUcampusReady } from './quiz.mjs';
 
 /** 读页面上的所有文本框 + 题干 + 材料上下文 */
 export async function readTextQuestions(page) {
@@ -119,6 +119,7 @@ export async function fillTextAnswer(page, index, text) {
  */
 export async function runUcampusTextQuiz({ page, ask, apply = false, limit = 99, shouldStop = () => false, onProgress = () => {}, outDir, readProgress = null }) {
   await ensurePlayableViewport(page);
+  await requireUcampusReady(page);
   const { rows, material } = await readTextQuestions(page);
   log(`   读到 ${rows.length} 个文本框`, 'info');
   if (!rows.length) return { ok: false, phase: 'needs-human', error: '页面上没有可作答的文本框' };
@@ -157,7 +158,7 @@ export async function runUcampusTextQuiz({ page, ask, apply = false, limit = 99,
       .replace(/\s+/g, ' ')
       .trim();
     const usable = answer?.ok && text.length >= 8 && !/看不清|无法判断/.test(text);
-    plan.push({ index: row.index, prompt: row.prompt.slice(0, 60), text: text.slice(0, 160), usable, error: answer?.ok ? '' : String(answer?.error || '').slice(0, 80) });
+    plan.push({ index: row.index, prompt: row.prompt.slice(0, 60), text, usable:usable&&text.length<=10000, error: answer?.ok ? '' : String(answer?.error || '').slice(0, 80) });
     log(`   第 ${row.index + 1} 题：${usable ? '答案 ' + text.slice(0, 60) : '不可用（' + (answer?.answer || answer?.error || '').slice(0, 40) + '）'}`, usable ? 'info' : 'warn');
     await interruptibleSleep(300, shouldStop);
   }
@@ -189,8 +190,9 @@ export async function runUcampusTextQuiz({ page, ask, apply = false, limit = 99,
 
   const credited = !!(after && before && Number(after.finishPointNum) > Number(before.finishPointNum));
   return {
-    ok: true,
+    ok: !apply || credited,
     phase: credited ? 'submitted' : apply ? 'applied-unverified' : 'planned',
+    ...(apply&&!credited?{error:allUsable?'U校园已尝试填写，但平台尚未确认完成，请核对原网页':'U校园仍有未取得可靠答案的题，未提交'}:{}),
     questions: plan.length,
     allUsable,
     filled,

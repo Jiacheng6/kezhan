@@ -46,6 +46,7 @@ export async function openUnitTest(page, unitIndex) {
   const parsed = JSON.parse(info);
   if (!parsed.ok) return { ok: false, note: `目录里只有 ${parsed.total} 个 Unit test` };
   await page.waitForTimeout(4500);
+  await requireUcampusReady(page);
   return { ok: true, total: parsed.total };
 }
 
@@ -121,34 +122,47 @@ export async function openUcampusRequiredItem(context, name, { occurrence = 0, w
  * 所以这里用**真实鼠标**点，并校验弹窗是否真的消失。
  */
 export async function dismissUcampusDialog(page) {
+  let dismissed = '';
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const point = await page.evaluate(() => {
-      const visible = (el) => !!el.getClientRects().length;
+      const visible = el => !!el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden';
       const norm = (s) => String(s || '').replace(/\s+/g, '');
-      const targets = ['我知道了', '知道了', '确定', '关闭'];
-      for (const el of document.querySelectorAll('button,[role="button"],a,div,span')) {
-        if (!visible(el)) continue;
+      const dialogs = [...document.querySelectorAll('[role="dialog"],.ant-modal')].filter(visible);
+      if (!dialogs.length) return null;
+      const dialog = dialogs.at(-1);
+      const text = norm(dialog.innerText);
+      // A course notice is dismissible; confirmations, agreements and validation
+      // are not generic "确定" buttons and must never be accepted here.
+      if (/提交|交卷|验证码|人机|协议|承诺|隐私|条款/.test(text) ||
+          !/本单元学习时间|是否必修|学习要求|我知道了|知道了/.test(text)) return { blocked: true };
+      for (const el of dialog.querySelectorAll('button,[role="button"],a')) {
+        if (!visible(el) || el.disabled || el.getAttribute('aria-disabled') === 'true') continue;
         const t = norm(el.innerText);
-        if (!targets.includes(t)) continue;
+        if (!['我知道了', '知道了', '确定', '关闭'].includes(t)) continue;
+        el.scrollIntoView({ block: 'center' });
         const r = el.getBoundingClientRect();
         if (r.width < 10 || r.height < 8) continue;
-        return JSON.stringify({ x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), text: t });
+        const x = r.x + r.width / 2, y = r.y + r.height / 2;
+        const top = document.elementFromPoint(x, y);
+        if (!top || !el.contains(top)) continue;
+        return { x, y, text: t };
       }
-      return '';
+      return { blocked: true };
     });
-    if (!point) return '';
-    const { x, y, text } = JSON.parse(point);
+    if (!point) return dismissed;
+    if (point.blocked) return 'dialog-needs-human';
+    const { x, y, text } = point;
     await page.mouse.click(x, y);
+    dismissed = text;
     await page.waitForTimeout(1200);
-    const still = await page.evaluate(() => {
-      const norm = (s) => String(s || '').replace(/\s+/g, '');
-      return [...document.querySelectorAll('button,[role="button"],a,div,span')].some(
-        (el) => el.getClientRects().length && ['我知道了', '知道了'].includes(norm(el.innerText)),
-      );
-    });
-    if (!still) return text;
   }
+  if (!await page.locator('[role="dialog"],.ant-modal').filter({visible:true}).count()) return dismissed;
   return 'dialog-still-open';
+}
+
+export async function requireUcampusReady(page) {
+  const result = await dismissUcampusDialog(page);
+  if (result.startsWith('dialog-')) throw Object.assign(new Error('U校园提示窗口尚未关闭，请在原网页处理后继续'), { code: 'UCAMPUS_DIALOG_BLOCKED', retryable: false });
 }
 /**
  * 打开某单元的 "Reading the text" → "Vocabulary learning" → 子标签（Vocabulary / Quiz）。
@@ -294,6 +308,7 @@ export async function readQuizTabs(page) {
 
 /** 切到某个 tab */
 export async function openQuizTab(page, name) {
+  await requireUcampusReady(page);
   const ok = await page.evaluate((tabName) => {
     const el = [...document.querySelectorAll('*')].find(
       (n) => (n.innerText || '').trim() === tabName && n.getClientRects().length && n.children.length <= 2,
@@ -303,6 +318,7 @@ export async function openQuizTab(page, name) {
     return true;
   }, name);
   if (ok) await page.waitForTimeout(2500);
+  if (ok) await requireUcampusReady(page);
   return ok;
 }
 
@@ -546,6 +562,7 @@ export async function ensurePlayableViewport(page) {
  *     body 里 `quesDatas[].answer` 就是选中的字母。
  */
 export async function clickSubmitButton(page) {
+  await requireUcampusReady(page);
   /*
    * 真机踩到：页面上有 3 个文字是"提交"的元素，点错那个不会触发保存
    * （作答完整、AI 全 high，但平台就是不记账 —— Unit 4/5 Reading 卡在这）。
@@ -757,8 +774,9 @@ export async function runUcampusQuizTab({ page, tab, limit = 99, apply = false, 
   const credited =
     !!(after && before && Number(after.finishPointNum) > Number(before.finishPointNum));
   return {
-    ok: true,
-    phase: credited ? 'submitted' : applied || submitted ? 'applied-unverified' : 'planned',
+    ok: !apply || credited,
+    phase: credited ? 'submitted' : apply ? 'applied-unverified' : 'planned',
+    ...(apply&&!credited?{error:allHigh?'U校园已尝试填写，但平台尚未确认完成，请核对原网页':'U校园仍有未取得可靠答案的题，未提交'}:{}),
     tab,
     questions: plan.length,
     allHigh,

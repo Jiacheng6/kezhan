@@ -67,6 +67,7 @@ const suite = [
   ['API 回答提取（各种返回形状）', 'tools/test/test-api-answer.mjs'],
   ['U校园 平台层（清单/进度/节点类型）', 'tools/test/test-ucampus.mjs'],
   ['U校园入口恢复 / WeLearn 无题内容分流', 'tools/test/test-platform-entry-recovery.mjs'],
+  ['U校园提示遮挡与跨域就绪 / WeLearn 阅读模板', 'tools/test/test-platform-content-dialog.mjs'],
   ['U校园扫描至执行的身份与入口保留', 'tools/test/test-ucampus-checklist-identity.mjs'],
   ['U校园单词卡保存与平台进度确认', 'tools/test/test-ucampus-vocab-credit.mjs'],
   ['视频弹题题库优先 / 正确后继续', 'tools/test/test-videoquiz-bank-resume.mjs'],

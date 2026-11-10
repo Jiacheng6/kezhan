@@ -1,6 +1,17 @@
 import {prepareLesson} from './vendor/auto-welearn/core/run/prepare.mjs';
 import {fetchTemplate} from './vendor/auto-welearn/core/api/sco.mjs';
 import {parseSco} from './vendor/auto-welearn/core/parse/sco-parser.mjs';
+import {load} from 'cheerio';
+
+// Positive evidence from the exact lesson template, not a blanket fallback
+// for empty/failed extraction. Unknown widgets and oral tasks stay blocked.
+export function isWelearnReadingTemplate(html) {
+  const $=load(html);
+  if ($('et-item').length!==1 || !$('et-preface .main-content').text().trim()) return false;
+  const tags=new Set(['et-item','et-sub-title','et-preface','et-my-words']);
+  if ($('*').toArray().some(el=>el.name?.startsWith('et-')&&!tags.has(el.name))) return false;
+  return !$('input,textarea,select,video,audio,iframe,object,[data-controltype],[data-solution],[answer],[data-answer],script').length;
+}
 // Some legacy courses return an Angular index shell with #/unit/file instead
 // of a standalone template. Resolve that shell's configured template route,
 // then give the unmodified upstream parser the actual HTML.
@@ -16,5 +27,5 @@ export async function prepareWelearnLesson(session,meta,options={}){
   const html=await fetchTemplate(session,templateUrl,options);if(!html)return prepared;
   const parsed=parseSco(html,{skipOral:options.skipOralQuestion??true});
   if(parsed.questions.some(q=>/[{}]|\[object Object\]/.test(q.answer)))return {...prepared,warnings:['动态答案表达式未解析，未提交']};
-  return {...prepared,...parsed,templateUrl};
+  return {...prepared,...parsed,templateUrl,contentOnly:!parsed.questions.length&&!parsed.oral&&isWelearnReadingTemplate(html)};
 }

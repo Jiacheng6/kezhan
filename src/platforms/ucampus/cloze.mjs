@@ -145,8 +145,9 @@ export async function runUcampusCloze({ page, ask, apply = false, shouldStop = (
 
   const credited = !!(after && before && Number(after.finishPointNum) > Number(before.finishPointNum));
   return {
-    ok: true,
+    ok: !apply || credited,
     phase: credited ? 'submitted' : apply ? 'applied-unverified' : 'planned',
+    ...(apply&&!credited?{error:allUsable?'U校园已尝试填写，但平台尚未确认完成，请核对原网页':'U校园仍有未取得可靠答案的空，未提交'}:{}),
     blanks: data.blankCount,
     words: data.words.length,
     allUsable,
